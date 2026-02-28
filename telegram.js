@@ -83,7 +83,24 @@ function getSystemPrompt(userId) {
                                                                                                                                   }
 
                                                                                                                                   // ── Telegram bot message handler ─────────────────────────────────────────────
-                                                                                                                                  bot.on("message", async (msg) => {
+                                                                                                                                  
+async function generateImage(prompt) {
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const buffer = await res.buffer();
+    return buffer;
+  } catch(e) {
+    clearTimeout(timeout);
+    return null;
+  }
+}
+
+bot.on("message", async (msg) => {
                                                                                                                                     const chatId = msg.chat.id;
                                                                                                                                       const userMessage = msg.text;
 
@@ -108,7 +125,22 @@ function getSystemPrompt(userId) {
                                                                                                                                                                                                                     return;
                                                                                                                                                                                                                       }
 
-                                                                                                                                                                                                                        if (!conversations[chatId]) {
+                                                                                                                                                                                                                      
+  const imageTriggers = ["generate", "draw", "create image", "imagine"];
+  const isImageRequest = imageTriggers.some(t => userMessage.toLowerCase().includes(t));
+  if (isImageRequest) {
+    bot.sendMessage(chatId, "🎨 Generating your image, give me a moment...");
+    const prompt = userMessage.replace(/generate|draw|create image|imagine/gi, "").trim() || userMessage;
+    const imageBuffer = await generateImage(prompt);
+    if (imageBuffer) {
+      await bot.sendPhoto(chatId, imageBuffer, { caption: `🖼️ ${prompt}` });
+    } else {
+      bot.sendMessage(chatId, "Sorry, image generation timed out. Try a simpler prompt! 😅");
+    }
+    return;
+  }
+
+  if (!conversations[chatId]) {
                                                                                                                                                                                                                             conversations[chatId] = [];
                                                                                                                                                                                                                               }
 
