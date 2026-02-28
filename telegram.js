@@ -14,7 +14,7 @@ bot.on("message", async (msg) => {
       if (!userMessage) return;
 
         // Image generation trigger
-          const drawTriggers = ["draw", "generate image", "create image", "show me", "paint"];
+          const drawTriggers = ["draw", "generate", "create image", "show me", "paint", "picture of", "image of"];
             const isDrawRequest = drawTriggers.some(trigger => userMessage.toLowerCase().includes(trigger));
 
               if (isDrawRequest) {
