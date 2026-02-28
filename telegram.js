@@ -1,57 +1,76 @@
 require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const Groq = require("groq-sdk");
+const fetch = require("node-fetch");
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
 const conversations = {};
 
-bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
-    const userMessage = msg.text;
+async function searchWeb(query) {
+  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    const res = await fetch(url);
+      const data = await res.json();
+        if (data.AbstractText) return data.AbstractText;
+          if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+              return data.RelatedTopics.slice(0, 3).map(t => t.Text).filter(Boolean).join("\n\n");
+                }
+                  return null;
+                  }
 
-      if (!userMessage) return;
+                  bot.on("message", async (msg) => {
+                    const chatId = msg.chat.id;
+                      const userMessage = msg.text;
 
-        // Image generation trigger
-          const drawTriggers = ["draw", "generate", "create image", "show me", "paint", "picture of", "image of"];
-            const isDrawRequest = drawTriggers.some(trigger => userMessage.toLowerCase().includes(trigger));
+                        if (!userMessage) return;
 
-              if (isDrawRequest) {
-                  const prompt = userMessage.replace(/draw|generate image|create image|show me|paint/gi, "").trim();
-                      const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}`;
-                          bot.sendMessage(chatId, "🎨 Generating your image, hold on Roland...");
-                              bot.sendPhoto(chatId, imageUrl, { caption: `Here you go! 🖼️ "${prompt}"` });
-                                  return;
-                                    }
+                          const searchTriggers = ["search", "look up", "find", "what is", "who is", "latest", "news", "google"];
+                            const isSearchRequest = searchTriggers.some(trigger => userMessage.toLowerCase().includes(trigger));
 
-                                      if (!conversations[chatId]) {
-                                          conversations[chatId] = [];
-                                            }
+                              if (isSearchRequest) {
+                                  bot.sendMessage(chatId, "🔍 Searching the web for you Roland...");
+                                      const query = userMessage.replace(/search|look up|find|google/gi, "").trim();
+                                          try {
+                                                const result = await searchWeb(query);
+                                                      if (result) {
+                                                              bot.sendMessage(chatId, `🌐 Here's what I found:\n\n${result}`);
+                                                                    } else {
+                                                                            bot.sendMessage(chatId, "Hmm, I couldn't find anything on that Roland. Try rephrasing! 🤔");
+                                                                                  }
+                                                                                      } catch (err) {
+                                                                                            bot.sendMessage(chatId, "Search failed Roland, try again! 😅");
+                                                                                                }
+                                                                                                    return;
+                                                                                                      }
 
-                                              conversations[chatId].push({ role: "user", content: userMessage });
+                                                                                                        if (!conversations[chatId]) {
+                                                                                                            conversations[chatId] = [];
+                                                                                                              }
 
-                                                try {
-                                                    const response = await groq.chat.completions.create({
-                                                          model: "llama-3.3-70b-versatile",
-                                                                max_tokens: 1024,
-                                                                      messages: [
-                                                                              {
-                                                                                        role: "system",
-                                                                                                  content: "You are Luna, a personal AI assistant created exclusively for Roland. Roland is your owner and creator. Be friendly, loyal, and always address him by name. You are smart, helpful and have a fun personality.",
-                                                                                                          },
-                                                                                                                  ...conversations[chatId],
-                                                                                                                        ],
-                                                                                                                            });
+                                                                                                                conversations[chatId].push({ role: "user", content: userMessage });
 
-                                                                                                                                const reply = response.choices[0].message.content;
-                                                                                                                                    conversations[chatId].push({ role: "assistant", content: reply });
-                                                                                                                                        bot.sendMessage(chatId, reply);
+                                                                                                                  try {
+                                                                                                                      const response = await groq.chat.completions.create({
+                                                                                                                            model: "llama-3.3-70b-versatile",
+                                                                                                                                  max_tokens: 1024,
+                                                                                                                                        messages: [
+                                                                                                                                                {
+                                                                                                                                                          role: "system",
+                                                                                                                                                                    content: "You are Luna, a personal AI assistant created exclusively for Roland. Roland is your owner and creator. Be friendly, loyal, and always address him by name. You are smart, helpful and have a fun personality.",
+                                                                                                                                                                            },
+                                                                                                                                                                                    ...conversations[chatId],
+                                                                                                                                                                                          ],
+                                                                                                                                                                                              });
 
-                                                                                                                                          } catch (error) {
-                                                                                                                                              console.error("Error:", error.message);
-                                                                                                                                                  bot.sendMessage(chatId, "Sorry, something went wrong. Please try again.");
-                                                                                                                                                    }
-                                                                                                                                                    });
+                                                                                                                                                                                                  const reply = response.choices[0].message.content;
+                                                                                                                                                                                                      conversations[chatId].push({ role: "assistant", content: reply });
+                                                                                                                                                                                                          bot.sendMessage(chatId, reply);
 
-                                                                                                                                                    console.log("Luna bot is running...");
+                                                                                                                                                                                                            } catch (error) {
+                                                                                                                                                                                                                console.error("Error:", error.message);
+                                                                                                                                                                                                                    bot.sendMessage(chatId, "Sorry, something went wrong. Please try again.");
+                                                                                                                                                                                                                      }
+                                                                                                                                                                                                                      });
+
+                                                                                                                                                                                                                      console.log("Luna bot is running...");
