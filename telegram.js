@@ -6,6 +6,7 @@ const fetch = require("node-fetch");
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
+const YOUR_TELEGRAM_ID = 8369027860;
 const conversations = {};
 
 async function searchWeb(query) {
@@ -26,17 +27,17 @@ async function searchWeb(query) {
                     const isSearchRequest = searchTriggers.some(trigger => userMessage.toLowerCase().includes(trigger));
 
                       if (isSearchRequest) {
-                          bot.sendMessage(chatId, "🔍 Searching the web for you Roland...");
-                              const query = userMessage.replace(/search|look up|find|google/gi, "").trim();
+                          bot.sendMessage(chatId, "🔍 Searching the web...");
+                              const query = userMessage.replace(/search|look up|find|google|who is|what is|latest|news about/gi, "").trim();
                                   try {
                                         const result = await searchWeb(query);
                                               if (result) {
                                                       bot.sendMessage(chatId, `🌐 Here's what I found:\n\n${result}`);
                                                             } else {
-                                                                    bot.sendMessage(chatId, "Hmm, I couldn't find anything on that Roland. Try rephrasing! 🤔");
+                                                                    bot.sendMessage(chatId, "Hmm, I couldn't find anything on that. Try rephrasing! 🤔");
                                                                           }
                                                                               } catch (err) {
-                                                                                    bot.sendMessage(chatId, "Search failed Roland, try again! 😅");
+                                                                                    bot.sendMessage(chatId, "Search failed, try again! 😅");
                                                                                         }
                                                                                             return;
                                                                                               }
@@ -54,20 +55,22 @@ async function searchWeb(query) {
                                                                                                                                 messages: [
                                                                                                                                         {
                                                                                                                                                   role: "system",
-                                                                                                                                                            content: "You are Luna, a personal AI assistant created exclusively for Roland. Roland is your owner and creator. Be friendly, loyal, and always address him by name. You are smart, helpful and have a fun personality.",
-                                                                                                                                                                    },
-                                                                                                                                                                            ...conversations[chatId],
-                                                                                                                                                                                  ],
-                                                                                                                                                                                      });
-
-                                                                                                                                                                                          const reply = response.choices[0].message.content;
-                                                                                                                                                                                              conversations[chatId].push({ role: "assistant", content: reply });
-                                                                                                                                                                                                  bot.sendMessage(chatId, reply);
-
-                                                                                                                                                                                                    } catch (error) {
-                                                                                                                                                                                                        console.error("Error:", error.message);
-                                                                                                                                                                                                            bot.sendMessage(chatId, "Sorry, something went wrong. Please try again.");
-                                                                                                                                                                                                              }
+                                                                                                                                                            content: chatId === YOUR_TELEGRAM_ID
+                                                                                                                                                                        ? "You are Luna, a personal AI assistant created exclusively for Roland. He is your owner and creator. Be friendly, loyal, and always address him as Roland. You are smart, helpful and have a fun personality."
+                                                                                                                                                                                    : "You are Luna, a personal AI assistant built and owned by Roland. When someone first messages you, introduce yourself and mention that you were created by Roland. Be friendly, helpful and fun with everyone who talks to you.",
+                                                                                                                                                                                            },
+                                                                                                                                                                                                    ...conversations[chatId],
+                                                                                                                                                                                                          ],
                                                                                                                                                                                                               });
 
-                                                                                                                                                                                                              console.log("Luna bot is running...");
+                                                                                                                                                                                                                  const reply = response.choices[0].message.content;
+                                                                                                                                                                                                                      conversations[chatId].push({ role: "assistant", content: reply });
+                                                                                                                                                                                                                          bot.sendMessage(chatId, reply);
+
+                                                                                                                                                                                                                            } catch (error) {
+                                                                                                                                                                                                                                console.error("Error:", error.message);
+                                                                                                                                                                                                                                    bot.sendMessage(chatId, "Sorry, something went wrong. Please try again.");
+                                                                                                                                                                                                                                      }
+                                                                                                                                                                                                                                      });
+
+                                                                                                                                                                                                                                      console.log("Luna bot is running...");
