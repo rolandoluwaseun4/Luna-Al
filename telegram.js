@@ -9,15 +9,13 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 const conversations = {};
 
 async function searchWeb(query) {
-  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-    const res = await fetch(url);
-      const data = await res.json();
-        if (data.AbstractText) return data.AbstractText;
-          if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-              return data.RelatedTopics.slice(0, 3).map(t => t.Text).filter(Boolean).join("\n\n");
-                }
-                  return null;
-                  }
+    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
+      const res = await fetch(url);
+        if (!res.ok) return null;
+          const data = await res.json();
+            return data.extract || null;
+            }
+}
 
                   bot.on("message", async (msg) => {
                     const chatId = msg.chat.id;
