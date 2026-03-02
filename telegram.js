@@ -1,3 +1,17 @@
+const mongoose = require('mongoose');
+
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('MongoDB connected ✅'))
+  .catch(err => console.error('MongoDB error:', err));
+
+const userSchema = new mongoose.Schema({
+  userId: String,
+  platform: String,
+  firstSeen: { type: Date, default: Date.now },
+  lastSeen: { type: Date, default: Date.now },
+  messageCount: { type: Number, default: 0 }
+});
+const User = mongoose.model('User', userSchema);
 require("dotenv").config();
 const Groq = require("groq-sdk");
 const fetch = require("node-fetch");
