@@ -18,7 +18,7 @@ function getSystemPrompt(userId) {
 const app = express();
 
 app.use(cors({
-  origin: "https://rolandolumaseun4.github.io"
+  origin: ["https://rolandolumaseun4.github.io", "https://rolandolumaseun4.github.io/Luna-AI"]
 }));
 
 app.use(express.json());
