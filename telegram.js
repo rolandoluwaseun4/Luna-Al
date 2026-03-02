@@ -36,7 +36,9 @@ async function generateImage(prompt) {
 }
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: 'https://rolandolumaseun4.github.io'
+}));
 app.use(express.json());
 
 app.post("/chat", async (req, res) => {
