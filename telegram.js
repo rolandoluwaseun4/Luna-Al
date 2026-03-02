@@ -64,16 +64,34 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-app.post("/generate-image", async (req, res) => {
+app.post('/generate-image', async (req, res) => {
   const { prompt } = req.body;
-  if (!prompt) return res.status(400).json({ error: "No prompt" });
   try {
-    const imageBuffer = await generateImage(prompt);
-    const base64 = imageBuffer.toString("base64");
-    res.json({ image: `data:image/jpeg;base64,${base64}` });
+    const response = await fetch(
+      'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.HF_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ inputs: prompt }),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('HF Error:', response.status, errText);
+      return res.status(500).json({ error: `HF failed: ${response.status} ${errText}` });
+    }
+
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    res.json({ image: `data:image/png;base64,${base64}` });
+
   } catch (err) {
-    console.error("Image error:", err.message);
-    res.status(500).json({ error: "Image generation failed" });
+    console.error('Image gen error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
