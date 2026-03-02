@@ -52,7 +52,7 @@ app.post("/chat", async (req, res) => {
       max_tokens: 1024,
       messages: [
         { role: "system", content: getSystemPrompt(userId) },
-        ...conversations[chatId],
+        ...conversations[key],
       ],
     });
     const reply = response.choices[0].message.content;
@@ -143,3 +143,4 @@ bot.on("message", async (msg) => {
 });
 
 console.log("Luna bot is running...");
+    
