@@ -70,6 +70,11 @@ app.post("/chat", async (req, res) => {
     conversations[key].push({ role: "assistant", content: reply });
 
     res.json({ reply });
+    User.findOneAndUpdate(
+  { userId: userId || req.ip, platform: 'web' },
+  { lastSeen: new Date(), $inc: { messageCount: 1 } },
+  { upsert: true, new: true }
+).catch(console.error);
 
   } catch (error) {
     console.error("AI Error:", error.message);
