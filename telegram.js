@@ -34,7 +34,7 @@ function getSystemPrompt(userId) {
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 const limiter = rateLimit({
   windowMs: 20 * 60 * 1000,
@@ -49,17 +49,23 @@ app.use('/generate-image', limiter);
    CHAT ENDPOINT
 ======================== */
 app.post("/chat", async (req, res) => {
-  const { message, userId } = req.body;
+  const { message, userId, image } = req.body;
 
-  if (!message) {
+  if (!message && !image) {
     return res.status(400).json({ error: "No message provided" });
   }
 
   const key = `web_${userId || "anon"}`;
-
   if (!conversations[key]) conversations[key] = [];
 
-  conversations[key].push({ role: "user", content: message });
+  const userContent = image
+    ? [
+        { type: "text", text: message || "What's in this image?" },
+        { type: "image_url", image_url: { url: image } }
+      ]
+    : message;
+
+  conversations[key].push({ role: "user", content: userContent });
 
   if (conversations[key].length > 20) {
     conversations[key] = conversations[key].slice(-20);
@@ -67,7 +73,7 @@ app.post("/chat", async (req, res) => {
 
   try {
     const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: image ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.3-70b-versatile",
       max_tokens: 1024,
       messages: [
         { role: "system", content: getSystemPrompt(userId) },
@@ -76,9 +82,7 @@ app.post("/chat", async (req, res) => {
     });
 
     const reply = response.choices[0].message.content;
-
     conversations[key].push({ role: "assistant", content: reply });
-
     res.json({ reply });
 
     User.findOneAndUpdate(
@@ -143,3 +147,4 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Luna web server running on port ${PORT}`);
 });
+    
