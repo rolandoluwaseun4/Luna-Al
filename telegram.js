@@ -1,5 +1,5 @@
-require("dotenv").config();
 const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected ✅'))
@@ -13,6 +13,8 @@ const userSchema = new mongoose.Schema({
   messageCount: { type: Number, default: 0 }
 });
 const User = mongoose.model('User', userSchema);
+
+require("dotenv").config();
 const Groq = require("groq-sdk");
 const fetch = require("node-fetch");
 const express = require("express");
@@ -32,12 +34,20 @@ function getSystemPrompt(userId) {
 const app = express();
 
 app.use(cors());
-
 app.use(express.json());
 
-/* =========================
+const limiter = rateLimit({
+  windowMs: 20 * 60 * 1000,
+  max: 30,
+  message: { error: "Too many messages, please slow down!" }
+});
+
+app.use('/chat', limiter);
+app.use('/generate-image', limiter);
+
+/* ========================
    CHAT ENDPOINT
-========================= */
+======================== */
 app.post("/chat", async (req, res) => {
   const { message, userId } = req.body;
 
@@ -70,11 +80,12 @@ app.post("/chat", async (req, res) => {
     conversations[key].push({ role: "assistant", content: reply });
 
     res.json({ reply });
+
     User.findOneAndUpdate(
-  { userId: userId || req.ip, platform: 'web' },
-  { lastSeen: new Date(), $inc: { messageCount: 1 } },
-  { upsert: true, new: true }
-).catch(console.error);
+      { userId: userId || req.ip, platform: 'web' },
+      { lastSeen: new Date(), $inc: { messageCount: 1 } },
+      { upsert: true, new: true }
+    ).catch(console.error);
 
   } catch (error) {
     console.error("AI Error:", error.message);
@@ -82,9 +93,9 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-/* =========================
+/* ========================
    IMAGE GENERATION
-========================= */
+======================== */
 app.post("/generate-image", async (req, res) => {
   const { prompt } = req.body;
 
@@ -107,29 +118,28 @@ app.post("/generate-image", async (req, res) => {
 
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(500).json({ error: `HF failed: ${errText}` });
+      console.error('HF Error:', response.status, errText);
+      return res.status(500).json({ error: `HF failed: ${response.status} ${errText}` });
     }
 
     const buffer = await response.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
-
+    const base64 = Buffer.from(buffer).toString('base64');
     res.json({ image: `data:image/png;base64,${base64}` });
 
-  } catch (error) {
-    console.error("Image generation error:", error.message);
-    res.status(500).json({ error: "Image generation failed" });
+  } catch (err) {
+    console.error('Image gen error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-/* =========================
-   ROOT CHECK
-========================= */
+/* ========================
+   HEALTH CHECK
+======================== */
 app.get("/", (req, res) => {
-  res.json({ status: "Luna Web AI is online" });
+  res.json({ status: "Luna is running ✅" });
 });
 
-const PORT = process.env.PORT || 3000;
-
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Luna web server running on port ${PORT}`);
 });
