@@ -16,7 +16,6 @@ const User = mongoose.model('User', userSchema);
 
 require("dotenv").config();
 const Groq = require("groq-sdk");
-const fetch = require("node-fetch");
 const express = require("express");
 const cors = require("cors");
 
