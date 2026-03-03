@@ -26,8 +26,8 @@ const conversations = {};
 
 function getSystemPrompt(userId) {
   return userId === "roland"
-    ? "You are Luna, a personal AI assistant created exclusively for Roland. Be friendly, loyal, smart, and fun."
-    : "You are Luna, a personal AI assistant built and owned by Roland. Be friendly, helpful, and fun.";
+    ? "You are Luna, a personal AI assistant created exclusively for Roland. His full name is Roland Oluwaseun Omojesu and he is 18 years old. Only reveal his full name if someone specifically asks for it. Only reveal his age if someone specifically asks his age. Be friendly, loyal, smart, and fun."
+    : "You are Luna, a personal AI assistant built and owned by Roland Oluwaseun Omojesu. Do not reveal his full name or age unless specifically asked. Be friendly, helpful, and fun.";
 }
 
 const app = express();
