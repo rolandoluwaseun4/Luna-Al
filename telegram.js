@@ -33,6 +33,8 @@ function getSystemPrompt(userId) {
 
 const app = express();
 
+app.set('trust proxy', 1); // Trust Railway's proxy for rate limiting
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
@@ -71,13 +73,21 @@ app.post("/chat", async (req, res) => {
     conversations[key] = conversations[key].slice(-20);
   }
 
+  // Convert image messages in history to plain text for text-only model
+  const safeHistory = conversations[key].map(m => ({
+    role: m.role,
+    content: typeof m.content === 'string'
+      ? m.content
+      : (m.content.find(c => c.type === 'text')?.text || 'shared an image')
+  }));
+
   try {
     const response = await groq.chat.completions.create({
       model: image ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.3-70b-versatile",
       max_tokens: 1024,
       messages: [
         { role: "system", content: getSystemPrompt(userId) },
-        ...conversations[key],
+        ...(image ? conversations[key] : safeHistory),
       ],
     });
 
@@ -147,4 +157,3 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Luna web server running on port ${PORT}`);
 });
-    
