@@ -2,7 +2,7 @@
   "name": "Luna AI",
   "short_name": "Luna",
   "description": "Your personal AI assistant",
-  "start_url": "/Luna-AI/",
+  "start_url": "https://rolandolumaseun4.github.io/Luna-AI/",
   "display": "standalone",
   "background_color": "#07020f",
   "theme_color": "#9b4dca",
