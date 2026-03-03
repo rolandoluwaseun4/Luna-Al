@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Luna AI</title>
+  <link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#9b4dca" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet" />
   <style>
     :root {
@@ -488,6 +491,10 @@
       busy = false;
       chatSend.disabled = !chatInput.value.trim() && !selectedImageBase64;
     }
+  }
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/Luna-AI/sw.js');
   }
 </script>
 </body>
