@@ -36,6 +36,15 @@ app.set('trust proxy', 1); // Trust Railway's proxy for rate limiting
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+// Secret key protection
+app.use((req, res, next) => {
+  if (req.path === '/') return next(); // allow health check
+  const token = req.headers['x-api-key'];
+  if (token !== process.env.API_SECRET) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+});
 
 const limiter = rateLimit({
   windowMs: 20 * 60 * 1000,
