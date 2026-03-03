@@ -332,7 +332,7 @@
     }catch(e){typingRow.style.display='none';addMsg('luna','Could not connect. Please try again.');}
     finally{busy=false;chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;}
   }
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('/Luna-AI/sw.js').catch(function(){});}
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){});}
 </script>
 </body>
 </html>
