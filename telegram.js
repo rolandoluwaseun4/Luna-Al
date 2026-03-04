@@ -124,8 +124,6 @@ passport.use(new GoogleStrategy({
   }
 }));
 
-app.use(passport.initialize());
-
 // NewsAPI for current news
 async function newsSearch(query) {
   try {
@@ -210,6 +208,7 @@ Be helpful, friendly and engaging to all users.`;
 
 const app = express();
 app.set('trust proxy', 1);
+app.use(passport.initialize());
 app.use(cors({
   origin: [
     'https://rolandolumaseun4.github.io',
