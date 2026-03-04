@@ -128,14 +128,7 @@ app.use((req, res, next) => {
 
 const limiter = rateLimit({
   windowMs: 20 * 60 * 1000, max: 30,
-  handler: (req, res) => {
-    const resetTime = new Date(req.rateLimit.resetTime);
-    const mins = Math.ceil((resetTime - Date.now()) / 60000);
-    res.status(429).json({
-      error: "limit_reached",
-      reply: `🌙 You've reached your message limit for now! Luna needs a little breather. Come back in ${mins} minute${mins !== 1 ? 's' : ''} and I'll be ready to chat again 💜`
-    });
-  }
+  message: { error: "Too many messages, please slow down!" }
 });
 app.use('/chat', limiter);
 app.use('/generate-image', limiter);
@@ -184,26 +177,47 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    const response = await groq.chat.completions.create({
-      model: image ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.3-70b-versatile",
-      max_tokens: 1024,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...(image ? convoDoc.messages.map(m => ({ role: m.role, content: m.content })) : safeHistory),
-      ],
-    });
+    // ── Fallback model chain ──────────────────────────────────
+    const textModels = [
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "gemma2-9b-it",
+      "mixtral-8x7b-32768"
+    ];
+    const imageModels = [
+      "meta-llama/llama-4-scout-17b-16e-instruct",
+      "meta-llama/llama-4-maverick-17b-128e-instruct"
+    ];
+    const models = image ? imageModels : textModels;
+    const msgPayload = image
+      ? convoDoc.messages.map(m => ({ role: m.role, content: m.content }))
+      : safeHistory;
+
+    let response = null;
+    let usedModel = null;
+    for (const model of models) {
+      try {
+        response = await groq.chat.completions.create({
+          model,
+          max_tokens: 1024,
+          messages: [{ role: "system", content: systemPrompt }, ...msgPayload],
+        });
+        usedModel = model;
+        break;
+      } catch (err) {
+        const isRateLimit = err?.status === 429 || err?.message?.includes('rate_limit');
+        console.warn(`Model ${model} failed (${err?.status || err?.message}). ${isRateLimit ? 'Trying next...' : 'Non-rate error.'}`);
+        if (!isRateLimit) throw err;
+      }
+    }
+    if (!response) throw new Error("All models rate limited. Please try again later.");
+    console.log(`✅ Reply from: ${usedModel}`);
 
     const reply = response.choices[0].message.content;
     convoDoc.messages.push({ role: 'assistant', content: reply, timestamp: new Date() });
     convoDoc.lastUpdated = new Date();
     await convoDoc.save();
-    // Warn user when they are 5 messages away from limit
-    const remaining = req.rateLimit ? req.rateLimit.remaining : null;
-    let warningReply = reply;
-    if (remaining !== null && remaining <= 5 && remaining > 0 && String(userId) !== '8369027860') {
-      warningReply = reply + `\n\n⚠️ _Heads up — you have ${remaining} message${remaining !== 1 ? 's' : ''} left before your limit resets._`;
-    }
-    res.json({ reply: warningReply });
+    res.json({ reply });
 
     User.findOneAndUpdate(
       { userId: uid, platform: 'web' },
@@ -286,4 +300,4 @@ app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
-  
+      
