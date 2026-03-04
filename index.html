@@ -1187,9 +1187,9 @@
   let currentUser=JSON.parse(localStorage.getItem('luna-user')||'null');
 
   function getAuthHeaders(){
-    return authToken
-      ? {'Content-Type':'application/json','Authorization':'Bearer '+authToken}
-      : {'Content-Type':'application/json'};
+    const headers = {'Content-Type':'application/json'};
+    if(authToken) headers['Authorization'] = 'Bearer '+authToken;
+    return headers;
   }
   function getUserId(){return currentUser?.id||'guest_unknown';}
 
@@ -1580,7 +1580,7 @@
 
   async function loadProfile() {
     try {
-      const res = await fetch(BACKEND_URL + '/profile/' + getUserId(), { headers: { 'x-api-key': API_SECRET } });
+      const res = await fetch(BACKEND_URL + '/profile/' + getUserId(), { headers: getAuthHeaders() });
       const p = await res.json();
       if (document.getElementById('profile-name')) {
         document.getElementById('profile-name').value = p.name || '';
@@ -1613,7 +1613,7 @@
     btn.textContent = 'Saving...';btn.disabled = true;
     try {
       const res = await fetch(BACKEND_URL + '/profile/' + getUserId(), {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_SECRET },
+        method: 'POST', headers: getAuthHeaders(),
         body: JSON.stringify(payload)
       });
       if (res.ok) { btn.textContent = '✓ Saved!'; setTimeout(() => { btn.textContent = 'Save Preferences'; btn.disabled = false; }, 2000); }
