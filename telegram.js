@@ -180,37 +180,57 @@ app.post("/chat", async (req, res) => {
     // ── Fallback model chain ──────────────────────────────────
     const textModels = [
       "llama-3.3-70b-versatile",
-      "llama-3.1-8b-instant",
-      "gemma2-9b-it",
-      "mixtral-8x7b-32768"
+      "llama-3.1-70b-versatile",
+      "llama3-70b-8192",
+      "llama-3.1-8b-instant"
     ];
     const imageModels = [
       "meta-llama/llama-4-scout-17b-16e-instruct",
       "meta-llama/llama-4-maverick-17b-128e-instruct"
     ];
     const models = image ? imageModels : textModels;
-    const msgPayload = image
+
+    // For 413 (too large), trim history and retry same model with fewer messages
+    let msgPayload = image
       ? convoDoc.messages.map(m => ({ role: m.role, content: m.content }))
       : safeHistory;
 
     let response = null;
     let usedModel = null;
     for (const model of models) {
-      try {
-        response = await groq.chat.completions.create({
-          model,
-          max_tokens: 1024,
-          messages: [{ role: "system", content: systemPrompt }, ...msgPayload],
-        });
-        usedModel = model;
-        break;
-      } catch (err) {
-        const isRateLimit = err?.status === 429 || err?.message?.includes('rate_limit');
-        console.warn(`Model ${model} failed (${err?.status || err?.message}). ${isRateLimit ? 'Trying next...' : 'Non-rate error.'}`);
-        if (!isRateLimit) throw err;
+      let currentPayload = [...msgPayload];
+      let attempts = 0;
+      while (attempts < 3) {
+        try {
+          response = await groq.chat.completions.create({
+            model,
+            max_tokens: 1024,
+            messages: [{ role: "system", content: systemPrompt }, ...currentPayload],
+          });
+          usedModel = model;
+          break;
+        } catch (err) {
+          const status = err?.status || err?.error?.status;
+          const msg = err?.message || '';
+          if (status === 413 || msg.includes('too large') || msg.includes('context')) {
+            // Trim oldest messages and retry same model
+            currentPayload = currentPayload.slice(Math.ceil(currentPayload.length / 2));
+            attempts++;
+            console.warn(`Model ${model} 413 - trimmed history to ${currentPayload.length} msgs, retrying...`);
+          } else if (status === 429 || msg.includes('rate_limit')) {
+            console.warn(`Model ${model} rate limited (429). Trying next...`);
+            break; // try next model
+          } else if (status === 400 && msg.includes('decommissioned')) {
+            console.warn(`Model ${model} decommissioned. Trying next...`);
+            break; // try next model
+          } else {
+            throw err; // real error, stop
+          }
+        }
       }
+      if (usedModel) break;
     }
-    if (!response) throw new Error("All models rate limited. Please try again later.");
+    if (!response) throw new Error("All models unavailable. Please try again shortly.");
     console.log(`✅ Reply from: ${usedModel}`);
 
     const reply = response.choices[0].message.content;
@@ -300,4 +320,4 @@ app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
-      
+  
