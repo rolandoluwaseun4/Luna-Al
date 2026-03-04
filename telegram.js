@@ -204,6 +204,52 @@ app.post("/chat", async (req, res) => {
   }
 });
 
+// ── NEW: Get chat history grouped by date ─────────────────────────────────────
+app.get("/history/:userId", async (req, res) => {
+  const uid = String(req.params.userId);
+  try {
+    const convoDoc = await Conversation.findOne({ userId: uid });
+    if (!convoDoc || !convoDoc.messages.length) return res.json({ groups: [] });
+
+    // Group messages by date
+    const groups = {};
+    convoDoc.messages.forEach(m => {
+      const text = typeof m.content === 'string' ? m.content
+        : Array.isArray(m.content) ? (m.content.find(c => c.type === 'text')?.text || '[image]')
+        : String(m.content);
+      const date = new Date(m.timestamp);
+      const key = date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      if (!groups[key]) groups[key] = [];
+      groups[key].push({ role: m.role, text, timestamp: m.timestamp });
+    });
+
+    // Convert to sorted array (newest first)
+    const result = Object.entries(groups)
+      .map(([date, messages]) => ({ date, messages }))
+      .reverse();
+
+    res.json({ groups: result });
+  } catch (err) {
+    console.error('History error:', err.message);
+    res.status(500).json({ error: 'Could not load history' });
+  }
+});
+
+// ── NEW: Clear chat history ────────────────────────────────────────────────────
+app.delete("/history/:userId", async (req, res) => {
+  const uid = String(req.params.userId);
+  try {
+    await Conversation.findOneAndUpdate(
+      { userId: uid },
+      { messages: [], lastUpdated: new Date() }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Clear history error:', err.message);
+    res.status(500).json({ error: 'Could not clear history' });
+  }
+});
+
 app.post("/generate-image", async (req, res) => {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
@@ -227,4 +273,4 @@ app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
-                     
+  
