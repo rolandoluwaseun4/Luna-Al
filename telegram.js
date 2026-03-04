@@ -124,6 +124,8 @@ passport.use(new GoogleStrategy({
   }
 }));
 
+app.use(passport.initialize());
+
 // NewsAPI for current news
 async function newsSearch(query) {
   try {
@@ -208,7 +210,6 @@ Be helpful, friendly and engaging to all users.`;
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(passport.initialize());
 app.use(cors({
   origin: [
     'https://rolandolumaseun4.github.io',
@@ -221,7 +222,7 @@ app.use(cors({
 app.use(express.json({ limit: '2mb' }));
 
 app.use((req, res, next) => {
-  if (req.path === '/') return next();
+  if (req.path === '/' || req.path.startsWith('/auth/')) return next();
   const token = req.headers['x-api-key'];
   if (token !== process.env.API_SECRET) return res.status(401).json({ error: "Unauthorized" });
   next();
