@@ -30,55 +30,56 @@ const Conversation = mongoose.model('Conversation', conversationSchema);
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const HF_API_KEY = process.env.HF_API_KEY;
+const NEWS_API_KEY = process.env.NEWS_API_KEY;
 
-// Free DuckDuckGo search - no API key needed
-async function webSearch(query) {
+// NewsAPI for current news
+async function newsSearch(query) {
   try {
-    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Luna-AI/1.0' }
-    });
+    const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&sortBy=publishedAt&pageSize=3&apiKey=${NEWS_API_KEY}`;
+    const res = await fetch(url);
     if (!res.ok) return null;
     const data = await res.json();
-
-    const results = [];
-
-    // Abstract (main answer)
-    if (data.AbstractText) {
-      results.push(`${data.AbstractText}`);
-    }
-
-    // Answer (quick fact)
-    if (data.Answer) {
-      results.push(`Answer: ${data.Answer}`);
-    }
-
-    // Related topics
-    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-      const topics = data.RelatedTopics
-        .filter(t => t.Text)
-        .slice(0, 3)
-        .map(t => `- ${t.Text}`);
-      if (topics.length) results.push(topics.join('\n'));
-    }
-
-    return results.length ? results.join('\n') : null;
+    if (!data.articles || !data.articles.length) return null;
+    return data.articles
+      .filter(a => a.title && a.description)
+      .slice(0, 3)
+      .map(a => `- ${a.title}: ${a.description}`)
+      .join('\n');
   } catch (e) {
-    console.error('Search error:', e.message);
+    console.error('NewsAPI error:', e.message);
     return null;
   }
 }
 
-function needsSearch(message) {
-  const triggers = [
-    'what is', 'who is', 'who are', 'latest', 'current', 'today',
-    'news', 'price of', 'how much', 'when did', 'what happened',
-    'weather', 'define', 'tell me about', 'search', 'look up',
-    'recent', '2024', '2025', '2026', 'right now', 'meaning of',
-    'how many', 'where is', 'capital of', 'population of'
-  ];
-  const msg = message.toLowerCase();
-  return triggers.some(t => msg.includes(t));
+// DuckDuckGo for general facts
+async function factSearch(query) {
+  try {
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'Luna-AI/1.0' } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const results = [];
+    if (data.AbstractText) results.push(data.AbstractText);
+    if (data.Answer) results.push(`Answer: ${data.Answer}`);
+    if (data.RelatedTopics?.length) {
+      const topics = data.RelatedTopics.filter(t => t.Text).slice(0, 2).map(t => `- ${t.Text}`);
+      if (topics.length) results.push(topics.join('\n'));
+    }
+    return results.length ? results.join('\n') : null;
+  } catch (e) {
+    console.error('DDG error:', e.message);
+    return null;
+  }
+}
+
+function isNewsQuery(message) {
+  const newsTriggers = ['news', 'latest', 'recent', 'today', 'happened', 'current events', 'update on', 'what happened', 'breaking'];
+  return newsTriggers.some(t => message.toLowerCase().includes(t));
+}
+
+function isFactQuery(message) {
+  const factTriggers = ['what is', 'who is', 'who are', 'define', 'meaning of', 'capital of', 'population of', 'how many', 'where is', 'tell me about', 'when did', 'how much', 'price of'];
+  return factTriggers.some(t => message.toLowerCase().includes(t));
 }
 
 function getSystemPrompt(userId) {
@@ -93,8 +94,8 @@ You have a playful but smart personality — you are like a best friend who also
 Keep responses conversational and natural — not too long, not too short.
 Use emojis occasionally to feel more human but never overdo it.
 Remember context from the conversation and refer back to it naturally.
-When you don't know something or it might be outdated, say so honestly.
-You can help with anything — writing, coding, advice, ideas, analysis, creative work and more.`;
+You can help with anything — writing, coding, advice, ideas, analysis, creative work and more.
+When you are given web search results, use them to answer accurately and mention they are current results.`;
 
   if (String(userId) === "8369027860") {
     return `${base}
@@ -162,11 +163,17 @@ app.post("/chat", async (req, res) => {
   try {
     let systemPrompt = getSystemPrompt(userId);
 
-    // Web search for relevant questions
-    if (!image && message && needsSearch(message)) {
-      const searchResults = await webSearch(message);
-      if (searchResults) {
-        systemPrompt += `\n\nHere is relevant information from a web search:\n${searchResults}\nUse this to give an accurate answer but respond naturally — don't just list the results.`;
+    if (!image && message) {
+      if (isNewsQuery(message) && NEWS_API_KEY) {
+        const results = await newsSearch(message);
+        if (results) {
+          systemPrompt += `\n\nHere are current news results for the user's question:\n${results}\nUse these to give an up to date answer naturally.`;
+        }
+      } else if (isFactQuery(message)) {
+        const results = await factSearch(message);
+        if (results) {
+          systemPrompt += `\n\nHere is relevant information from a web search:\n${results}\nUse this to answer accurately and naturally.`;
+        }
       }
     }
 
@@ -220,4 +227,4 @@ app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
-  
+                     
