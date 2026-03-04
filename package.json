@@ -1,13 +1,17 @@
 {
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-rate-limit": "^7.0.0",
     "groq-sdk": "^0.37.0",
+    "jsonwebtoken": "^9.0.0",
     "mongoose": "^8.0.0",
     "node-fetch": "^3.3.2",
-    "node-telegram-bot-api": "^0.67.0"
+    "node-telegram-bot-api": "^0.67.0",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0"
   },
   "scripts": {
     "start": "node telegram.js"
