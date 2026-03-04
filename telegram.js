@@ -17,16 +17,19 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-const conversationSchema = new mongoose.Schema({
-  userId: { type: String, required: true, unique: true },
+const threadSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  threadId: { type: String, required: true, unique: true },
+  title: { type: String, default: 'New Chat' },
   messages: [{
     role: { type: String, enum: ['user', 'assistant'] },
     content: { type: mongoose.Schema.Types.Mixed },
     timestamp: { type: Date, default: Date.now }
   }],
+  createdAt: { type: Date, default: Date.now },
   lastUpdated: { type: Date, default: Date.now }
 });
-const Conversation = mongoose.model('Conversation', conversationSchema);
+const Thread = mongoose.model('Thread', threadSchema);
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const HF_API_KEY = process.env.HF_API_KEY;
@@ -133,14 +136,35 @@ const limiter = rateLimit({
 app.use('/chat', limiter);
 app.use('/generate-image', limiter);
 
+// Generate thread title from first user message
+function generateTitle(message) {
+  if (!message) return 'New Chat';
+  const clean = message.replace(/[^\w\s]/g, '').trim();
+  const words = clean.split(/\s+/).slice(0, 7).join(' ');
+  return words.length > 3 ? words : message.substring(0, 40);
+}
+
 app.post("/chat", async (req, res) => {
-  const { message, userId, image } = req.body;
+  const { message, userId, image, threadId } = req.body;
   if (!message && !image) return res.status(400).json({ error: "No message provided" });
 
   const uid = String(userId || 'guest_unknown');
+  const tid = String(threadId || uid + '_default');
 
-  let convoDoc = await Conversation.findOne({ userId: uid });
-  if (!convoDoc) convoDoc = new Conversation({ userId: uid, messages: [] });
+  let thread = await Thread.findOne({ threadId: tid });
+  if (!thread) {
+    thread = new Thread({
+      userId: uid,
+      threadId: tid,
+      title: generateTitle(message),
+      messages: []
+    });
+  }
+
+  // Auto-set title from first user message
+  if (thread.messages.filter(m => m.role === 'user').length === 0 && message) {
+    thread.title = generateTitle(message);
+  }
 
   const userMessage = {
     role: 'user',
@@ -150,10 +174,10 @@ app.post("/chat", async (req, res) => {
     timestamp: new Date()
   };
 
-  convoDoc.messages.push(userMessage);
-  if (convoDoc.messages.length > 50) convoDoc.messages = convoDoc.messages.slice(-50);
+  thread.messages.push(userMessage);
+  if (thread.messages.length > 50) thread.messages = thread.messages.slice(-50);
 
-  const safeHistory = convoDoc.messages.map(m => ({
+  const safeHistory = thread.messages.map(m => ({
     role: m.role,
     content: typeof m.content === 'string' ? m.content
       : Array.isArray(m.content) ? (m.content.find(c => c.type === 'text')?.text || 'shared an image')
@@ -192,7 +216,7 @@ app.post("/chat", async (req, res) => {
 
     // For 413 (too large), trim history and retry same model with fewer messages
     let msgPayload = image
-      ? convoDoc.messages.map(m => ({ role: m.role, content: m.content }))
+      ? thread.messages.map(m => ({ role: m.role, content: m.content }))
       : safeHistory;
 
     let response = null;
@@ -234,10 +258,10 @@ app.post("/chat", async (req, res) => {
     console.log(`✅ Reply from: ${usedModel}`);
 
     const reply = response.choices[0].message.content;
-    convoDoc.messages.push({ role: 'assistant', content: reply, timestamp: new Date() });
-    convoDoc.lastUpdated = new Date();
-    await convoDoc.save();
-    res.json({ reply });
+    thread.messages.push({ role: 'assistant', content: reply, timestamp: new Date() });
+    thread.lastUpdated = new Date();
+    await thread.save();
+    res.json({ reply, threadId: thread.threadId, title: thread.title });
 
     User.findOneAndUpdate(
       { userId: uid, platform: 'web' },
@@ -251,48 +275,86 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// ── NEW: Get chat history grouped by date ─────────────────────────────────────
-app.get("/history/:userId", async (req, res) => {
+// ── List all threads for a user ───────────────────────────────────────────────
+app.get("/threads/:userId", async (req, res) => {
   const uid = String(req.params.userId);
   try {
-    const convoDoc = await Conversation.findOne({ userId: uid });
-    if (!convoDoc || !convoDoc.messages.length) return res.json({ groups: [] });
-
-    // Group messages by date
-    const groups = {};
-    convoDoc.messages.forEach(m => {
-      const text = typeof m.content === 'string' ? m.content
-        : Array.isArray(m.content) ? (m.content.find(c => c.type === 'text')?.text || '[image]')
-        : String(m.content);
-      const date = new Date(m.timestamp);
-      const key = date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      if (!groups[key]) groups[key] = [];
-      groups[key].push({ role: m.role, text, timestamp: m.timestamp });
+    const threads = await Thread.find({ userId: uid })
+      .sort({ lastUpdated: -1 })
+      .select('threadId title lastUpdated createdAt messages');
+    
+    const result = threads.map(t => {
+      const lastMsg = t.messages[t.messages.length - 1];
+      const lastText = lastMsg
+        ? (typeof lastMsg.content === 'string' ? lastMsg.content
+          : Array.isArray(lastMsg.content) ? (lastMsg.content.find(c => c.type === 'text')?.text || '[image]')
+          : String(lastMsg.content))
+        : '';
+      return {
+        threadId: t.threadId,
+        title: t.title,
+        lastUpdated: t.lastUpdated,
+        preview: lastText.substring(0, 80),
+        messageCount: t.messages.length
+      };
     });
-
-    // Convert to sorted array (newest first)
-    const result = Object.entries(groups)
-      .map(([date, messages]) => ({ date, messages }))
-      .reverse();
-
-    res.json({ groups: result });
+    res.json({ threads: result });
   } catch (err) {
-    console.error('History error:', err.message);
-    res.status(500).json({ error: 'Could not load history' });
+    console.error('Threads error:', err.message);
+    res.status(500).json({ error: 'Could not load threads' });
   }
 });
 
-// ── NEW: Clear chat history ────────────────────────────────────────────────────
+// ── Get messages for a specific thread ────────────────────────────────────────
+app.get("/threads/:userId/:threadId", async (req, res) => {
+  const tid = String(req.params.threadId);
+  try {
+    const thread = await Thread.findOne({ threadId: tid });
+    if (!thread) return res.json({ messages: [], title: 'Chat' });
+    const messages = thread.messages.map(m => ({
+      role: m.role,
+      text: typeof m.content === 'string' ? m.content
+        : Array.isArray(m.content) ? (m.content.find(c => c.type === 'text')?.text || '[image]')
+        : String(m.content),
+      timestamp: m.timestamp
+    }));
+    res.json({ messages, title: thread.title });
+  } catch (err) {
+    console.error('Thread detail error:', err.message);
+    res.status(500).json({ error: 'Could not load thread' });
+  }
+});
+
+// ── Create a new thread ────────────────────────────────────────────────────────
+app.post("/threads/:userId", async (req, res) => {
+  const uid = String(req.params.userId);
+  const threadId = uid + '_' + Date.now();
+  try {
+    const thread = new Thread({ userId: uid, threadId, title: 'New Chat', messages: [] });
+    await thread.save();
+    res.json({ threadId, title: 'New Chat' });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not create thread' });
+  }
+});
+
+// ── Delete a thread ────────────────────────────────────────────────────────────
+app.delete("/threads/:userId/:threadId", async (req, res) => {
+  try {
+    await Thread.findOneAndDelete({ threadId: String(req.params.threadId) });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not delete thread' });
+  }
+});
+
+// ── Legacy clear history (keep for compatibility) ─────────────────────────────
 app.delete("/history/:userId", async (req, res) => {
   const uid = String(req.params.userId);
   try {
-    await Conversation.findOneAndUpdate(
-      { userId: uid },
-      { messages: [], lastUpdated: new Date() }
-    );
+    await Thread.deleteMany({ userId: uid });
     res.json({ success: true });
   } catch (err) {
-    console.error('Clear history error:', err.message);
     res.status(500).json({ error: 'Could not clear history' });
   }
 });
