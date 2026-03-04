@@ -4,11 +4,29 @@ const rateLimit = require('express-rate-limit');
 const Groq = require("groq-sdk");
 const express = require("express");
 const cors = require("cors");
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB error:', err));
 
+const accountSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true, lowercase: true, trim: true, minlength: 3, maxlength: 30 },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  passwordHash: { type: String, required: true },
+  displayName: { type: String, default: '' },
+  role: { type: String, enum: ['owner', 'user'], default: 'user' },
+  googleId: { type: String, default: null },
+  createdAt: { type: Date, default: Date.now },
+  lastSeen: { type: Date, default: Date.now },
+  messageCount: { type: Number, default: 0 }
+});
+const Account = mongoose.model('Account', accountSchema);
+
+// Legacy user tracking
 const userSchema = new mongoose.Schema({
   userId: String, platform: String,
   firstSeen: { type: Date, default: Date.now },
@@ -34,6 +52,79 @@ const Thread = mongoose.model('Thread', threadSchema);
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const HF_API_KEY = process.env.HF_API_KEY;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
+
+
+// ── JWT helpers ───────────────────────────────────────────────
+const JWT_SECRET = process.env.JWT_SECRET || 'luna_jwt_fallback_secret_change_me';
+
+function signToken(payload) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
+}
+
+function verifyToken(token) {
+  try { return jwt.verify(token, JWT_SECRET); }
+  catch { return null; }
+}
+
+// Middleware: verify JWT token on protected routes
+function requireAuth(req, res, next) {
+  const auth = req.headers['authorization'];
+  const token = auth && auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  const decoded = verifyToken(token);
+  if (!decoded) return res.status(401).json({ error: 'Invalid or expired token' });
+  req.user = decoded;
+  next();
+}
+
+// Auth rate limiter - strict to prevent brute force
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 10,
+  message: { error: 'Too many attempts, try again in 15 minutes' }
+});
+
+
+// ── Google OAuth Strategy ─────────────────────────────────────
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: process.env.BACKEND_URL + '/auth/google/callback'
+}, async (accessToken, refreshToken, profile, done) => {
+  try {
+    const email = profile.emails?.[0]?.value?.toLowerCase();
+    const displayName = profile.displayName || profile.emails?.[0]?.value?.split('@')[0];
+    const googleId = profile.id;
+    if (!email) return done(new Error('No email from Google'), null);
+
+    // Find existing account by email or googleId
+    let account = await Account.findOne({ $or: [{ email }, { googleId }] });
+    if (!account) {
+      // Create new account
+      const username = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 30) + '_' + Math.random().toString(36).substring(2, 6);
+      const isOwner = email === (process.env.OWNER_EMAIL || '').toLowerCase();
+      account = new Account({
+        username,
+        email,
+        displayName,
+        googleId,
+        passwordHash: await bcrypt.hash(Math.random().toString(36), 10), // dummy hash
+        role: isOwner ? 'owner' : 'user'
+      });
+      await account.save();
+    } else {
+      // Update display name and googleId if missing
+      if (!account.googleId) account.googleId = googleId;
+      if (!account.displayName) account.displayName = displayName;
+      account.lastSeen = new Date();
+      await account.save();
+    }
+    return done(null, account);
+  } catch (err) {
+    return done(err, null);
+  }
+}));
+
+app.use(passport.initialize());
 
 // NewsAPI for current news
 async function newsSearch(query) {
@@ -85,7 +176,7 @@ function isFactQuery(message) {
   return factTriggers.some(t => message.toLowerCase().includes(t));
 }
 
-function getSystemPrompt(userId) {
+function getSystemPrompt(userId, isOwner = false) {
   const now = new Date();
   const hour = now.getHours();
   const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
@@ -100,7 +191,7 @@ Remember context from the conversation and refer back to it naturally.
 You can help with anything — writing, coding, advice, ideas, analysis, creative work and more.
 When you are given web search results, use them to answer accurately and mention they are current results.`;
 
-  if (String(userId) === "8369027860") {
+  if (isOwner) {
     return `${base}
 
 You were created exclusively for Roland Oluwaseun Omojesu, who is 18 years old.
@@ -119,8 +210,16 @@ Be helpful, friendly and engaging to all users.`;
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(cors({
+  origin: [
+    'https://rolandolumaseun4.github.io',
+    'http://localhost:3000',
+    'http://127.0.0.1:5500'
+  ],
+  methods: ['GET','POST','DELETE'],
+  allowedHeaders: ['Content-Type','x-api-key']
+}));
+app.use(express.json({ limit: '2mb' }));
 
 app.use((req, res, next) => {
   if (req.path === '/') return next();
@@ -135,20 +234,33 @@ const limiter = rateLimit({
 });
 app.use('/chat', limiter);
 app.use('/generate-image', limiter);
+const threadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, max: 60,
+  message: { error: 'Too many requests, slow down!' }
+});
+app.use('/threads', threadLimiter);
 
 // Generate thread title from first user message
 function generateTitle(message) {
   if (!message) return 'New Chat';
-  const clean = message.replace(/[^\w\s]/g, '').trim();
-  const words = clean.split(/\s+/).slice(0, 7).join(' ');
-  return words.length > 3 ? words : message.substring(0, 40);
+  const clean = message.replace(/[<>&"'`]/g, '').replace(/\s+/g, ' ').trim();
+  const words = clean.split(' ').slice(0, 7).join(' ');
+  return (words.length > 3 ? words : clean.substring(0, 40)) || 'New Chat';
 }
 
-app.post("/chat", async (req, res) => {
+app.post("/chat", requireAuth, async (req, res) => {
   const { message, userId, image, threadId } = req.body;
   if (!message && !image) return res.status(400).json({ error: "No message provided" });
 
-  const uid = String(userId || 'guest_unknown');
+  // Input validation
+  if (message && typeof message !== 'string') return res.status(400).json({ error: "Invalid message" });
+  if (message && message.length > 4000) return res.status(400).json({ error: "Message too long (max 4000 chars)" });
+  if (image && typeof image !== 'string') return res.status(400).json({ error: "Invalid image" });
+  if (image && image.length > 1500000) return res.status(400).json({ error: "Image too large" });
+
+  // ✅ userId always comes from verified JWT, never from client body
+  const uid = String(req.user.id);
+  const isOwner = req.user.role === 'owner';
   const tid = String(threadId || uid + '_default');
 
   let thread = await Thread.findOne({ threadId: tid });
@@ -185,7 +297,7 @@ app.post("/chat", async (req, res) => {
   }));
 
   try {
-    let systemPrompt = getSystemPrompt(userId);
+    let systemPrompt = getSystemPrompt(uid, isOwner);
 
     if (!image && message) {
       if (isNewsQuery(message) && NEWS_API_KEY) {
@@ -255,7 +367,7 @@ app.post("/chat", async (req, res) => {
       if (usedModel) break;
     }
     if (!response) throw new Error("All models unavailable. Please try again shortly.");
-    console.log(`✅ Reply from: ${usedModel}`);
+    // model used: [redacted from logs]
 
     const reply = response.choices[0].message.content;
     thread.messages.push({ role: 'assistant', content: reply, timestamp: new Date() });
@@ -276,8 +388,8 @@ app.post("/chat", async (req, res) => {
 });
 
 // ── List all threads for a user ───────────────────────────────────────────────
-app.get("/threads/:userId", async (req, res) => {
-  const uid = String(req.params.userId);
+app.get("/threads/:userId", requireAuth, async (req, res) => {
+  const uid = String(req.params.userId).replace(/[^a-zA-Z0-9_\-]/g, '').substring(0, 64);
   try {
     const threads = await Thread.find({ userId: uid })
       .sort({ lastUpdated: -1 })
@@ -306,8 +418,8 @@ app.get("/threads/:userId", async (req, res) => {
 });
 
 // ── Get messages for a specific thread ────────────────────────────────────────
-app.get("/threads/:userId/:threadId", async (req, res) => {
-  const tid = String(req.params.threadId);
+app.get("/threads/:userId/:threadId", requireAuth, async (req, res) => {
+  const tid = String(req.params.threadId).replace(/[^a-zA-Z0-9_\-]/g, '').substring(0, 128);
   try {
     const thread = await Thread.findOne({ threadId: tid });
     if (!thread) return res.json({ messages: [], title: 'Chat' });
@@ -326,10 +438,17 @@ app.get("/threads/:userId/:threadId", async (req, res) => {
 });
 
 // ── Create a new thread ────────────────────────────────────────────────────────
-app.post("/threads/:userId", async (req, res) => {
-  const uid = String(req.params.userId);
+app.post("/threads/:userId", requireAuth, async (req, res) => {
+  const uid = String(req.params.userId).replace(/[^a-zA-Z0-9_\-]/g, '').substring(0, 64);
   const threadId = uid + '_' + Date.now();
   try {
+    // Max 100 threads per user
+    const count = await Thread.countDocuments({ userId: uid });
+    if (count >= 100) {
+      // Delete oldest thread to make room
+      const oldest = await Thread.findOne({ userId: uid }).sort({ lastUpdated: 1 });
+      if (oldest) await oldest.deleteOne();
+    }
     const thread = new Thread({ userId: uid, threadId, title: 'New Chat', messages: [] });
     await thread.save();
     res.json({ threadId, title: 'New Chat' });
@@ -339,9 +458,10 @@ app.post("/threads/:userId", async (req, res) => {
 });
 
 // ── Delete a thread ────────────────────────────────────────────────────────────
-app.delete("/threads/:userId/:threadId", async (req, res) => {
+app.delete("/threads/:userId/:threadId", requireAuth, async (req, res) => {
   try {
-    await Thread.findOneAndDelete({ threadId: String(req.params.threadId) });
+    const tid = String(req.params.threadId).replace(/[^a-zA-Z0-9_\-]/g, '').substring(0, 128);
+    await Thread.findOneAndDelete({ threadId: tid });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Could not delete thread' });
@@ -349,7 +469,7 @@ app.delete("/threads/:userId/:threadId", async (req, res) => {
 });
 
 // ── Legacy clear history (keep for compatibility) ─────────────────────────────
-app.delete("/history/:userId", async (req, res) => {
+app.delete("/history/:userId", requireAuth, async (req, res) => {
   const uid = String(req.params.userId);
   try {
     await Thread.deleteMany({ userId: uid });
@@ -359,7 +479,7 @@ app.delete("/history/:userId", async (req, res) => {
   }
 });
 
-app.post("/generate-image", async (req, res) => {
+app.post("/generate-image", requireAuth, async (req, res) => {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
   try {
@@ -378,8 +498,98 @@ app.post("/generate-image", async (req, res) => {
   }
 });
 
+
+
+// ── Google OAuth routes ───────────────────────────────────────
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile', 'email'], session: false })
+);
+
+app.get('/auth/google/callback',
+  passport.authenticate('google', { session: false, failureRedirect: process.env.FRONTEND_URL + '?auth_error=google_failed' }),
+  (req, res) => {
+    const account = req.user;
+    const token = signToken({ id: account._id, username: account.username, role: account.role });
+    const user = encodeURIComponent(JSON.stringify({ id: account._id, username: account.username, displayName: account.displayName, role: account.role }));
+    // Redirect back to frontend with token
+    res.redirect(process.env.FRONTEND_URL + '?token=' + token + '&user=' + user);
+  }
+);
+
+// ── Register ──────────────────────────────────────────────────
+app.post('/auth/register', authLimiter, async (req, res) => {
+  const { username, email, password, displayName } = req.body;
+  if (!username || !email || !password)
+    return res.status(400).json({ error: 'Username, email and password required' });
+  if (username.length < 3 || username.length > 30)
+    return res.status(400).json({ error: 'Username must be 3-30 characters' });
+  if (!/^[a-zA-Z0-9_]+$/.test(username))
+    return res.status(400).json({ error: 'Username can only contain letters, numbers and underscores' });
+  if (password.length < 6)
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (!/\S+@\S+\.\S+/.test(email))
+    return res.status(400).json({ error: 'Invalid email address' });
+  try {
+    const exists = await Account.findOne({ $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }] });
+    if (exists) return res.status(409).json({ error: exists.email === email.toLowerCase() ? 'Email already registered' : 'Username already taken' });
+    const passwordHash = await bcrypt.hash(password, 12);
+    // Check if this is the owner account
+    const isOwner = email.toLowerCase() === (process.env.OWNER_EMAIL || '').toLowerCase();
+    const account = new Account({
+      username: username.toLowerCase(),
+      email: email.toLowerCase(),
+      passwordHash,
+      displayName: displayName || username,
+      role: isOwner ? 'owner' : 'user'
+    });
+    await account.save();
+    const token = signToken({ id: account._id, username: account.username, role: account.role });
+    res.status(201).json({ token, user: { id: account._id, username: account.username, displayName: account.displayName, role: account.role } });
+  } catch (err) {
+    console.error('Register error:', err.message);
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+// ── Login ─────────────────────────────────────────────────────
+app.post('/auth/login', authLimiter, async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  try {
+    const account = await Account.findOne({ email: email.toLowerCase() });
+    if (!account) return res.status(401).json({ error: 'Invalid email or password' });
+    const valid = await bcrypt.compare(password, account.passwordHash);
+    if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
+    account.lastSeen = new Date();
+    await account.save();
+    const token = signToken({ id: account._id, username: account.username, role: account.role });
+    res.json({ token, user: { id: account._id, username: account.username, displayName: account.displayName, role: account.role } });
+  } catch (err) {
+    console.error('Login error:', err.message);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// ── Get current user (verify token) ──────────────────────────
+app.get('/auth/me', requireAuth, async (req, res) => {
+  try {
+    const account = await Account.findById(req.user.id).select('-passwordHash');
+    if (!account) return res.status(404).json({ error: 'User not found' });
+    res.json({ user: { id: account._id, username: account.username, displayName: account.displayName, role: account.role } });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not fetch user' });
+  }
+});
+
+// ── Guest token (no account needed) ──────────────────────────
+app.post('/auth/guest', async (req, res) => {
+  const { guestId } = req.body;
+  const id = String(guestId || 'guest_' + Date.now()).replace(/[^a-zA-Z0-9_\-]/g,'').substring(0,64);
+  const token = signToken({ id, username: id, role: 'guest' });
+  res.json({ token, user: { id, username: id, role: 'guest' } });
+});
+
 app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
-  
