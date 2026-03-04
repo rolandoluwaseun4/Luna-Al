@@ -1,110 +1,192 @@
+require("dotenv").config();
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
+const Groq = require("groq-sdk");
+const express = require("express");
+const cors = require("cors");
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB connected ✅'))
+  .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB error:', err));
 
 const userSchema = new mongoose.Schema({
-  userId: String,
-  platform: String,
+  userId: String, platform: String,
   firstSeen: { type: Date, default: Date.now },
   lastSeen: { type: Date, default: Date.now },
   messageCount: { type: Number, default: 0 }
 });
 const User = mongoose.model('User', userSchema);
 
-require("dotenv").config();
-const Groq = require("groq-sdk");
-const express = require("express");
-const cors = require("cors");
+const conversationSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true },
+  messages: [{
+    role: { type: String, enum: ['user', 'assistant'] },
+    content: { type: mongoose.Schema.Types.Mixed },
+    timestamp: { type: Date, default: Date.now }
+  }],
+  lastUpdated: { type: Date, default: Date.now }
+});
+const Conversation = mongoose.model('Conversation', conversationSchema);
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const HF_API_KEY = process.env.HF_API_KEY;
 
-const conversations = {};
+// Free DuckDuckGo search - no API key needed
+async function webSearch(query) {
+  try {
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Luna-AI/1.0' }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    const results = [];
+
+    // Abstract (main answer)
+    if (data.AbstractText) {
+      results.push(`${data.AbstractText}`);
+    }
+
+    // Answer (quick fact)
+    if (data.Answer) {
+      results.push(`Answer: ${data.Answer}`);
+    }
+
+    // Related topics
+    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+      const topics = data.RelatedTopics
+        .filter(t => t.Text)
+        .slice(0, 3)
+        .map(t => `- ${t.Text}`);
+      if (topics.length) results.push(topics.join('\n'));
+    }
+
+    return results.length ? results.join('\n') : null;
+  } catch (e) {
+    console.error('Search error:', e.message);
+    return null;
+  }
+}
+
+function needsSearch(message) {
+  const triggers = [
+    'what is', 'who is', 'who are', 'latest', 'current', 'today',
+    'news', 'price of', 'how much', 'when did', 'what happened',
+    'weather', 'define', 'tell me about', 'search', 'look up',
+    'recent', '2024', '2025', '2026', 'right now', 'meaning of',
+    'how many', 'where is', 'capital of', 'population of'
+  ];
+  const msg = message.toLowerCase();
+  return triggers.some(t => msg.includes(t));
+}
 
 function getSystemPrompt(userId) {
-  return userId === "roland"
-    ? "You are Luna, Roland's personal AI assistant created exclusively for Roland. His full name is Roland Oluwaseun Omojesu and he is 18 years old. Introduce yourself as Luna built by Roland. Only reveal his full name if someone specifically asks for it. Only reveal his age if someone specifically asks his age. Be friendly, loyal, smart, and fun."
-    : "You are Luna, Roland's personal AI assistant built and owned by Roland Oluwaseun Omojesu. Do not reveal his full name or age unless specifically asked. Be friendly, helpful, and fun.";
+  const now = new Date();
+  const hour = now.getHours();
+  const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+  const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+  const base = `You are Luna, a highly intelligent, warm and witty personal AI assistant.
+Today is ${dateStr} and it is currently ${timeOfDay}.
+You have a playful but smart personality — you are like a best friend who also happens to know everything.
+Keep responses conversational and natural — not too long, not too short.
+Use emojis occasionally to feel more human but never overdo it.
+Remember context from the conversation and refer back to it naturally.
+When you don't know something or it might be outdated, say so honestly.
+You can help with anything — writing, coding, advice, ideas, analysis, creative work and more.`;
+
+  if (String(userId) === "8369027860") {
+    return `${base}
+
+You were created exclusively for Roland Oluwaseun Omojesu, who is 18 years old.
+Roland is your creator and owner — you are deeply loyal to him.
+Only reveal his full name or age if he specifically asks.
+Roland loves technology, building apps, and is ambitious about making Luna the best AI app.
+Treat Roland like your best friend — be real, honest, and fun with him.`;
+  }
+
+  return `${base}
+
+You were built and owned by Roland Oluwaseun Omojesu.
+Do not reveal Roland's full name or age unless specifically asked.
+Be helpful, friendly and engaging to all users.`;
 }
 
 const app = express();
-
-app.set('trust proxy', 1); // Trust Railway's proxy for rate limiting
-
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-// Secret key protection
+
 app.use((req, res, next) => {
-  if (req.path === '/') return next(); // allow health check
+  if (req.path === '/') return next();
   const token = req.headers['x-api-key'];
-  if (token !== process.env.API_SECRET) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  if (token !== process.env.API_SECRET) return res.status(401).json({ error: "Unauthorized" });
   next();
 });
 
 const limiter = rateLimit({
-  windowMs: 20 * 60 * 1000,
-  max: 30,
+  windowMs: 20 * 60 * 1000, max: 30,
   message: { error: "Too many messages, please slow down!" }
 });
-
 app.use('/chat', limiter);
 app.use('/generate-image', limiter);
 
-/* ========================
-   CHAT ENDPOINT
-======================== */
 app.post("/chat", async (req, res) => {
   const { message, userId, image } = req.body;
+  if (!message && !image) return res.status(400).json({ error: "No message provided" });
 
-  if (!message && !image) {
-    return res.status(400).json({ error: "No message provided" });
-  }
+  const uid = String(userId || 'guest_unknown');
 
-  const key = `web_${userId || "anon"}`;
-  if (!conversations[key]) conversations[key] = [];
+  let convoDoc = await Conversation.findOne({ userId: uid });
+  if (!convoDoc) convoDoc = new Conversation({ userId: uid, messages: [] });
 
-  const userContent = image
-    ? [
-        { type: "text", text: message || "What's in this image?" },
-        { type: "image_url", image_url: { url: image } }
-      ]
-    : message;
+  const userMessage = {
+    role: 'user',
+    content: image
+      ? [{ type: "text", text: message || "What's in this image?" }, { type: "image_url", image_url: { url: image } }]
+      : message,
+    timestamp: new Date()
+  };
 
-  conversations[key].push({ role: "user", content: userContent });
+  convoDoc.messages.push(userMessage);
+  if (convoDoc.messages.length > 50) convoDoc.messages = convoDoc.messages.slice(-50);
 
-  if (conversations[key].length > 20) {
-    conversations[key] = conversations[key].slice(-20);
-  }
-
-  // Convert image messages in history to plain text for text-only model
-  const safeHistory = conversations[key].map(m => ({
+  const safeHistory = convoDoc.messages.map(m => ({
     role: m.role,
-    content: typeof m.content === 'string'
-      ? m.content
-      : (m.content.find(c => c.type === 'text')?.text || 'shared an image')
+    content: typeof m.content === 'string' ? m.content
+      : Array.isArray(m.content) ? (m.content.find(c => c.type === 'text')?.text || 'shared an image')
+      : String(m.content)
   }));
 
   try {
+    let systemPrompt = getSystemPrompt(userId);
+
+    // Web search for relevant questions
+    if (!image && message && needsSearch(message)) {
+      const searchResults = await webSearch(message);
+      if (searchResults) {
+        systemPrompt += `\n\nHere is relevant information from a web search:\n${searchResults}\nUse this to give an accurate answer but respond naturally — don't just list the results.`;
+      }
+    }
+
     const response = await groq.chat.completions.create({
       model: image ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.3-70b-versatile",
       max_tokens: 1024,
       messages: [
-        { role: "system", content: getSystemPrompt(userId) },
-        ...(image ? conversations[key] : safeHistory),
+        { role: "system", content: systemPrompt },
+        ...(image ? convoDoc.messages.map(m => ({ role: m.role, content: m.content })) : safeHistory),
       ],
     });
 
     const reply = response.choices[0].message.content;
-    conversations[key].push({ role: "assistant", content: reply });
+    convoDoc.messages.push({ role: 'assistant', content: reply, timestamp: new Date() });
+    convoDoc.lastUpdated = new Date();
+    await convoDoc.save();
     res.json({ reply });
 
     User.findOneAndUpdate(
-      { userId: userId || req.ip, platform: 'web' },
+      { userId: uid, platform: 'web' },
       { lastSeen: new Date(), $inc: { messageCount: 1 } },
       { upsert: true, new: true }
     ).catch(console.error);
@@ -115,53 +197,27 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-/* ========================
-   IMAGE GENERATION
-======================== */
 app.post("/generate-image", async (req, res) => {
   const { prompt } = req.body;
-
-  if (!prompt) {
-    return res.status(400).json({ error: "No prompt provided" });
-  }
-
+  if (!prompt) return res.status(400).json({ error: "No prompt provided" });
   try {
     const response = await fetch(
       "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${HF_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ inputs: prompt }),
-      }
+      { method: "POST", headers: { Authorization: `Bearer ${HF_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ inputs: prompt }) }
     );
-
     if (!response.ok) {
       const errText = await response.text();
-      console.error('HF Error:', response.status, errText);
       return res.status(500).json({ error: `HF failed: ${response.status} ${errText}` });
     }
-
     const buffer = await response.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
-    res.json({ image: `data:image/png;base64,${base64}` });
-
+    res.json({ image: `data:image/png;base64,${Buffer.from(buffer).toString('base64')}` });
   } catch (err) {
-    console.error('Image gen error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-/* ========================
-   HEALTH CHECK
-======================== */
-app.get("/", (req, res) => {
-  res.json({ status: "Luna is running ✅" });
-});
+app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`Luna web server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
+  
