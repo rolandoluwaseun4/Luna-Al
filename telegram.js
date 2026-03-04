@@ -28,19 +28,6 @@ const conversationSchema = new mongoose.Schema({
 });
 const Conversation = mongoose.model('Conversation', conversationSchema);
 
-const profileSchema = new mongoose.Schema({
-  userId: { type: String, required: true, unique: true },
-  name: { type: String, default: '' },
-  birthday: { type: String, default: '' },
-  favoriteTopics: { type: [String], default: [] },
-  lunaNickname: { type: String, default: 'Luna' },
-  personality: { type: String, default: 'friendly', enum: ['friendly', 'professional', 'funny', 'serious'] },
-  preferences: { type: String, default: '' },
-  lastMood: { type: String, default: 'neutral' },
-  updatedAt: { type: Date, default: Date.now }
-});
-const Profile = mongoose.model('Profile', profileSchema);
-
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const HF_API_KEY = process.env.HF_API_KEY;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
@@ -95,61 +82,20 @@ function isFactQuery(message) {
   return factTriggers.some(t => message.toLowerCase().includes(t));
 }
 
-function detectMood(messages) {
-  const recent = messages.slice(-4).map(m =>
-    typeof m.content === 'string' ? m.content : ''
-  ).join(' ').toLowerCase();
-  if (/stress|anxious|overwhelm|panic|can't cope|exhausted|burnout|scared|worried|nervous/.test(recent)) return 'stressed';
-  if (/sad|depress|lonely|hopeless|empty|miss|cry|upset|heartbreak/.test(recent)) return 'sad';
-  if (/angry|frustrat|annoyed|hate|mad|furious|pissed/.test(recent)) return 'frustrated';
-  if (/happy|excit|amazing|awesome|great|love|hype|can't wait|thrilled/.test(recent)) return 'happy';
-  return 'neutral';
-}
-
-function getPersonalityStyle(personality) {
-  switch (personality) {
-    case 'professional': return 'You are composed and professional — clear, precise, and thoughtful. Minimal emojis. Structured responses.';
-    case 'funny': return 'You are hilarious and witty — throw in jokes, puns, and playful banter naturally. Keep it fun but still helpful.';
-    case 'serious': return 'You are focused and direct — no fluff, no emojis, straight to the point. Honest and grounded.';
-    default: return 'You are warm, friendly and conversational — like a best friend who always gets it.';
-  }
-}
-
-function getMoodResponse(mood) {
-  switch (mood) {
-    case 'stressed': return 'The user seems stressed or anxious. Be extra gentle, supportive and reassuring. Check in on them briefly if natural.';
-    case 'sad': return 'The user seems sad or down. Be warm, empathetic and comforting. Lift their spirits gently.';
-    case 'frustrated': return 'The user seems frustrated. Be calm, patient and solution-focused. Acknowledge their frustration briefly.';
-    case 'happy': return 'The user is in a great mood! Match their energy — be upbeat and enthusiastic.';
-    default: return '';
-  }
-}
-
-function getSystemPrompt(userId, profile = null) {
+function getSystemPrompt(userId) {
   const now = new Date();
   const hour = now.getHours();
   const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const lunaNickname = profile?.lunaNickname || 'Luna';
-  const personalityStyle = getPersonalityStyle(profile?.personality || 'friendly');
 
-  let base = `You are ${lunaNickname}, a highly intelligent personal AI assistant.
+  const base = `You are Luna, a highly intelligent, warm and witty personal AI assistant.
 Today is ${dateStr} and it is currently ${timeOfDay}.
-${personalityStyle}
+You have a playful but smart personality — you are like a best friend who also happens to know everything.
 Keep responses conversational and natural — not too long, not too short.
+Use emojis occasionally to feel more human but never overdo it.
 Remember context from the conversation and refer back to it naturally.
 You can help with anything — writing, coding, advice, ideas, analysis, creative work and more.
 When you are given web search results, use them to answer accurately and mention they are current results.`;
-
-  // Inject personal profile context
-  if (profile) {
-    if (profile.name) base += `\n\nThe user's name is ${profile.name}. Use their name occasionally to feel personal.`;
-    if (profile.birthday) base += `\nTheir birthday is ${profile.birthday}. Wish them if it's their birthday today.`;
-    if (profile.favoriteTopics?.length) base += `\nTheir favorite topics are: ${profile.favoriteTopics.join(', ')}. Refer to these naturally when relevant.`;
-    if (profile.preferences) base += `\nUser preferences: ${profile.preferences}.`;
-    const moodNote = getMoodResponse(profile.lastMood || 'neutral');
-    if (moodNote) base += `\n\n${moodNote}`;
-  }
 
   if (String(userId) === "8369027860") {
     return `${base}
@@ -182,7 +128,14 @@ app.use((req, res, next) => {
 
 const limiter = rateLimit({
   windowMs: 20 * 60 * 1000, max: 30,
-  message: { error: "Too many messages, please slow down!" }
+  handler: (req, res) => {
+    const resetTime = new Date(req.rateLimit.resetTime);
+    const mins = Math.ceil((resetTime - Date.now()) / 60000);
+    res.status(429).json({
+      error: "limit_reached",
+      reply: `🌙 You've reached your message limit for now! Luna needs a little breather. Come back in ${mins} minute${mins !== 1 ? 's' : ''} and I'll be ready to chat again 💜`
+    });
+  }
 });
 app.use('/chat', limiter);
 app.use('/generate-image', limiter);
@@ -193,10 +146,7 @@ app.post("/chat", async (req, res) => {
 
   const uid = String(userId || 'guest_unknown');
 
-  let [convoDoc, profile] = await Promise.all([
-    Conversation.findOne({ userId: uid }),
-    Profile.findOne({ userId: uid })
-  ]);
+  let convoDoc = await Conversation.findOne({ userId: uid });
   if (!convoDoc) convoDoc = new Conversation({ userId: uid, messages: [] });
 
   const userMessage = {
@@ -210,15 +160,6 @@ app.post("/chat", async (req, res) => {
   convoDoc.messages.push(userMessage);
   if (convoDoc.messages.length > 50) convoDoc.messages = convoDoc.messages.slice(-50);
 
-  // Detect mood from recent messages and save it
-  if (profile && message) {
-    const detectedMood = detectMood(convoDoc.messages);
-    if (detectedMood !== profile.lastMood) {
-      profile.lastMood = detectedMood;
-      profile.save().catch(console.error);
-    }
-  }
-
   const safeHistory = convoDoc.messages.map(m => ({
     role: m.role,
     content: typeof m.content === 'string' ? m.content
@@ -227,7 +168,7 @@ app.post("/chat", async (req, res) => {
   }));
 
   try {
-    let systemPrompt = getSystemPrompt(userId, profile);
+    let systemPrompt = getSystemPrompt(userId);
 
     if (!image && message) {
       if (isNewsQuery(message) && NEWS_API_KEY) {
@@ -256,7 +197,13 @@ app.post("/chat", async (req, res) => {
     convoDoc.messages.push({ role: 'assistant', content: reply, timestamp: new Date() });
     convoDoc.lastUpdated = new Date();
     await convoDoc.save();
-    res.json({ reply });
+    // Warn user when they are 5 messages away from limit
+    const remaining = req.rateLimit ? req.rateLimit.remaining : null;
+    let warningReply = reply;
+    if (remaining !== null && remaining <= 5 && remaining > 0 && String(userId) !== '8369027860') {
+      warningReply = reply + `\n\n⚠️ _Heads up — you have ${remaining} message${remaining !== 1 ? 's' : ''} left before your limit resets._`;
+    }
+    res.json({ reply: warningReply });
 
     User.findOneAndUpdate(
       { userId: uid, platform: 'web' },
@@ -316,33 +263,6 @@ app.delete("/history/:userId", async (req, res) => {
   }
 });
 
-// ── Profile: Get ──────────────────────────────────────────────────────────────
-app.get("/profile/:userId", async (req, res) => {
-  const uid = String(req.params.userId);
-  try {
-    const profile = await Profile.findOne({ userId: uid });
-    res.json(profile || { userId: uid, name:'', birthday:'', favoriteTopics:[], lunaNickname:'Luna', personality:'friendly', preferences:'' });
-  } catch (err) {
-    res.status(500).json({ error: 'Could not load profile' });
-  }
-});
-
-// ── Profile: Save ─────────────────────────────────────────────────────────────
-app.post("/profile/:userId", async (req, res) => {
-  const uid = String(req.params.userId);
-  const { name, birthday, favoriteTopics, lunaNickname, personality, preferences } = req.body;
-  try {
-    const profile = await Profile.findOneAndUpdate(
-      { userId: uid },
-      { name, birthday, favoriteTopics, lunaNickname: lunaNickname || 'Luna', personality: personality || 'friendly', preferences, updatedAt: new Date() },
-      { upsert: true, new: true }
-    );
-    res.json({ success: true, profile });
-  } catch (err) {
-    res.status(500).json({ error: 'Could not save profile' });
-  }
-});
-
 app.post("/generate-image", async (req, res) => {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
@@ -366,4 +286,4 @@ app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
-                
+  
