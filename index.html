@@ -1566,69 +1566,44 @@
       const res=await fetch(BACKEND_URL+'/chat',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify({message:text||'What is in this image?',userId:getUserId(),image:image||null,modeExtra:toolSystemExtra||null,threadId:isSecret?null:currentThreadId})});
       if(!res.ok)throw new Error();
 
-      // Check if streaming (text/event-stream) or JSON fallback
-      const contentType = res.headers.get('content-type')||'';
-      if(!contentType.includes('text/event-stream')){
-        const data=await res.json();
-        typingRow.style.display='none';typingRow.classList.remove('thinking-row');document.getElementById('thinking-label').style.display='none';
-        if(data.threadId && !currentThreadId) currentThreadId=data.threadId;
-        addMsg('luna',data.reply||'No response.');
-        return;
-      }
-
-      // Hide typing indicator and create streaming bubble
+      // Get JSON then typewrite it
+      const data=await res.json();
       typingRow.style.display='none';typingRow.classList.remove('thinking-row');document.getElementById('thinking-label').style.display='none';
+      if(data.threadId && !currentThreadId) currentThreadId=data.threadId;
+      const fullText=data.reply||'No response.';
+      lastLunaText=fullText;
+
+      // Create message row
       const row=document.createElement('div');row.className='mrow luna';
-      const av='<div class="mav luna"><img src="icon-192.png" alt="L"/></div>';
-      row.innerHTML=av+'<div class="mbody"><div class="bubble" id="stream-bubble"></div><div class="mtime">'+ts()+'</div></div>';
+      row.innerHTML='<div class="mav luna"><img src="icon-192.png" alt="L"/></div><div class="mbody"><div class="bubble"></div><div class="mtime">'+ts()+'</div></div>';
       messagesEl.insertBefore(row,typingRow);
-      const bubbleEl=document.getElementById('stream-bubble');
-      bubbleEl.removeAttribute('id');
+      const bubbleEl=row.querySelector('.bubble');
 
-      // Read SSE stream
-      const reader=res.body.getReader();
-      const decoder=new TextDecoder();
-      let fullText='';
-      let buffer='';
-
-      while(true){
-        const {done,value}=await reader.read();
-        if(done)break;
-        buffer+=decoder.decode(value,{stream:true});
-        const lines=buffer.split('\n');
-        buffer=lines.pop();
-        for(const line of lines){
-          if(!line.startsWith('data: '))continue;
-          try{
-            const parsed=JSON.parse(line.slice(6));
-            if(parsed.delta){
-              fullText+=parsed.delta;
-              bubbleEl.innerHTML=fullText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-              messagesEl.scrollTop=messagesEl.scrollHeight;
-            }
-            if(parsed.done){
-              if(parsed.threadId && !currentThreadId) currentThreadId=parsed.threadId;
-              lastLunaText=fullText;
-            }
-          }catch(e){}
+      // Typewriter effect
+      let i=0;
+      function typeNext(){
+        if(i<fullText.length){
+          i+=Math.ceil(Math.random()*3);
+          if(i>fullText.length)i=fullText.length;
+          bubbleEl.innerHTML=fullText.slice(0,i).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'<span class="typing-cursor"></span>';
+          messagesEl.scrollTop=messagesEl.scrollHeight;
+          setTimeout(typeNext,12);
+        } else {
+          bubbleEl.innerHTML=fullText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+          const mbody=row.querySelector('.mbody');
+          const enc=encodeURIComponent(fullText);
+          const actions=document.createElement('div');
+          actions.className='msg-actions';
+          actions.innerHTML='<button class="mac" title="Copy" onclick="copyMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'
+            +'<button class="mac" title="Read aloud" onclick="readAloud(\''+enc+'\')"><svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>'
+            +'<button class="mac" title="Good response" onclick="likeMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg></button>'
+            +'<button class="mac" title="Bad response" onclick="dislikeMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg></button>'
+            +'<button class="mac" title="Regenerate" onclick="regenMac(this)"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg></button>';
+          mbody.insertBefore(actions, mbody.querySelector('.mtime'));
+          messagesEl.scrollTop=messagesEl.scrollHeight;
         }
       }
-
-      // Add action buttons after streaming done
-      const mbody=row.querySelector('.mbody');
-      if(mbody && fullText){
-        const enc=encodeURIComponent(fullText);
-        const actions=document.createElement('div');
-        actions.className='msg-actions';
-        actions.innerHTML=\`
-          <button class="mac" title="Copy" onclick="copyMac(this,'\${enc}')"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-          <button class="mac" title="Read aloud" onclick="readAloud('\${enc}')"><svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>
-          <button class="mac" title="Good response" onclick="likeMac(this,'\${enc}')"><svg viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg></button>
-          <button class="mac" title="Bad response" onclick="dislikeMac(this,'\${enc}')"><svg viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg></button>
-          <button class="mac" title="Regenerate" onclick="regenMac(this)"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg></button>
-        \`;
-        mbody.insertBefore(actions, mbody.querySelector('.mtime'));
-      }
+      typeNext();
 
     }catch(e){
       typingRow.style.display='none';typingRow.classList.remove('thinking-row');document.getElementById('thinking-label').style.display='none';
@@ -1901,7 +1876,7 @@
   });
 
   // ── Share sheet ───────────────────────────────────────────
-  const LUNA_URL = 'https://rolandolumaseun4.github.io/Luna-AI/';
+  const LUNA_URL = 'https://rolandolumaseun4.github.io/Luna-Al/';
   const LUNA_MSG = 'Try Luna AI — a smart personal assistant! 🌙 ';
   function openShareSheet() { document.getElementById('share-sheet').classList.add('show'); haptic('light'); }
   function closeShareSheet(e) { if (e.target === document.getElementById('share-sheet')) document.getElementById('share-sheet').classList.remove('show'); }
