@@ -1200,18 +1200,15 @@
   }
 
   // Handle redirect back from Google OAuth
-  (function handleOAuthRedirect(){
+  // NOTE: runs after enterApp is defined
+  function handleOAuthRedirect(){
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     const userParam = params.get('user');
     const authError = params.get('auth_error');
     if (authError) {
-      // Show error on login screen
-      setTimeout(() => {
-        const errEl = document.getElementById('login-error');
-        if (errEl) errEl.textContent = 'Google sign-in failed. Please try again.';
-      }, 100);
-      // Clean URL
+      const errEl = document.getElementById('login-error');
+      if (errEl) errEl.textContent = 'Google sign-in failed. Please try again.';
       window.history.replaceState({}, '', window.location.pathname);
       return;
     }
@@ -1220,16 +1217,16 @@
         const user = JSON.parse(decodeURIComponent(userParam));
         authToken = token;
         currentUser = user;
+        isOwner = user.role === 'owner';
         localStorage.setItem('luna-token', token);
         localStorage.setItem('luna-user', JSON.stringify(user));
-        isOwner = user.role === 'owner';
-        // Clean URL so token doesn't stay in address bar
         window.history.replaceState({}, '', window.location.pathname);
-        // Enter app once DOM is ready
-        setTimeout(() => enterApp(isOwner), 50);
-      } catch(e) {}
+        enterApp(isOwner);
+      } catch(e) {
+        console.error('OAuth redirect error:', e);
+      }
     }
-  })();
+  }
 
   // ── Tab switching ──────────────────────────────────────────
   function switchTab(tab){
@@ -1322,6 +1319,9 @@
   if(authToken && currentUser){
     isOwner=currentUser.role==='owner';
     enterApp(isOwner);
+  } else {
+    // Handle Google OAuth redirect (token in URL)
+    handleOAuthRedirect();
   }
   function toggleEye(id){const inp=document.getElementById(id);if(inp)inp.type=inp.type==='password'?'text':'password';}
   document.getElementById('login-password')?.addEventListener('keydown',e=>{if(e.key==='Enter')submitLogin();});
