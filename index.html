@@ -2112,30 +2112,40 @@
     return null;
   }
 
+  // Artifact store - avoids passing large text through onclick attributes
+  const artifactStore = {};
+  let artifactIdCounter = 0;
+
   function buildArtifactCard(text, artifactInfo) {
+    const id = 'art_' + (artifactIdCounter++);
     if (artifactInfo.type === 'code') {
       const { langInfo, lang } = artifactInfo;
       const filename = 'luna-code.' + langInfo.ext;
+      artifactStore[id] = { text, type: 'code', filename, lang };
       const codeIcon = '<svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>';
-      return `<div class="artifact-card" onclick="openArtifact(${JSON.stringify(text)}, 'code', ${JSON.stringify(filename)}, ${JSON.stringify(lang)})">
-        <div class="artifact-icon">${codeIcon}</div>
-        <div class="artifact-info">
-          <div class="artifact-name">${filename}</div>
-          <div class="artifact-meta">Code · ${langInfo.label}</div>
-        </div>
-      </div>`;
+      return '<div class="artifact-card" onclick="openArtifactById(\''+id+'\')">'+
+        '<div class="artifact-icon">'+codeIcon+'</div>'+
+        '<div class="artifact-info">'+
+          '<div class="artifact-name">'+filename+'</div>'+
+          '<div class="artifact-meta">Code · '+langInfo.label+'</div>'+
+        '</div></div>';
     } else {
       const wordCount = artifactInfo.wordCount;
       const preview = text.substring(0, 40).replace(/[#*]/g, '').trim();
+      artifactStore[id] = { text, type: 'story', filename: 'luna-story.txt', lang: '' };
       const storyIcon = '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
-      return `<div class="artifact-card" onclick="openArtifact(${JSON.stringify(text)}, 'story', 'luna-story.txt', '')">
-        <div class="artifact-icon">${storyIcon}</div>
-        <div class="artifact-info">
-          <div class="artifact-name">${preview}...</div>
-          <div class="artifact-meta">Story · ${wordCount} words</div>
-        </div>
-      </div>`;
+      return '<div class="artifact-card" onclick="openArtifactById(\''+id+'\')">'+
+        '<div class="artifact-icon">'+storyIcon+'</div>'+
+        '<div class="artifact-info">'+
+          '<div class="artifact-name">✨ '+preview+'...</div>'+
+          '<div class="artifact-meta">Story · '+wordCount+' words</div>'+
+        '</div></div>';
     }
+  }
+
+  function openArtifactById(id) {
+    const a = artifactStore[id];
+    if (a) openArtifact(a.text, a.type, a.filename, a.lang);
   }
 
   function openArtifact(text, type, filename, lang) {
