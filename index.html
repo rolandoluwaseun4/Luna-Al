@@ -1615,6 +1615,23 @@
       document.getElementById('thinking-label').style.display = 'none';
     }
 
+    // ── Tweet command (owner only) ──────────────────────────────
+    if (text && text.toLowerCase().startsWith('tweet this:')) {
+      const tweetText = text.slice(11).trim();
+      try {
+        const r = await fetch(BACKEND_URL+'/tweet', {method:'POST', headers:getAuthHeaders(), body:JSON.stringify({text:tweetText})});
+        const d = await r.json();
+        typingRow.style.display='none';
+        if (d.success) addMsg('luna', '✅ Tweet posted successfully! 🐦\n\n"' + tweetText + '"');
+        else addMsg('luna', '❌ Tweet failed: ' + (d.error || 'Unknown error'));
+      } catch(e) {
+        typingRow.style.display='none';
+        addMsg('luna', '❌ Could not post tweet. Check your Twitter credentials on Railway.');
+      }
+      finally{busy=false;chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;}
+      return;
+    }
+
     const imgPhrases=['generate an image','generate image','draw an image','draw a ','create an image','create image','make an image','make a picture','imagine a '];
     const isImg=!image&&text&&imgPhrases.some(t=>text.toLowerCase().startsWith(t)||text.toLowerCase().startsWith('can you '+t)||text.toLowerCase().startsWith('please '+t));
     if(isImg){
