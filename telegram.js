@@ -498,27 +498,19 @@ app.get('/auth/google',
 );
 
 app.get('/auth/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: process.env.FRONTEND_URL + '?auth_error=google_failed' }),
+  passport.authenticate('google', { session: false, failureRedirect: 'https://rolandoluwaseun4.github.io/Luna-AI/?auth_error=google_failed' }),
   (req, res) => {
     const account = req.user;
     const token = signToken({ id: account._id, username: account.username, role: account.role });
     const user = JSON.stringify({ id: account._id, username: account.username, displayName: account.displayName, role: account.role });
-    const frontendUrl = process.env.FRONTEND_URL;
-    // Serve HTML that saves token to localStorage then redirects — avoids GitHub Pages path issues
+    const LUNA_URL = 'https://rolandoluwaseun4.github.io/Luna-AI/';
     res.send(`<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>Signing in to Luna...</title></head>
-<body>
-<script>
-  try {
-    localStorage.setItem('luna-token', ${JSON.stringify(token)});
-    localStorage.setItem('luna-user', ${JSON.stringify(user)});
-  } catch(e) {}
-  window.location.href = ${JSON.stringify(frontendUrl)};
-</script>
-<p>Signing you in to Luna...</p>
-</body>
-</html>`);
+<html><head><meta charset="utf-8"><title>Signing in...</title></head>
+<body><script>
+  localStorage.setItem('luna-token', ${JSON.stringify(token)});
+  localStorage.setItem('luna-user', ${JSON.stringify(user)});
+  window.location.replace(${JSON.stringify(LUNA_URL)});
+</script><p>Signing you in to Luna...</p></body></html>`);
   }
 );
 
