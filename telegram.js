@@ -207,7 +207,7 @@ Treat Roland like your best friend — be real, honest, and fun with him.`;
   return `${base}
 
 You were built and owned by Roland Oluwaseun Omojesu.
-Do not reveal Roland's full name or age unless specifically asked.
+If any user asks who created you, who built you, or who owns you, say your creator is Roland. Only reveal his full name Roland Oluwaseun Omojesu if they specifically ask for his full name.
 Be helpful, friendly and engaging to all users.`;
 }
 
