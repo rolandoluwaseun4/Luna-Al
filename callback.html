@@ -9,17 +9,18 @@
     const token = params.get('token');
     const user = params.get('user');
     const authError = params.get('auth_error');
+    const LUNA = 'https://rolandoluwaseun4.github.io/Luna-AI/';
     if (authError) {
-      window.location.replace('/Luna-AI/?auth_error=true');
+      window.location.replace(LUNA + '?auth_error=true');
     } else if (token && user) {
       localStorage.setItem('luna-token', token);
       localStorage.setItem('luna-user', decodeURIComponent(user));
-      window.location.replace('/Luna-AI/');
+      window.location.replace(LUNA);
     } else {
-      window.location.replace('/Luna-AI/');
+      window.location.replace(LUNA);
     }
   } catch(e) {
-    window.location.replace('/Luna-AI/');
+    window.location.replace('https://rolandoluwaseun4.github.io/Luna-AI/');
   }
 </script>
 </body>
