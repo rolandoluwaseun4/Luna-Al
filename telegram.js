@@ -49,19 +49,6 @@ const threadSchema = new mongoose.Schema({
 });
 const Thread = mongoose.model('Thread', threadSchema);
 
-const profileSchema = new mongoose.Schema({
-  userId: { type: String, required: true, unique: true },
-  name: { type: String, default: '' },
-  birthday: { type: String, default: '' },
-  favoriteTopics: { type: [String], default: [] },
-  lunaNickname: { type: String, default: 'Luna' },
-  personality: { type: String, default: 'friendly', enum: ['friendly','professional','funny','serious'] },
-  preferences: { type: String, default: '' },
-  lastMood: { type: String, default: 'neutral' },
-  updatedAt: { type: Date, default: Date.now }
-});
-const Profile = mongoose.model('Profile', profileSchema);
-
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const HF_API_KEY = process.env.HF_API_KEY;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
@@ -224,7 +211,7 @@ app.set('trust proxy', 1);
 app.use(passport.initialize());
 app.use(cors({
   origin: [
-    'https://rolandolumaseun4.github.io',
+    'https://rolandoluwaseun4.github.io',
     'http://localhost:3000',
     'http://127.0.0.1:5500'
   ],
@@ -481,54 +468,6 @@ app.delete("/history/:userId", requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Could not clear history' });
-  }
-});
-
-app.get("/history/:userId", requireAuth, async (req, res) => {
-  const uid = String(req.params.userId);
-  try {
-    const threads = await Thread.find({ userId: uid })
-      .sort({ lastUpdated: -1 })
-      .select('threadId title lastUpdated messages');
-    const groups = threads.map(t => ({
-      date: t.title || new Date(t.lastUpdated).toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' }),
-      threadId: t.threadId,
-      messages: t.messages.map(m => ({
-        role: m.role,
-        text: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? (m.content.find(c=>c.type==='text')?.text||'[image]') : String(m.content)),
-        timestamp: m.timestamp
-      }))
-    }));
-    res.json({ groups });
-  } catch (err) {
-    res.status(500).json({ error: 'Could not load history' });
-  }
-});
-
-// ── Profile: Get ──────────────────────────────────────────────────────────────
-app.get("/profile/:userId", requireAuth, async (req, res) => {
-  const uid = String(req.params.userId);
-  try {
-    const profile = await Profile.findOne({ userId: uid });
-    res.json(profile || { userId: uid, name:'', birthday:'', favoriteTopics:[], lunaNickname:'Luna', personality:'friendly', preferences:'' });
-  } catch (err) {
-    res.status(500).json({ error: 'Could not load profile' });
-  }
-});
-
-// ── Profile: Save ─────────────────────────────────────────────────────────────
-app.post("/profile/:userId", requireAuth, async (req, res) => {
-  const uid = String(req.params.userId);
-  const { name, birthday, favoriteTopics, lunaNickname, personality, preferences } = req.body;
-  try {
-    const profile = await Profile.findOneAndUpdate(
-      { userId: uid },
-      { name, birthday, favoriteTopics, lunaNickname: lunaNickname||'Luna', personality: personality||'friendly', preferences, updatedAt: new Date() },
-      { upsert: true, new: true }
-    );
-    res.json({ success: true, profile });
-  } catch (err) {
-    res.status(500).json({ error: 'Could not save profile' });
   }
 });
 
