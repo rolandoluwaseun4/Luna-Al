@@ -922,6 +922,73 @@
       .settings-panel{padding:24px 20px;}.history-panel,.history-detail{padding:0;}
     }
     @media(max-width:420px){.suggestions{grid-template-columns:1fr;}.greeting h1{font-size:22px;}}
+
+    /* ── Artifact Card ─────────────────────────────────────────── */
+    .artifact-card{
+      display:flex;align-items:center;gap:14px;
+      padding:14px 18px;border-radius:18px;
+      background:var(--surface);backdrop-filter:var(--glass-blur);
+      border:1px solid var(--border);
+      box-shadow:var(--shadow),inset 0 1px 0 var(--glass-shine);
+      cursor:pointer;margin-top:6px;max-width:300px;
+      transition:transform 0.3s var(--spring),border-color 0.25s,box-shadow 0.3s;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .artifact-card:hover{border-color:var(--accent);transform:scale(1.02);box-shadow:var(--shadow),0 4px 20px var(--accent-glow);}
+    .artifact-card:active{transform:scale(0.97);}
+    .artifact-icon{
+      width:46px;height:46px;border-radius:12px;flex-shrink:0;
+      background:var(--accent-soft);border:1px solid rgba(155,77,202,0.2);
+      display:flex;align-items:center;justify-content:center;
+    }
+    .artifact-icon svg{width:22px;height:22px;stroke:var(--accent);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+    .artifact-info{flex:1;min-width:0;}
+    .artifact-name{font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .artifact-meta{font-size:11px;color:var(--text-mid);}
+
+    /* ── Artifact Viewer ───────────────────────────────────────── */
+    .artifact-viewer{
+      position:fixed;inset:0;z-index:800;
+      background:var(--bg);display:none;flex-direction:column;
+    }
+    .artifact-viewer.open{display:flex;animation:screenIn 0.35s var(--spring);}
+    .artifact-viewer-nav{
+      display:flex;align-items:center;gap:10px;
+      padding:12px 16px;border-bottom:1px solid var(--border);
+      background:var(--nav-bg);backdrop-filter:var(--glass-blur);flex-shrink:0;
+    }
+    .av-close{
+      background:none;border:none;cursor:pointer;color:var(--text-mid);
+      padding:6px;border-radius:100px;display:flex;align-items:center;
+      transition:color 0.2s,transform 0.3s var(--spring);
+    }
+    .av-close:hover{color:var(--accent);transform:scale(1.1);}
+    .av-close svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+    .av-title{flex:1;font-size:15px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .av-actions{display:flex;gap:8px;}
+    .av-btn{
+      padding:7px 14px;border-radius:100px;border:1px solid var(--border);
+      background:var(--surface);color:var(--accent);
+      font-family:-apple-system,sans-serif;font-size:12px;font-weight:500;
+      cursor:pointer;transition:transform 0.3s var(--spring),background 0.2s;
+      display:flex;align-items:center;gap:5px;
+    }
+    .av-btn:hover{background:var(--accent-soft);transform:scale(1.04);}
+    .av-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+    .av-body{flex:1;overflow-y:auto;padding:20px;}
+    .av-code{
+      background:rgba(0,0,0,0.35);border-radius:16px;padding:20px;
+      overflow-x:auto;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;
+      font-size:13px;line-height:1.75;color:#e8d5ff;
+      border:1px solid var(--border);white-space:pre-wrap;word-break:break-word;
+      margin:0;
+    }
+    .av-story{
+      font-family:-apple-system,'SF Pro Text',sans-serif;
+      font-size:15px;line-height:1.9;color:var(--text);
+      max-width:640px;margin:0 auto;
+    }
+    .av-story p{margin-bottom:16px;}
   </style>
 </head>
 <body>
@@ -1589,7 +1656,14 @@
           messagesEl.scrollTop=messagesEl.scrollHeight;
           setTimeout(typeNext,12);
         } else {
-          bubbleEl.innerHTML=fullText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+          // Check if artifact
+          const artifactInfo = detectArtifact(fullText);
+          if (artifactInfo) {
+            const shortText = fullText.replace(/```[\s\S]*?```/g,'').trim().substring(0,200);
+            bubbleEl.innerHTML = (shortText ? shortText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') + '<br><br>' : '') + buildArtifactCard(fullText, artifactInfo);
+          } else {
+            bubbleEl.innerHTML=fullText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+          }
           const mbody=row.querySelector('.mbody');
           const enc=encodeURIComponent(fullText);
           const actions=document.createElement('div');
@@ -1994,6 +2068,128 @@
     fetchReply(lastLunaText, null);
   }
 
+
+  // ── Artifact System ───────────────────────────────────────────
+  let currentArtifact = { text: '', type: '', filename: '' };
+
+  const CODE_LANGS = {
+    python: { ext: 'py', label: 'Python' },
+    javascript: { ext: 'js', label: 'JavaScript' },
+    js: { ext: 'js', label: 'JavaScript' },
+    html: { ext: 'html', label: 'HTML' },
+    css: { ext: 'css', label: 'CSS' },
+    java: { ext: 'java', label: 'Java' },
+    cpp: { ext: 'cpp', label: 'C++' },
+    c: { ext: 'c', label: 'C' },
+    typescript: { ext: 'ts', label: 'TypeScript' },
+    ts: { ext: 'ts', label: 'TypeScript' },
+    php: { ext: 'php', label: 'PHP' },
+    sql: { ext: 'sql', label: 'SQL' },
+    bash: { ext: 'sh', label: 'Bash' },
+    sh: { ext: 'sh', label: 'Shell' },
+    json: { ext: 'json', label: 'JSON' },
+    xml: { ext: 'xml', label: 'XML' },
+    swift: { ext: 'swift', label: 'Swift' },
+    kotlin: { ext: 'kt', label: 'Kotlin' },
+    rust: { ext: 'rs', label: 'Rust' },
+    go: { ext: 'go', label: 'Go' },
+  };
+
+  function detectArtifact(text) {
+    // Detect code blocks ```lang ... ```
+    const codeMatch = text.match(/```(\w*)
+([\s\S]*?)```/);
+    if (codeMatch) {
+      const lang = (codeMatch[1] || 'code').toLowerCase();
+      const code = codeMatch[2];
+      const langInfo = CODE_LANGS[lang] || { ext: 'txt', label: lang || 'Code' };
+      return { type: 'code', lang, code, langInfo };
+    }
+    // Detect long story/essay (over 300 words and no code)
+    const wordCount = text.trim().split(/\s+/).length;
+    if (wordCount > 300) {
+      return { type: 'story', wordCount };
+    }
+    return null;
+  }
+
+  function buildArtifactCard(text, artifactInfo) {
+    if (artifactInfo.type === 'code') {
+      const { langInfo, lang } = artifactInfo;
+      const filename = 'luna-code.' + langInfo.ext;
+      const codeIcon = '<svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>';
+      return `<div class="artifact-card" onclick="openArtifact(${JSON.stringify(text)}, 'code', ${JSON.stringify(filename)}, ${JSON.stringify(lang)})">
+        <div class="artifact-icon">${codeIcon}</div>
+        <div class="artifact-info">
+          <div class="artifact-name">${filename}</div>
+          <div class="artifact-meta">Code · ${langInfo.label}</div>
+        </div>
+      </div>`;
+    } else {
+      const wordCount = artifactInfo.wordCount;
+      const preview = text.substring(0, 40).replace(/[#*]/g, '').trim();
+      const storyIcon = '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
+      return `<div class="artifact-card" onclick="openArtifact(${JSON.stringify(text)}, 'story', 'luna-story.txt', '')">
+        <div class="artifact-icon">${storyIcon}</div>
+        <div class="artifact-info">
+          <div class="artifact-name">${preview}...</div>
+          <div class="artifact-meta">Story · ${wordCount} words</div>
+        </div>
+      </div>`;
+    }
+  }
+
+  function openArtifact(text, type, filename, lang) {
+    currentArtifact = { text, type, filename, lang };
+    document.getElementById('av-title').textContent = filename;
+    const body = document.getElementById('av-body');
+    if (type === 'code') {
+      // Extract code from markdown block
+      const codeMatch = text.match(/```\w*
+([\s\S]*?)```/);
+      const code = codeMatch ? codeMatch[1] : text;
+      body.innerHTML = '<pre class="av-code">' + code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>';
+    } else {
+      const paragraphs = text.split(/
+
++/).map(p =>
+        '<p>' + p.replace(/
+/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>') + '</p>'
+      ).join('');
+      body.innerHTML = '<div class="av-story">' + paragraphs + '</div>';
+    }
+    document.getElementById('artifact-viewer').classList.add('open');
+    haptic('light');
+  }
+
+  function closeArtifact() {
+    document.getElementById('artifact-viewer').classList.remove('open');
+    haptic('light');
+  }
+
+  function copyArtifact() {
+    const text = currentArtifact.type === 'code'
+      ? (currentArtifact.text.match(/```\w*
+([\s\S]*?)```/)?.[1] || currentArtifact.text)
+      : currentArtifact.text;
+    navigator.clipboard.writeText(text).then(() => showToast('Copied! 📋'));
+    haptic('light');
+  }
+
+  function downloadArtifact() {
+    const text = currentArtifact.type === 'code'
+      ? (currentArtifact.text.match(/```\w*
+([\s\S]*?)```/)?.[1] || currentArtifact.text)
+      : currentArtifact.text;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = currentArtifact.filename;
+    a.click(); URL.revokeObjectURL(url);
+    showToast('Downloaded! 💾');
+    haptic('medium');
+  }
+
   // ── PWA Install ──────────────────────────────────────────
   let deferredPrompt=null;
   window.addEventListener('beforeinstallprompt',function(e){
@@ -2018,5 +2214,26 @@
 
   if('serviceWorker' in navigator){navigator.serviceWorker.register('/Luna-AI/sw.js').catch(function(){});}
 </script>
+
+<!-- Artifact Viewer -->
+<div class="artifact-viewer" id="artifact-viewer">
+  <div class="artifact-viewer-nav">
+    <button class="av-close" onclick="closeArtifact()">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="av-title" id="av-title">Artifact</div>
+    <div class="av-actions">
+      <button class="av-btn" onclick="copyArtifact()">
+        <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy
+      </button>
+      <button class="av-btn" onclick="downloadArtifact()" style="background:var(--accent);color:white;border-color:transparent;">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download
+      </button>
+    </div>
+  </div>
+  <div class="av-body" id="av-body"></div>
+</div>
 </body>
 </html>
