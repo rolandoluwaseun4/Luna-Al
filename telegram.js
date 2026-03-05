@@ -334,6 +334,7 @@ app.post("/chat", requireAuth, async (req, res) => {
             model,
             max_tokens: 1024,
             messages: [{ role: "system", content: systemPrompt }, ...currentPayload],
+            stream: true,
           });
           usedModel = model;
           break;
@@ -359,13 +360,33 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (usedModel) break;
     }
     if (!response) throw new Error("All models unavailable. Please try again shortly.");
-    // model used: [redacted from logs]
 
-    const reply = response.choices[0].message.content;
-    thread.messages.push({ role: 'assistant', content: reply, timestamp: new Date() });
+    // ── Stream response to client ─────────────────────────────
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Thread-Id', thread.threadId);
+    res.setHeader('X-Thread-Title', encodeURIComponent(thread.title));
+
+    let fullReply = '';
+    for await (const chunk of response) {
+      const delta = chunk.choices[0]?.delta?.content || '';
+      if (delta) {
+        fullReply += delta;
+        res.write(`data: ${JSON.stringify({ delta })}
+
+`);
+      }
+    }
+    res.write(`data: ${JSON.stringify({ done: true, threadId: thread.threadId, title: thread.title })}
+
+`);
+    res.end();
+
+    // Save to DB after streaming
+    thread.messages.push({ role: 'assistant', content: fullReply, timestamp: new Date() });
     thread.lastUpdated = new Date();
     await thread.save();
-    res.json({ reply, threadId: thread.threadId, title: thread.title });
 
     User.findOneAndUpdate(
       { userId: uid, platform: 'web' },
@@ -375,7 +396,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error("AI Error:", error.message);
-    res.status(500).json({ error: "AI failed to respond" });
+    if (!res.headersSent) res.status(500).json({ error: "AI failed to respond" });
   }
 });
 
