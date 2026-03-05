@@ -498,12 +498,12 @@ app.get('/auth/google',
 );
 
 app.get('/auth/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: 'https://rolandoluwaseun4.github.io/Luna-Al/callback.html?auth_error=true' }),
+  passport.authenticate('google', { session: false, failureRedirect: 'https://rolandoluwaseun4.github.io/Luna-AI/callback.html?auth_error=true' }),
   (req, res) => {
     const account = req.user;
     const token = signToken({ id: account._id, username: account.username, role: account.role });
     const user = encodeURIComponent(JSON.stringify({ id: account._id, username: account.username, displayName: account.displayName, role: account.role }));
-    res.redirect('https://rolandoluwaseun4.github.io/Luna-Al/callback.html?token=' + token + '&user=' + user);
+    res.redirect('https://rolandoluwaseun4.github.io/Luna-AI/callback.html?token=' + token + '&user=' + user);
   }
 );
 
@@ -578,6 +578,92 @@ app.post('/auth/guest', async (req, res) => {
   const id = String(guestId || 'guest_' + Date.now()).replace(/[^a-zA-Z0-9_\-]/g,'').substring(0,64);
   const token = signToken({ id, username: id, role: 'guest' });
   res.json({ token, user: { id, username: id, role: 'guest' } });
+});
+
+// ── Admin Dashboard ───────────────────────────────────────────
+app.get('/admin', async (req, res) => {
+  const key = req.query.key;
+  if (key !== process.env.ADMIN_KEY) {
+    return res.status(401).send('<h2 style="font-family:sans-serif;text-align:center;margin-top:80px">🔒 Unauthorized</h2>');
+  }
+  try {
+    const accounts = await Account.find({}).sort({ createdAt: -1 }).select('-passwordHash');
+    const totalThreads = await Thread.countDocuments();
+    const totalMessages = await Thread.aggregate([{ $project: { count: { $size: '$messages' } } }, { $group: { _id: null, total: { $sum: '$count' } } }]);
+    const msgTotal = totalMessages[0]?.total || 0;
+    const googleUsers = accounts.filter(a => a.googleId).length;
+    const emailUsers = accounts.filter(a => !a.googleId && a.role !== 'guest').length;
+
+    const rows = accounts.map(a => {
+      const lastSeen = a.lastSeen ? new Date(a.lastSeen).toLocaleString() : 'Never';
+      const joined = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '?';
+      const method = a.googleId ? '🔵 Google' : '📧 Email';
+      const roleBadge = a.role === 'owner' ? '<span style="background:#9b4dca;color:white;padding:2px 8px;border-radius:20px;font-size:11px">Owner</span>' : '<span style="background:#e8d5ff;color:#6055e0;padding:2px 8px;border-radius:20px;font-size:11px">User</span>';
+      return `<tr>
+        <td>${a.displayName || a.username || '—'}</td>
+        <td>${a.email}</td>
+        <td>${method}</td>
+        <td>${roleBadge}</td>
+        <td>${a.messageCount || 0}</td>
+        <td>${joined}</td>
+        <td>${lastSeen}</td>
+      </tr>`;
+    }).join('');
+
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Luna Admin</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,sans-serif;background:#07020f;color:#e8d5ff;min-height:100vh;padding:24px 16px}
+  .header{display:flex;align-items:center;gap:12px;margin-bottom:32px}
+  .header h1{font-size:28px;font-weight:300;letter-spacing:0.05em}
+  .header span{font-size:13px;color:#9980bb;background:rgba(155,77,202,0.12);padding:4px 12px;border-radius:20px;border:1px solid rgba(155,77,202,0.2)}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:28px}
+  .stat{background:rgba(20,10,40,0.6);border:1px solid rgba(155,77,202,0.2);border-radius:20px;padding:20px;text-align:center}
+  .stat-num{font-size:36px;font-weight:300;color:#9b4dca;line-height:1}
+  .stat-label{font-size:12px;color:#9980bb;margin-top:6px}
+  .table-wrap{background:rgba(20,10,40,0.6);border:1px solid rgba(155,77,202,0.2);border-radius:20px;overflow:hidden}
+  .table-title{padding:16px 20px;font-size:14px;font-weight:500;border-bottom:1px solid rgba(155,77,202,0.15);color:#9b4dca}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{padding:12px 16px;text-align:left;color:#9980bb;font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid rgba(155,77,202,0.1)}
+  td{padding:13px 16px;border-bottom:1px solid rgba(155,77,202,0.07);color:#e8d5ff;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:rgba(155,77,202,0.06)}
+  .empty{text-align:center;padding:40px;color:#9980bb}
+  @media(max-width:600px){th:nth-child(4),td:nth-child(4),th:nth-child(6),td:nth-child(6){display:none}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🌙 Luna Admin</h1>
+  <span>Roland's Dashboard</span>
+</div>
+<div class="stats">
+  <div class="stat"><div class="stat-num">${accounts.length}</div><div class="stat-label">Total Users</div></div>
+  <div class="stat"><div class="stat-num">${googleUsers}</div><div class="stat-label">Google Signups</div></div>
+  <div class="stat"><div class="stat-num">${emailUsers}</div><div class="stat-label">Email Signups</div></div>
+  <div class="stat"><div class="stat-num">${totalThreads}</div><div class="stat-label">Total Chats</div></div>
+  <div class="stat"><div class="stat-num">${msgTotal}</div><div class="stat-label">Total Messages</div></div>
+</div>
+<div class="table-wrap">
+  <div class="table-title">👥 All Users</div>
+  ${accounts.length === 0 ? '<div class="empty">No users yet</div>' : `
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr><th>Name</th><th>Email</th><th>Method</th><th>Role</th><th>Messages</th><th>Joined</th><th>Last Seen</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  </div>`}
+</div>
+</body>
+</html>`);
+  } catch (err) {
+    res.status(500).send('<h2 style="font-family:sans-serif;text-align:center;margin-top:80px">Error loading dashboard</h2>');
+  }
 });
 
 app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
