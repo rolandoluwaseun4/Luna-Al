@@ -361,32 +361,17 @@ app.post("/chat", requireAuth, async (req, res) => {
     }
     if (!response) throw new Error("All models unavailable. Please try again shortly.");
 
-    // ── Stream response to client ─────────────────────────────
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Thread-Id', thread.threadId);
-    res.setHeader('X-Thread-Title', encodeURIComponent(thread.title));
-
+    // Collect full reply from stream
     let fullReply = '';
     for await (const chunk of response) {
       const delta = chunk.choices[0]?.delta?.content || '';
-      if (delta) {
-        fullReply += delta;
-        res.write(`data: ${JSON.stringify({ delta })}
-
-`);
-      }
+      if (delta) fullReply += delta;
     }
-    res.write(`data: ${JSON.stringify({ done: true, threadId: thread.threadId, title: thread.title })}
 
-`);
-    res.end();
-
-    // Save to DB after streaming
     thread.messages.push({ role: 'assistant', content: fullReply, timestamp: new Date() });
     thread.lastUpdated = new Date();
     await thread.save();
+    res.json({ reply: fullReply, threadId: thread.threadId, title: thread.title });
 
     User.findOneAndUpdate(
       { userId: uid, platform: 'web' },
