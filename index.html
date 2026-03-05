@@ -2097,8 +2097,7 @@
 
   function detectArtifact(text) {
     // Detect code blocks ```lang ... ```
-    const codeMatch = text.match(/```(\w*)
-([\s\S]*?)```/);
+    const codeMatch = text.match(/```([\w]*)\n([\s\S]*?)```/s);
     if (codeMatch) {
       const lang = (codeMatch[1] || 'code').toLowerCase();
       const code = codeMatch[2];
@@ -2145,16 +2144,12 @@
     const body = document.getElementById('av-body');
     if (type === 'code') {
       // Extract code from markdown block
-      const codeMatch = text.match(/```\w*
-([\s\S]*?)```/);
+      const codeMatch = text.match(/```[\w]*\n([\s\S]*?)```/s);
       const code = codeMatch ? codeMatch[1] : text;
       body.innerHTML = '<pre class="av-code">' + code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>';
     } else {
-      const paragraphs = text.split(/
-
-+/).map(p =>
-        '<p>' + p.replace(/
-/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>') + '</p>'
+      const paragraphs = text.split(/\n\n+/).map(p =>
+        '<p>' + p.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>') + '</p>'
       ).join('');
       body.innerHTML = '<div class="av-story">' + paragraphs + '</div>';
     }
@@ -2169,8 +2164,7 @@
 
   function copyArtifact() {
     const text = currentArtifact.type === 'code'
-      ? (currentArtifact.text.match(/```\w*
-([\s\S]*?)```/)?.[1] || currentArtifact.text)
+      ? (currentArtifact.text.match(/```[\w]*\n([\s\S]*?)```/s)?.[1] || currentArtifact.text)
       : currentArtifact.text;
     navigator.clipboard.writeText(text).then(() => showToast('Copied! 📋'));
     haptic('light');
@@ -2178,8 +2172,7 @@
 
   function downloadArtifact() {
     const text = currentArtifact.type === 'code'
-      ? (currentArtifact.text.match(/```\w*
-([\s\S]*?)```/)?.[1] || currentArtifact.text)
+      ? (currentArtifact.text.match(/```[\w]*\n([\s\S]*?)```/s)?.[1] || currentArtifact.text)
       : currentArtifact.text;
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
