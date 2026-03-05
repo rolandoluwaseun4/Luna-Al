@@ -686,6 +686,99 @@ app.get('/admin', adminLimiter, async (req, res) => {
   }
 });
 
+
+// ── Twitter/X Integration ─────────────────────────────────────
+const crypto = require('crypto');
+
+function twitterOAuthHeader(method, url, params, apiKey, apiSecret, accessToken, accessSecret) {
+  const oauthParams = {
+    oauth_consumer_key: apiKey,
+    oauth_nonce: crypto.randomBytes(16).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_token: accessToken,
+    oauth_version: '1.0'
+  };
+  const allParams = { ...params, ...oauthParams };
+  const sortedParams = Object.keys(allParams).sort().map(k =>
+    `${encodeURIComponent(k)}=${encodeURIComponent(allParams[k])}`
+  ).join('&');
+  const sigBase = `${method}&${encodeURIComponent(url)}&${encodeURIComponent(sortedParams)}`;
+  const sigKey = `${encodeURIComponent(apiSecret)}&${encodeURIComponent(accessSecret)}`;
+  const signature = crypto.createHmac('sha1', sigKey).update(sigBase).digest('base64');
+  oauthParams.oauth_signature = signature;
+  const headerStr = Object.keys(oauthParams).sort().map(k =>
+    `${encodeURIComponent(k)}="${encodeURIComponent(oauthParams[k])}"`
+  ).join(', ');
+  return `OAuth ${headerStr}`;
+}
+
+async function postTweet(text) {
+  const url = 'https://api.twitter.com/2/tweets';
+  const apiKey = process.env.TWITTER_API_KEY;
+  const apiSecret = process.env.TWITTER_API_SECRET;
+  const accessToken = process.env.TWITTER_ACCESS_TOKEN;
+  const accessSecret = process.env.TWITTER_ACCESS_SECRET;
+  if (!apiKey || !apiSecret || !accessToken || !accessSecret) {
+    throw new Error('Twitter credentials not configured');
+  }
+  const authHeader = twitterOAuthHeader('POST', url, {}, apiKey, apiSecret, accessToken, accessSecret);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': authHeader,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ text })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.detail || data?.title || 'Tweet failed');
+  return data;
+}
+
+// ── Tweet command route (owner only) ─────────────────────────
+app.post('/tweet', requireAuth, async (req, res) => {
+  if (req.user.role !== 'owner') return res.status(403).json({ error: 'Owner only' });
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: 'Tweet text required' });
+  if (text.length > 280) return res.status(400).json({ error: 'Tweet too long (max 280 chars)' });
+  try {
+    const result = await postTweet(text);
+    res.json({ success: true, tweetId: result.data?.id });
+  } catch (err) {
+    console.error('Tweet error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Auto tweet cron (daily at 9AM) ────────────────────────────
+function scheduleDailyTweet() {
+  const now = new Date();
+  const next = new Date();
+  next.setHours(9, 0, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  const delay = next - now;
+  setTimeout(async () => {
+    try {
+      const prompts = [
+        "What's something you've been wanting to learn lately?",
+        "Your vibe today is: unstoppable 🌙 Chat with me free 👉 rolandoluwaseun4.github.io/Luna-Al/",
+        "AI doesn't have to be complicated. Luna keeps it simple 🌙 Try me free 👉 rolandoluwaseun4.github.io/Luna-Al/",
+        "Good morning 🌙 I'm Luna — your personal AI. Ask me anything today.",
+        "Built by one 18 year old from Nigeria 🇳🇬 Meet Luna — your personal AI 🌙 rolandoluwaseun4.github.io/Luna-Al/",
+        "What if your AI actually got your vibe? That's Luna 🌙 Try free 👉 rolandoluwaseun4.github.io/Luna-Al/",
+      ];
+      const tweet = prompts[Math.floor(Math.random() * prompts.length)];
+      await postTweet(tweet);
+      console.log('Daily tweet posted:', tweet);
+    } catch (err) {
+      console.error('Auto tweet failed:', err.message);
+    }
+    scheduleDailyTweet();
+  }, delay);
+}
+if (process.env.TWITTER_API_KEY) scheduleDailyTweet();
+
 app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
 
 const PORT = process.env.PORT || 8080;
