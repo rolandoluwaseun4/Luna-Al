@@ -1202,7 +1202,9 @@
   // Handle redirect back from Google OAuth
   // NOTE: runs after enterApp is defined
   function handleOAuthRedirect(){
-    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash.slice(1); // remove the #
+    if (!hash) return;
+    const params = new URLSearchParams(hash);
     const token = params.get('token');
     const userParam = params.get('user');
     const authError = params.get('auth_error');
