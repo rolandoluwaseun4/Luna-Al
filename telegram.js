@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const helmet = require('helmet');
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected'))
@@ -55,7 +56,11 @@ const NEWS_API_KEY = process.env.NEWS_API_KEY;
 
 
 // ── JWT helpers ───────────────────────────────────────────────
-const JWT_SECRET = process.env.JWT_SECRET || 'luna_jwt_fallback_secret_change_me';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET is not set!');
+  process.exit(1);
+}
 
 function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
@@ -210,15 +215,21 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(passport.initialize());
 app.use(cors({
-  origin: [
-    'https://rolandoluwaseun4.github.io',
-    'http://localhost:3000',
-    'http://127.0.0.1:5500'
-  ],
+  origin: ['https://rolandoluwaseun4.github.io'],
   methods: ['GET','POST','DELETE'],
   allowedHeaders: ['Content-Type','Authorization']
 }));
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(express.json({ limit: '2mb' }));
+
+// Input sanitization
+function sanitizeInput(str, maxLen=4000) {
+  if (typeof str !== 'string') return '';
+  return str.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi,'')
+            .replace(/<[^>]+>/g,'')
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'')
+            .trim().substring(0, maxLen);
+}
 
 const limiter = rateLimit({
   windowMs: 20 * 60 * 1000, max: 30,
@@ -241,7 +252,8 @@ function generateTitle(message) {
 }
 
 app.post("/chat", requireAuth, async (req, res) => {
-  const { message, userId, image, threadId } = req.body;
+  const { message: rawMessage, userId, image, threadId } = req.body;
+  const message = sanitizeInput(rawMessage, 4000);
   if (!message && !image) return res.status(400).json({ error: "No message provided" });
 
   // Input validation
@@ -587,9 +599,11 @@ app.post('/auth/guest', async (req, res) => {
 });
 
 // ── Admin Dashboard ───────────────────────────────────────────
-app.get('/admin', async (req, res) => {
+const adminLimiter = rateLimit({ windowMs: 15*60*1000, max: 20, message: 'Too many attempts' });
+
+app.get('/admin', adminLimiter, async (req, res) => {
   const key = req.query.key;
-  if (key !== process.env.ADMIN_KEY) {
+  if (!process.env.ADMIN_KEY || key !== process.env.ADMIN_KEY) {
     return res.status(401).send('<h2 style="font-family:sans-serif;text-align:center;margin-top:80px">🔒 Unauthorized</h2>');
   }
   try {
