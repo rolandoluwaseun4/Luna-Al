@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Signing in to Luna...</title></head>
+<body>
+<p>Signing you in...</p>
+<script>
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const user = params.get('user');
+    const authError = params.get('auth_error');
+    if (authError) {
+      window.location.replace('/Luna-AI/?auth_error=true');
+    } else if (token && user) {
+      localStorage.setItem('luna-token', token);
+      localStorage.setItem('luna-user', decodeURIComponent(user));
+      window.location.replace('/Luna-AI/');
+    } else {
+      window.location.replace('/Luna-AI/');
+    }
+  } catch(e) {
+    window.location.replace('/Luna-AI/');
+  }
+</script>
+</body>
+</html>
