@@ -498,19 +498,12 @@ app.get('/auth/google',
 );
 
 app.get('/auth/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: 'https://rolandoluwaseun4.github.io/Luna-AI/?auth_error=google_failed' }),
+  passport.authenticate('google', { session: false, failureRedirect: 'https://rolandoluwaseun4.github.io/Luna-AI/callback.html?auth_error=true' }),
   (req, res) => {
     const account = req.user;
     const token = signToken({ id: account._id, username: account.username, role: account.role });
-    const user = JSON.stringify({ id: account._id, username: account.username, displayName: account.displayName, role: account.role });
-    const LUNA_URL = 'https://rolandoluwaseun4.github.io/Luna-AI/';
-    res.send(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Signing in...</title></head>
-<body><script>
-  localStorage.setItem('luna-token', ${JSON.stringify(token)});
-  localStorage.setItem('luna-user', ${JSON.stringify(user)});
-  window.location.replace(${JSON.stringify(LUNA_URL)});
-</script><p>Signing you in to Luna...</p></body></html>`);
+    const user = encodeURIComponent(JSON.stringify({ id: account._id, username: account.username, displayName: account.displayName, role: account.role }));
+    res.redirect('https://rolandoluwaseun4.github.io/Luna-AI/callback.html?token=' + token + '&user=' + user);
   }
 );
 
