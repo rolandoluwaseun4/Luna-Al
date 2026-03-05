@@ -498,12 +498,12 @@ app.get('/auth/google',
 );
 
 app.get('/auth/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: 'https://rolandoluwaseun4.github.io/Luna-AI/callback.html?auth_error=true' }),
+  passport.authenticate('google', { session: false, failureRedirect: 'https://rolandoluwaseun4.github.io/Luna-Al/callback.html?auth_error=true' }),
   (req, res) => {
     const account = req.user;
     const token = signToken({ id: account._id, username: account.username, role: account.role });
     const user = encodeURIComponent(JSON.stringify({ id: account._id, username: account.username, displayName: account.displayName, role: account.role }));
-    res.redirect('https://rolandoluwaseun4.github.io/Luna-AI/callback.html?token=' + token + '&user=' + user);
+    res.redirect('https://rolandoluwaseun4.github.io/Luna-Al/callback.html?token=' + token + '&user=' + user);
   }
 );
 
