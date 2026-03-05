@@ -49,6 +49,19 @@ const threadSchema = new mongoose.Schema({
 });
 const Thread = mongoose.model('Thread', threadSchema);
 
+const profileSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true },
+  name: { type: String, default: '' },
+  birthday: { type: String, default: '' },
+  favoriteTopics: { type: [String], default: [] },
+  lunaNickname: { type: String, default: 'Luna' },
+  personality: { type: String, default: 'friendly', enum: ['friendly','professional','funny','serious'] },
+  preferences: { type: String, default: '' },
+  lastMood: { type: String, default: 'neutral' },
+  updatedAt: { type: Date, default: Date.now }
+});
+const Profile = mongoose.model('Profile', profileSchema);
+
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const HF_API_KEY = process.env.HF_API_KEY;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
@@ -579,6 +592,33 @@ app.post('/auth/guest', async (req, res) => {
   const id = String(guestId || 'guest_' + Date.now()).replace(/[^a-zA-Z0-9_\-]/g,'').substring(0,64);
   const token = signToken({ id, username: id, role: 'guest' });
   res.json({ token, user: { id, username: id, role: 'guest' } });
+});
+
+// ── Profile: Get ──────────────────────────────────────────────────────────────
+app.get("/profile/:userId", requireAuth, async (req, res) => {
+  const uid = String(req.params.userId);
+  try {
+    const profile = await Profile.findOne({ userId: uid });
+    res.json(profile || { userId: uid, name:'', birthday:'', favoriteTopics:[], lunaNickname:'Luna', personality:'friendly', preferences:'', lastMood:'neutral' });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load profile' });
+  }
+});
+
+// ── Profile: Save ─────────────────────────────────────────────────────────────
+app.post("/profile/:userId", requireAuth, async (req, res) => {
+  const uid = String(req.params.userId);
+  const { name, birthday, favoriteTopics, lunaNickname, personality, preferences } = req.body;
+  try {
+    const profile = await Profile.findOneAndUpdate(
+      { userId: uid },
+      { name, birthday, favoriteTopics, lunaNickname: lunaNickname||'Luna', personality: personality||'friendly', preferences: preferences||'', updatedAt: new Date() },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, profile });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not save profile' });
+  }
 });
 
 app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
