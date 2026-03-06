@@ -276,6 +276,49 @@ async function postToChannel(text) {
   return data;
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  DISCORD AUTO-POSTER → #luna-updates
+// ═══════════════════════════════════════════════════════
+async function postToDiscord(text) {
+  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) throw new Error('DISCORD_WEBHOOK_URL not set');
+
+  // Strip HTML tags from Telegram-formatted text for Discord
+  const clean = text
+    .replace(/<b>(.*?)<\/b>/g, '**$1**')
+    .replace(/<i>(.*?)<\/i>/g, '*$1*')
+    .replace(/<[^>]+>/g, '');
+
+  const res = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: 'Luna AI 🌙',
+      avatar_url: 'https://rolandoluwaseun4.github.io/Luna-Al/icon-192.png',
+      content: clean
+    })
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err);
+  }
+  return true;
+}
+
+// ── Post to ALL platforms at once ─────────────────────
+async function postToAll(text) {
+  const results = await Promise.allSettled([
+    postToChannel(text),
+    postToDiscord(text)
+  ]);
+  results.forEach((r, i) => {
+    const platform = i === 0 ? 'Telegram' : 'Discord';
+    if (r.status === 'fulfilled') console.log(`✅ ${platform} posted`);
+    else console.error(`❌ ${platform} failed:`, r.reason?.message);
+  });
+}
+
 // ── Scheduled posts content ───────────────────────────
 const channelPosts = {
   marketing: [
@@ -328,8 +371,8 @@ function scheduleChannelPost() {
   setTimeout(async () => {
     try {
       const post = getScheduledPost();
-      await postToChannel(post);
-      console.log('✅ Channel post sent');
+      await postToAll(post);
+      console.log('✅ Scheduled post sent to all platforms');
     } catch (err) {
       console.error('❌ Channel post failed:', err.message);
     }
@@ -339,7 +382,7 @@ function scheduleChannelPost() {
 
 if (process.env.TELEGRAM_BOT_TOKEN) {
   scheduleChannelPost();
-  console.log('📢 Telegram channel scheduler started → @Luna1Claude');
+  console.log('📢 Auto-poster started → Telegram @Luna1Claude + Discord');
 }
 
 app.post("/chat", requireAuth, async (req, res) => {
@@ -363,8 +406,8 @@ app.post("/chat", requireAuth, async (req, res) => {
     const postText = message.slice('post to channel:'.length).trim();
     if (!postText) return res.json({ reply: "What should I post? Try: post to channel: [your message]" });
     try {
-      await postToChannel(postText);
-      return res.json({ reply: `✅ Posted to @Luna1Claude!\n\n"${postText}"` });
+      await postToAll(postText);
+      return res.json({ reply: `✅ Posted to Telegram + Discord!\n\n"${postText}"` });
     } catch (err) {
       return res.json({ reply: `❌ Could not post to channel: ${err.message}` });
     }
