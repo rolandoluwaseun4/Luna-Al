@@ -188,25 +188,27 @@ function isFactQuery(message) {
 // ── Detect if task needs Gemini (complex) or Groq (fast) ────
 function isComplexTask(message) {
   if (!message) return false;
-  const msg = message.toLowerCase();
+  const msg = message.toLowerCase().trim();
+  // Must be at least 15 chars — short messages are never complex
+  if (msg.length < 15) return false;
   const complexTriggers = [
-    // Creative & writing
+    // Creative & writing (must be explicit write commands)
     'write a story', 'write me a story', 'write a pitch', 'startup pitch',
     'business plan', 'write a script', 'write a poem', 'write an essay',
     'write a report', 'write a proposal', 'write a cover letter',
-    'write a letter', 'write a blog', 'write an article',
-    // Analysis & research
-    'analyse', 'analyze', 'research', 'compare', 'explain in detail',
-    'deep dive', 'break down', 'pros and cons', 'advantages and disadvantages',
-    'comprehensive', 'thoroughly', 'in depth', 'summarize this', 'summarise this',
-    // Strategy & advice
-    'business model', 'marketing strategy', 'growth strategy', 'how do i start',
-    'give me a plan', 'step by step', 'roadmap', 'strategy for',
+    'write a letter', 'write a blog post', 'write an article',
+    // Analysis & research (specific phrases only)
+    'explain in detail', 'deep dive', 'pros and cons',
+    'advantages and disadvantages', 'comprehensive guide',
+    'thoroughly explain', 'in depth analysis', 'summarize this document',
+    'summarise this document', 'analyse this', 'analyze this',
+    // Strategy
+    'business model', 'marketing strategy', 'growth strategy',
+    'give me a plan', 'step by step guide', 'roadmap for',
+    'strategy for', 'how do i start a',
     // Technical depth
-    'debug this', 'review my code', 'refactor', 'architecture', 'best practices',
-    'how does', 'why does', 'what causes', 'difference between',
-    // Long form
-    'long', 'detailed', 'full', 'complete', 'entire'
+    'debug this code', 'review my code', 'refactor this',
+    'difference between', 'best practices for',
   ];
   return complexTriggers.some(t => msg.includes(t));
 }
