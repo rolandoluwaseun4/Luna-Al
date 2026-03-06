@@ -185,32 +185,30 @@ function isFactQuery(message) {
   return factTriggers.some(t => message.toLowerCase().includes(t));
 }
 
-// ── Detect if task needs Gemini (complex) or Groq (fast) ────
-function isComplexTask(message) {
-  if (!message) return false;
-  const msg = message.toLowerCase().trim();
-  // Must be at least 15 chars — short messages are never complex
-  if (msg.length < 15) return false;
-  const complexTriggers = [
-    // Creative & writing (must be explicit write commands)
-    'write a story', 'write me a story', 'write a pitch', 'startup pitch',
-    'business plan', 'write a script', 'write a poem', 'write an essay',
-    'write a report', 'write a proposal', 'write a cover letter',
-    'write a letter', 'write a blog post', 'write an article',
-    // Analysis & research (specific phrases only)
-    'explain in detail', 'deep dive', 'pros and cons',
-    'advantages and disadvantages', 'comprehensive guide',
-    'thoroughly explain', 'in depth analysis', 'summarize this document',
-    'summarise this document', 'analyse this', 'analyze this',
-    // Strategy
-    'business model', 'marketing strategy', 'growth strategy',
-    'give me a plan', 'step by step guide', 'roadmap for',
-    'strategy for', 'how do i start a',
-    // Technical depth
-    'debug this code', 'review my code', 'refactor this',
-    'difference between', 'best practices for',
-  ];
-  return complexTriggers.some(t => msg.includes(t));
+// ── AI classifier: asks Groq to decide SIMPLE or COMPLEX ────
+async function classifyTask(message) {
+  if (!message || message.trim().length < 10) return 'SIMPLE';
+  try {
+    const res = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant', // fastest model for classification
+      max_tokens: 5,
+      temperature: 0,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a task classifier. Respond with exactly one word: COMPLEX or SIMPLE.
+COMPLEX = long-form writing (stories, pitches, essays, poems, scripts, reports, business plans), deep analysis, research, strategy, code review, comparison, step-by-step guides.
+SIMPLE = casual chat, greetings, short questions, quick facts, jokes, basic questions.`
+        },
+        { role: 'user', content: message }
+      ]
+    });
+    const verdict = res.choices[0]?.message?.content?.trim().toUpperCase();
+    return verdict === 'COMPLEX' ? 'COMPLEX' : 'SIMPLE';
+  } catch (e) {
+    console.warn('Classifier failed, defaulting to SIMPLE:', e.message);
+    return 'SIMPLE';
+  }
 }
 
 // ── Call Gemini Flash for complex tasks ───────────────────────
@@ -603,23 +601,29 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    // ── Smart routing: Gemini for complex, Groq for fast ────────
-    // Use Gemini only for complex tasks or when deep think is explicitly requested
+    // ── Smart routing: AI classifier decides SIMPLE or COMPLEX ──
     const deepThinkRequested = message && (
       message.toLowerCase().includes('[deep think]') ||
       message.toLowerCase().includes('[luna research]')
     );
-    const useGemini = geminiClient && !image && (deepThinkRequested || isComplexTask(message));
+    let useGemini = false;
+    if (geminiClient && !image) {
+      if (deepThinkRequested) {
+        useGemini = true;
+      } else {
+        const complexity = await classifyTask(message);
+        useGemini = complexity === 'COMPLEX';
+        console.log(`Task classified as ${complexity} — routing to ${useGemini ? 'Gemini' : 'Groq'}`);
+      }
+    }
     let fullReply = '';
 
     if (useGemini) {
       // ── Gemini Flash (complex tasks) ──────────────────────────
-      console.log('Routing to Gemini Flash (complex task)');
       try {
         fullReply = await callGemini(systemPrompt, safeHistory, image || null);
       } catch (geminiErr) {
         console.warn('Gemini failed, falling back to Groq:', geminiErr.message);
-        // Fall through to Groq below
       }
     }
 
