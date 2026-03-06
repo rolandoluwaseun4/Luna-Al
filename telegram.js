@@ -602,7 +602,12 @@ app.post("/chat", requireAuth, async (req, res) => {
     }
 
     // ── Smart routing: Gemini for complex, Groq for fast ────────
-    const useGemini = geminiClient && (image || isComplexTask(message));
+    // Use Gemini only for complex tasks or when deep think is explicitly requested
+    const deepThinkRequested = message && (
+      message.toLowerCase().includes('[deep think]') ||
+      message.toLowerCase().includes('[luna research]')
+    );
+    const useGemini = geminiClient && !image && (deepThinkRequested || isComplexTask(message));
     let fullReply = '';
 
     if (useGemini) {
@@ -787,22 +792,66 @@ app.delete("/history/:userId", requireAuth, async (req, res) => {
   }
 });
 
+// ── Detect if prompt needs realistic/editing (Gemini) or regular (FLUX) ──
+function isRealisticOrEdit(prompt) {
+  const p = prompt.toLowerCase();
+  const triggers = [
+    'realistic', 'real life', 'photorealistic', 'photo realistic',
+    'like a photo', 'like a real', 'hyperrealistic', 'hyper realistic',
+    'edit', 'editing', 'make it look', 'change the', 'remove the',
+    'add to', 'modify', 'enhance', 'retouch', 'portrait photo',
+    'professional photo', 'real person', 'photograph of'
+  ];
+  return triggers.some(t => p.includes(t));
+}
+
+// ── Generate realistic image via Gemini Imagen ────────────────
+async function generateWithGemini(prompt) {
+  if (!geminiClient) throw new Error('Gemini not configured');
+  const model = geminiClient.getGenerativeModel({ model: 'gemini-2.0-flash-exp-image-generation' });
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseModalities: ['image', 'text'] }
+  });
+  for (const part of result.response.candidates[0].content.parts) {
+    if (part.inlineData) {
+      return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+    }
+  }
+  throw new Error('No image in Gemini response');
+}
+
 app.post("/generate-image", requireAuth, async (req, res) => {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
 
-  // Enhance prompt automatically for better quality
-  const enhancedPrompt = `${prompt}, highly detailed, sharp focus, professional quality, vivid colors, 4k, masterpiece`;
+  const useGeminiImage = geminiClient && isRealisticOrEdit(prompt);
 
-  // Model chain — try best first, fall back if unavailable
-  const imageModels = [
+  // ── Gemini: realistic / editing prompts ──────────────────────
+  if (useGeminiImage) {
+    console.log('Routing image to Gemini (realistic/edit)');
+    try {
+      const image = await generateWithGemini(prompt);
+      return res.json({ image });
+    } catch (err) {
+      console.warn('Gemini image failed, falling back to FLUX:', err.message);
+      // fall through to FLUX
+    }
+  }
+
+  // ── FLUX: regular / creative images ──────────────────────────
+  const enhancedPrompt = useGeminiImage
+    ? prompt
+    : `${prompt}, highly detailed, sharp focus, vivid colors, 4k, masterpiece`;
+
+  const fluxModels = [
     "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev",
     "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
     "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-3-medium-diffusers",
     "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0",
   ];
 
-  for (const modelUrl of imageModels) {
+  for (const modelUrl of fluxModels) {
     try {
       const response = await fetch(modelUrl, {
         method: "POST",
@@ -810,14 +859,13 @@ app.post("/generate-image", requireAuth, async (req, res) => {
         body: JSON.stringify({ inputs: enhancedPrompt })
       });
       if (!response.ok) {
-        const errText = await response.text();
-        console.warn(`Image model ${modelUrl} failed: ${response.status} ${errText}`);
-        continue; // try next model
+        console.warn(`FLUX model ${modelUrl} failed: ${response.status}`);
+        continue;
       }
       const buffer = await response.arrayBuffer();
       return res.json({ image: `data:image/png;base64,${Buffer.from(buffer).toString('base64')}` });
     } catch (err) {
-      console.warn(`Image model ${modelUrl} error: ${err.message}`);
+      console.warn(`FLUX model ${modelUrl} error: ${err.message}`);
       continue;
     }
   }
