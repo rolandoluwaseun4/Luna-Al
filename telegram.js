@@ -216,9 +216,9 @@ async function callGemini(systemPrompt, messages, imageBase64 = null) {
   if (!geminiClient) throw new Error('Gemini not configured');
   // Gemini model chain — try best first, fall back on quota/error
   const geminiModels = [
-    'gemini-2.5-flash-preview-04-17',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
+    'gemini-2.5-flash-preview-05-20',  // latest 2.5 flash
+    'gemini-2.5-flash-preview-04-17',  // older 2.5 flash
+    'gemini-2.0-flash',                // stable fallback
   ];
   let lastErr = null;
   for (const modelName of geminiModels) {
