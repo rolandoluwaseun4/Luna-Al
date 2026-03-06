@@ -1610,6 +1610,20 @@
       toolSuffix = '\n\n[PDF CONTENT]:\n' + pdfText;
     }
     if (toolSuffix) text = text + toolSuffix;
+    // Inject deep think / research tags so backend routes to Gemini
+    const inp = document.getElementById('chat-input') || document.querySelector('textarea');
+    if (inp && inp.dataset.deepThink) {
+      text = '[deep think] ' + (text || '');
+      delete inp.dataset.deepThink;
+      inp.placeholder = 'Message Luna...';
+      document.getElementById('plus-btn').style.color = '';
+    }
+    if (inp && inp.dataset.research) {
+      text = '[luna research] ' + (text || '');
+      delete inp.dataset.research;
+      inp.placeholder = 'Message Luna...';
+      document.getElementById('plus-btn').style.color = '';
+    }
     busy=true;chatSend.disabled=true;typingRow.style.display='flex';messagesEl.scrollTop=messagesEl.scrollHeight;
 
     const deepTriggers = ['research','explain','compare','analyse','analyze','difference between','how does','why does','what causes','history of','deep dive','in detail','thoroughly','comprehensive','summarize','pros and cons','advantages','disadvantages','versus','vs '];
