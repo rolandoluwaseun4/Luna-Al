@@ -251,6 +251,97 @@ function generateTitle(message) {
   return (words.length > 3 ? words : clean.substring(0, 40)) || 'New Chat';
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  TELEGRAM CHANNEL AUTO-POSTER → @Luna1Claude
+// ═══════════════════════════════════════════════════════
+const TELEGRAM_CHANNEL = '@Luna1Claude';
+
+async function postToChannel(text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new Error('TELEGRAM_BOT_TOKEN not set');
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: TELEGRAM_CHANNEL,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: false
+    })
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.description || 'Telegram API error');
+  return data;
+}
+
+// ── Scheduled posts content ───────────────────────────
+const channelPosts = {
+  marketing: [
+    `🌙 <b>Meet Luna AI</b>\n\nYour personal AI that actually gets your vibe. Chat, create, generate images, research anything — all free.\n\n👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
+    `✨ <b>Luna just got smarter</b>\n\nDeep thinking. Web research. Image generation. PDF reading. Secret mode.\n\nFree AI app built by an 18-year-old from Nigeria 🇳🇬\n\n👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
+    `🚀 <b>Why Luna is different</b>\n\n• Remembers your conversations\n• Generates images on demand\n• Researches the web for you\n• Reads your PDFs\n• 100% free\n\n👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
+    `🇳🇬 <b>Made in Nigeria, built for the world</b>\n\nLuna AI — free personal AI built by an 18-year-old.\n\n👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
+  ],
+  tips: [
+    `💡 <b>Luna Tip</b>\n\nType "deep think:" before any question — Luna will analyse every angle before answering.`,
+    `💡 <b>Luna Tip</b>\n\nUpload a PDF and ask Luna to summarize it or quiz you on the content.`,
+    `💡 <b>Luna Tip</b>\n\nSay "generate an image of..." and Luna creates a custom image instantly.`,
+    `💡 <b>Luna Tip</b>\n\nUse Secret Mode 🔒 for chats you don't want saved.`,
+  ],
+  facts: [
+    `🤖 <b>AI Fact</b>\n\nThe term "Artificial Intelligence" was coined in 1956 by John McCarthy at Dartmouth College.`,
+    `🤖 <b>AI Fact</b>\n\nThe first chatbot, ELIZA (1966), was so convincing some people refused to believe it wasn't human.`,
+    `🤖 <b>AI Fact</b>\n\nAfrica is one of the fastest-growing regions for AI adoption. Nigerian developers are building world-class AI right now 🇳🇬`,
+    `🤖 <b>AI Fact</b>\n\nAI can generate images, music, code and video — but still struggles with tasks a 3-year-old finds easy.`,
+  ],
+  motivation: [
+    `🌙 <b>From Luna</b>\n\nYou don't have to have it all figured out. Just take one step today. I'm here whenever you need to think 💜`,
+    `🌙 <b>Good morning</b>\n\nSomeone built an entire AI app at 18. What's your excuse for not starting today?\n\n👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
+    `🌙 <b>Reminder</b>\n\nYour ideas are worth building. Start small. Ship fast. Improve always.\n\nNeed a thinking partner? 👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
+  ]
+};
+
+function getScheduledPost() {
+  const hour = new Date().getHours();
+  const rand = arr => arr[Math.floor(Math.random() * arr.length)];
+  if (hour >= 7  && hour < 10) return rand(channelPosts.motivation);
+  if (hour >= 10 && hour < 13) return rand(channelPosts.tips);
+  if (hour >= 13 && hour < 17) return rand(channelPosts.facts);
+  if (hour >= 17 && hour < 21) return rand(channelPosts.marketing);
+  return rand(channelPosts.motivation);
+}
+
+function scheduleChannelPost() {
+  const now = new Date();
+  const postHours = [7, 12, 17, 21];
+  const next = new Date();
+  let found = false;
+  for (const h of postHours) {
+    next.setHours(h, 0, 0, 0);
+    if (next > now) { found = true; break; }
+  }
+  if (!found) { next.setDate(next.getDate() + 1); next.setHours(7, 0, 0, 0); }
+  const delay = next - now;
+  console.log(`📢 Next channel post in ${Math.round(delay/60000)} minutes`);
+  setTimeout(async () => {
+    try {
+      const post = getScheduledPost();
+      await postToChannel(post);
+      console.log('✅ Channel post sent');
+    } catch (err) {
+      console.error('❌ Channel post failed:', err.message);
+    }
+    scheduleChannelPost();
+  }, delay);
+}
+
+if (process.env.TELEGRAM_BOT_TOKEN) {
+  scheduleChannelPost();
+  console.log('📢 Telegram channel scheduler started → @Luna1Claude');
+}
+
 app.post("/chat", requireAuth, async (req, res) => {
   const { message: rawMessage, userId, image, threadId } = req.body;
   const message = sanitizeInput(rawMessage, 4000);
