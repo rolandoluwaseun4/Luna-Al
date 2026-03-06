@@ -239,17 +239,31 @@ async function callGemini(systemPrompt, messages, imageBase64 = null) {
   }
 
   // Text only — multi-turn chat
-  const history = messages.slice(0, -1).map(m => ({
+  // Build history excluding the last message, ensure it starts with 'user'
+  let history = messages.slice(0, -1).map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: typeof m.content === 'string' ? m.content : (m.content?.find?.(c => c.type === 'text')?.text || '') }]
   })).filter(m => m.parts[0].text);
+
+  // Gemini requires history to start with 'user' role — strip leading model messages
+  while (history.length > 0 && history[0].role === 'model') {
+    history.shift();
+  }
+  // Gemini requires alternating user/model — remove consecutive same roles
+  const cleanHistory = [];
+  for (const msg of history) {
+    const last = cleanHistory[cleanHistory.length - 1];
+    if (!last || last.role !== msg.role) {
+      cleanHistory.push(msg);
+    }
+  }
 
   const lastMsg = messages[messages.length - 1];
   const lastText = typeof lastMsg.content === 'string'
     ? lastMsg.content
     : (lastMsg.content?.find?.(c => c.type === 'text')?.text || '');
 
-  const chat = model.startChat({ history });
+  const chat = model.startChat({ history: cleanHistory });
   const result = await chat.sendMessage(lastText);
   return result.response.text();
 }
