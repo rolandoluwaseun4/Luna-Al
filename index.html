@@ -1109,7 +1109,6 @@
       <div class="creative-bar" id="creative-bar">
         <button class="creative-pill" data-mode="story" onclick="setCreativeMode(this)"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>Story</button>
         <button class="creative-pill" data-mode="poem" onclick="setCreativeMode(this)"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Poem</button>
-        <button class="creative-pill" data-mode="script" onclick="setCreativeMode(this)"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>Script</button>
         <button class="creative-pill" data-mode="quiz" onclick="setCreativeMode(this)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Quiz</button>
         <button class="creative-pill" data-mode="roast" onclick="setCreativeMode(this)"><svg viewBox="0 0 24 24"><path d="M12 2c0 0-4 4-4 9a4 4 0 0 0 8 0c0-5-4-9-4-9z"/><path d="M12 15v4"/><path d="M9 19h6"/></svg>Roast</button>
         <button class="creative-pill" data-mode="motivate" onclick="setCreativeMode(this)"><svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Motivate</button>
@@ -1209,6 +1208,14 @@
   <div class="plus-menu-item" onclick="plusAction('image')">
     <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
     Upload Image
+  </div>
+  <div class="plus-menu-item" onclick="closePlusMenu();activateDeepThink()">
+    <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div>
+    <span>Deep Think</span>
+  </div>
+  <div class="plus-menu-item" onclick="closePlusMenu();activateResearch()">
+    <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+    <span>Luna Research</span>
   </div>
   <div class="plus-menu-item" onclick="closePlusMenu();toggleSecretMode()">
     <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></div>
@@ -1632,14 +1639,14 @@
       return;
     }
 
-    const imgPhrases=['generate an image','generate image','draw an image','draw a ','create an image','create image','make an image','make a picture','imagine a '];
+    const imgPhrases=['generate an image','generate image','generate a picture','generate a photo','draw an image','draw a ','create an image','create image','create a picture','make an image','make a picture','make a photo','imagine a ','picture of ','photo of '];
     const isImg=!image&&text&&imgPhrases.some(t=>text.toLowerCase().startsWith(t)||text.toLowerCase().startsWith('can you '+t)||text.toLowerCase().startsWith('please '+t));
     if(isImg){
       const prompt=text.replace(/^(please |can you )?(generate an? image( of)?|draw an? image( of)?|draw a |create an? image( of)?|make an? image( of)?|make a picture( of)?|imagine a )/i,'').trim()||text;
       try{
         const res=await fetch(BACKEND_URL+'/generate-image',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify({prompt:prompt})});
         if(!res.ok)throw new Error();
-        const data=await res.json();typingRow.style.display='none';addMsg('luna','Here is your image of "'+prompt+'"',data.image);
+        const data=await res.json();typingRow.style.display='none';addMsg('luna','',data.image);
       }catch(e){typingRow.style.display='none';addMsg('luna','Could not generate that image. Try a different description.');}
       finally{busy=false;chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;}
       return;
@@ -1853,6 +1860,18 @@
   function closePlusMenu() {
     document.getElementById('plus-menu').classList.remove('active');
     document.getElementById('plus-menu-overlay').classList.remove('active');
+  }
+  function activateDeepThink() {
+    const inp = document.getElementById('chat-input') || document.querySelector('textarea');
+    if (inp) { inp.placeholder = 'Ask Luna to think deeply...'; inp.dataset.deepThink = 'true'; }
+    document.getElementById('plus-btn').style.color = 'var(--accent)';
+    haptic('medium');
+  }
+  function activateResearch() {
+    const inp = document.getElementById('chat-input') || document.querySelector('textarea');
+    if (inp) { inp.placeholder = 'What should Luna research?'; inp.dataset.research = 'true'; }
+    document.getElementById('plus-btn').style.color = 'var(--accent)';
+    haptic('medium');
   }
   function plusAction(type) {
     closePlusMenu();
@@ -2154,7 +2173,7 @@
       return '<div class="artifact-card" onclick="openArtifactById(\''+id+'\')">'+
         '<div class="artifact-icon">'+storyIcon+'</div>'+
         '<div class="artifact-info">'+
-          '<div class="artifact-name">✨ '+preview+'...</div>'+
+          '<div class="artifact-name">'+preview+'...</div>'+
           '<div class="artifact-meta">Story · '+wordCount+' words</div>'+
         '</div></div>';
     }
