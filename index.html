@@ -1431,7 +1431,7 @@
     const msgsEl=document.getElementById('history-detail-msgs');
     msgsEl.innerHTML=group.messages.map(m=>`
       <div class="history-dmsg ${m.role==='assistant'?'luna':'user'}">
-        ${m.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}
+        ${renderMarkdown(m.text)}
         <div class="history-dmsg-time">${new Date(m.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
       </div>`).join('');
     msgsEl.scrollTop=msgsEl.scrollHeight;
@@ -1506,7 +1506,7 @@
       activeThreadMessages=data.messages||[];
       msgsEl.innerHTML=data.messages.map(m=>`
         <div class="history-dmsg ${m.role==='assistant'?'luna':'user'}">
-          ${m.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}
+          ${renderMarkdown(m.text)}
           <div class="history-dmsg-time">${new Date(m.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
         </div>`).join('');
       msgsEl.scrollTop=msgsEl.scrollHeight;
@@ -1575,9 +1575,30 @@
   chatSend.addEventListener('click',send);
   function startChat(text){showScreen('chat');setTimeout(()=>{lastLunaText=text;addMsg('user',text);fetchReply(text,null);},50);}
   function ts(){return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+  function renderMarkdown(text) {
+    return text
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      // Headers
+      .replace(/^### (.+)$/gm,'<h3 style="margin:10px 0 4px;font-size:15px;font-weight:700;color:var(--text)">$1</h3>')
+      .replace(/^## (.+)$/gm,'<h2 style="margin:12px 0 5px;font-size:16px;font-weight:700;color:var(--text)">$1</h2>')
+      .replace(/^# (.+)$/gm,'<h1 style="margin:12px 0 6px;font-size:18px;font-weight:800;color:var(--text)">$1</h1>')
+      // Bold and italic
+      .replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>')
+      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g,'<em>$1</em>')
+      // Inline code
+      .replace(/`([^`]+)`/g,'<code style="background:var(--accent-soft);padding:2px 6px;border-radius:4px;font-family:monospace;font-size:13px">$1</code>')
+      // Numbered lists
+      .replace(/^\d+\. (.+)$/gm,'<div style="margin:3px 0;padding-left:4px">$&</div>')
+      // Bullet lists
+      .replace(/^[-*] (.+)$/gm,'<div style="margin:3px 0;padding-left:12px">• $1</div>')
+      // Line breaks
+      .replace(/\n/g,'<br>');
+  }
+
   function addMsg(role,text,imgUrl){
     const row=document.createElement('div');row.className='mrow '+role;
-    const esc=text?text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'):'';
+    const esc=text?renderMarkdown(text):'';
     const av=role==='luna'?'<div class="mav luna"><img src="icon-192.png" alt="L"/></div>':'<div class="mav user">'+(isOwner?'R':'G')+'</div>';
     const img=imgUrl?'<a href="'+imgUrl+'" download="luna-image.png"><img class="gen-image" src="'+imgUrl+'" alt="image"/></a><div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Tap to download</div>':'';
     const copyBtn=role==='luna'&&text?'<button class="copy-btn" onclick="copyMsg(this,\''+encodeURIComponent(text)+'\')"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</button>':'';
@@ -1599,7 +1620,7 @@
     const row=document.createElement('div');row.className='mrow user';
     const av='<div class="mav user">'+(isOwner?'R':'G')+'</div>';
     const imgHtml=imgToSend?'<img src="'+imgToSend+'" style="max-width:200px;border-radius:10px;margin-bottom:4px;"/>'  :'';
-    const textHtml=text?'<div class="bubble">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</div>':'';
+    const textHtml=text?'<div class="bubble">'+renderMarkdown(text)+'</div>':'';
     row.innerHTML=av+'<div class="mbody">'+imgHtml+textHtml+'<div class="mtime">'+ts()+'</div></div>';
     messagesEl.insertBefore(row,typingRow);messagesEl.scrollTop=messagesEl.scrollHeight;
     fetchReply(text,imgToSend);
