@@ -51,6 +51,12 @@ const threadSchema = new mongoose.Schema({
 const Thread = mongoose.model('Thread', threadSchema);
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+// ── Gemini setup ──────────────────────────────────────────────
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const geminiClient = process.env.GEMINI_API_KEY
+  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+  : null;
 const HF_API_KEY = process.env.HF_API_KEY;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
 
@@ -179,6 +185,75 @@ function isFactQuery(message) {
   return factTriggers.some(t => message.toLowerCase().includes(t));
 }
 
+// ── Detect if task needs Gemini (complex) or Groq (fast) ────
+function isComplexTask(message) {
+  if (!message) return false;
+  const msg = message.toLowerCase();
+  const complexTriggers = [
+    // Creative & writing
+    'write a story', 'write me a story', 'write a pitch', 'startup pitch',
+    'business plan', 'write a script', 'write a poem', 'write an essay',
+    'write a report', 'write a proposal', 'write a cover letter',
+    'write a letter', 'write a blog', 'write an article',
+    // Analysis & research
+    'analyse', 'analyze', 'research', 'compare', 'explain in detail',
+    'deep dive', 'break down', 'pros and cons', 'advantages and disadvantages',
+    'comprehensive', 'thoroughly', 'in depth', 'summarize this', 'summarise this',
+    // Strategy & advice
+    'business model', 'marketing strategy', 'growth strategy', 'how do i start',
+    'give me a plan', 'step by step', 'roadmap', 'strategy for',
+    // Technical depth
+    'debug this', 'review my code', 'refactor', 'architecture', 'best practices',
+    'how does', 'why does', 'what causes', 'difference between',
+    // Long form
+    'long', 'detailed', 'full', 'complete', 'entire'
+  ];
+  return complexTriggers.some(t => msg.includes(t));
+}
+
+// ── Call Gemini Flash for complex tasks ───────────────────────
+async function callGemini(systemPrompt, messages, imageBase64 = null) {
+  if (!geminiClient) throw new Error('Gemini not configured');
+  const model = geminiClient.getGenerativeModel({
+    model: 'gemini-2.0-flash',
+    systemInstruction: systemPrompt,
+    generationConfig: { maxOutputTokens: 4096, temperature: 0.9 }
+  });
+
+  // If image is attached — send as multimodal single turn
+  if (imageBase64) {
+    const lastMsg = messages[messages.length - 1];
+    const textPart = typeof lastMsg.content === 'string'
+      ? lastMsg.content
+      : (lastMsg.content?.find?.(c => c.type === 'text')?.text || 'What is in this image?');
+
+    // Strip the data URL prefix if present
+    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+    const mimeType = imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
+
+    const result = await model.generateContent([
+      { text: textPart },
+      { inlineData: { mimeType, data: base64Data } }
+    ]);
+    return result.response.text();
+  }
+
+  // Text only — multi-turn chat
+  const history = messages.slice(0, -1).map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: typeof m.content === 'string' ? m.content : (m.content?.find?.(c => c.type === 'text')?.text || '') }]
+  })).filter(m => m.parts[0].text);
+
+  const lastMsg = messages[messages.length - 1];
+  const lastText = typeof lastMsg.content === 'string'
+    ? lastMsg.content
+    : (lastMsg.content?.find?.(c => c.type === 'text')?.text || '');
+
+  const chat = model.startChat({ history });
+  const result = await chat.sendMessage(lastText);
+  return result.response.text();
+}
+
 function getSystemPrompt(userId, isOwner = false) {
   const now = new Date();
   const hour = now.getHours();
@@ -229,7 +304,16 @@ You are the kind of AI that makes people say "wow, that's exactly what I needed.
 - Never be preachy or add unnecessary warnings to normal requests.
 - If you do not know something, say so clearly — then offer what you do know or can reason.
 - When given web search results, use them to answer accurately. Integrate the information naturally — do not just list sources.
-- Always be on the user's side. You are their most capable ally.`;
+- Always be on the user's side. You are their most capable ally.
+
+## CREATIVE & PITCH WRITING — ELEVATED STANDARD
+When writing pitches, startup ideas, business concepts, stories or any creative task — do not write like a template. Write like a human who is genuinely excited about the idea.
+- Open with a scene, a feeling or a provocative statement — not a definition.
+- Give the concept a name, a personality, a world. Make it feel real.
+- Use specific, vivid details instead of generic descriptions. Not "a coffee shop" — "a low-lit corner café that smells like cardamom and rain."
+- Write the kind of pitch that makes an investor lean forward or a reader forget to scroll.
+- The goal is not to cover all the points — it is to make the reader feel something first, then inform them.
+- Every creative output should feel like it came from a talented human writer, not an AI filling a template.`;
 
   if (isOwner) {
     return `${base}
@@ -517,67 +601,81 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    // ── Fallback model chain ──────────────────────────────────
-    const textModels = [
-      "llama-3.3-70b-versatile",
-      "llama-3.1-70b-versatile",
-      "llama3-70b-8192",
-      "llama-3.1-8b-instant"
-    ];
-    const imageModels = [
-      "meta-llama/llama-4-scout-17b-16e-instruct",
-      "meta-llama/llama-4-maverick-17b-128e-instruct"
-    ];
-    const models = image ? imageModels : textModels;
+    // ── Smart routing: Gemini for complex, Groq for fast ────────
+    const useGemini = geminiClient && (image || isComplexTask(message));
+    let fullReply = '';
 
-    // For 413 (too large), trim history and retry same model with fewer messages
-    let msgPayload = image
-      ? thread.messages.map(m => ({ role: m.role, content: m.content }))
-      : safeHistory;
+    if (useGemini) {
+      // ── Gemini Flash (complex tasks) ──────────────────────────
+      console.log('Routing to Gemini Flash (complex task)');
+      try {
+        fullReply = await callGemini(systemPrompt, safeHistory, image || null);
+      } catch (geminiErr) {
+        console.warn('Gemini failed, falling back to Groq:', geminiErr.message);
+        // Fall through to Groq below
+      }
+    }
 
-    let response = null;
-    let usedModel = null;
-    for (const model of models) {
-      let currentPayload = [...msgPayload];
-      let attempts = 0;
-      while (attempts < 3) {
-        try {
-          response = await groq.chat.completions.create({
-            model,
-            max_tokens: 1024,
-            messages: [{ role: "system", content: systemPrompt }, ...currentPayload],
-            stream: true,
-          });
-          usedModel = model;
-          break;
-        } catch (err) {
-          const status = err?.status || err?.error?.status;
-          const msg = err?.message || '';
-          if (status === 413 || msg.includes('too large') || msg.includes('context')) {
-            // Trim oldest messages and retry same model
-            currentPayload = currentPayload.slice(Math.ceil(currentPayload.length / 2));
-            attempts++;
-            console.warn(`Model ${model} 413 - trimmed history to ${currentPayload.length} msgs, retrying...`);
-          } else if (status === 429 || msg.includes('rate_limit')) {
-            console.warn(`Model ${model} rate limited (429). Trying next...`);
-            break; // try next model
-          } else if (status === 400 && msg.includes('decommissioned')) {
-            console.warn(`Model ${model} decommissioned. Trying next...`);
-            break; // try next model
-          } else {
-            throw err; // real error, stop
+    if (!fullReply) {
+      // ── Groq (fast tasks or Gemini fallback) ─────────────────
+      const textModels = [
+        "meta-llama/llama-4-maverick-17b-128e-instruct",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-70b-versatile",
+        "llama3-70b-8192",
+        "llama-3.1-8b-instant"
+      ];
+      const imageModels = [
+        "meta-llama/llama-4-maverick-17b-128e-instruct",
+        "meta-llama/llama-4-scout-17b-16e-instruct"
+      ];
+      const models = image ? imageModels : textModels;
+      let msgPayload = image
+        ? thread.messages.map(m => ({ role: m.role, content: m.content }))
+        : safeHistory;
+
+      let response = null;
+      let usedModel = null;
+      for (const model of models) {
+        let currentPayload = [...msgPayload];
+        let attempts = 0;
+        while (attempts < 3) {
+          try {
+            response = await groq.chat.completions.create({
+              model,
+              max_tokens: 4096,
+              messages: [{ role: "system", content: systemPrompt }, ...currentPayload],
+              stream: true,
+            });
+            usedModel = model;
+            break;
+          } catch (err) {
+            const status = err?.status || err?.error?.status;
+            const msg = err?.message || '';
+            if (status === 413 || msg.includes('too large') || msg.includes('context')) {
+              currentPayload = currentPayload.slice(Math.ceil(currentPayload.length / 2));
+              attempts++;
+              console.warn(`Model ${model} 413 - trimmed history, retrying...`);
+            } else if (status === 429 || msg.includes('rate_limit')) {
+              console.warn(`Model ${model} rate limited. Trying next...`);
+              break;
+            } else if (status === 400 && msg.includes('decommissioned')) {
+              console.warn(`Model ${model} decommissioned. Trying next...`);
+              break;
+            } else {
+              throw err;
+            }
           }
         }
+        if (usedModel) break;
       }
-      if (usedModel) break;
-    }
-    if (!response) throw new Error("All models unavailable. Please try again shortly.");
+      if (!response) throw new Error("All models unavailable. Please try again shortly.");
 
-    // Collect full reply from stream
-    let fullReply = '';
-    for await (const chunk of response) {
-      const delta = chunk.choices[0]?.delta?.content || '';
-      if (delta) fullReply += delta;
+      for await (const chunk of response) {
+        const delta = chunk.choices[0]?.delta?.content || '';
+        if (delta) fullReply += delta;
+      }
     }
 
     thread.messages.push({ role: 'assistant', content: fullReply, timestamp: new Date() });
