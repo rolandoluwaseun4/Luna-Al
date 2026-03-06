@@ -214,8 +214,34 @@ SIMPLE = casual chat, greetings, short questions, quick facts, jokes, basic ques
 // ── Call Gemini Flash for complex tasks ───────────────────────
 async function callGemini(systemPrompt, messages, imageBase64 = null) {
   if (!geminiClient) throw new Error('Gemini not configured');
+  // Gemini model chain — try best first, fall back on quota/error
+  const geminiModels = [
+    'gemini-2.5-flash-preview-04-17',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+  ];
+  let lastErr = null;
+  for (const modelName of geminiModels) {
+    try {
+      const result = await callGeminiWithModel(modelName, systemPrompt, messages, imageBase64);
+      console.log(`Gemini responded using: ${modelName}`);
+      return result;
+    } catch (err) {
+      const msg = err?.message || '';
+      if (msg.includes('429') || msg.includes('quota') || msg.includes('rate') || msg.includes('not found') || msg.includes('404')) {
+        console.warn(`Gemini model ${modelName} failed (${msg.slice(0,60)}), trying next...`);
+        lastErr = err;
+        continue;
+      }
+      throw err; // non-quota error, don't retry
+    }
+  }
+  throw lastErr || new Error('All Gemini models failed');
+}
+
+async function callGeminiWithModel(modelName, systemPrompt, messages, imageBase64 = null) {
   const model = geminiClient.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+    model: modelName,
     systemInstruction: systemPrompt,
     generationConfig: { maxOutputTokens: 4096, temperature: 0.9 }
   });
@@ -828,7 +854,7 @@ function isRealisticOrEdit(prompt) {
 // ── Generate realistic image via Gemini Imagen ────────────────
 async function generateWithGemini(prompt) {
   if (!geminiClient) throw new Error('Gemini not configured');
-  const model = geminiClient.getGenerativeModel({ model: 'gemini-2.0-flash-exp-image-generation' });
+  const model = geminiClient.getGenerativeModel({ model: 'gemini-2.0-flash-exp-image-generation' }); // imagen
   const result = await model.generateContent({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { responseModalities: ['image', 'text'] }
