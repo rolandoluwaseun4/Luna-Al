@@ -10,130 +10,6 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const helmet = require('helmet');
 
-
-// ═══════════════════════════════════════════════════════
-//  SCALABILITY LAYER
-//  - Request queue (prevents server overload)
-//  - Response cache (reduces duplicate Groq calls)
-//  - Circuit breaker (stops hammering Groq when it's down)
-// ═══════════════════════════════════════════════════════
-
-// ── In-memory response cache ──────────────────────────
-const responseCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const MAX_CACHE_SIZE = 500;
-
-function getCacheKey(message, uid) {
-  // Only cache non-personal, non-image messages
-  return `${uid}:${message?.substring(0, 100).toLowerCase().trim()}`;
-}
-
-function getFromCache(key) {
-  const entry = responseCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.timestamp > CACHE_TTL) {
-    responseCache.delete(key);
-    return null;
-  }
-  return entry.value;
-}
-
-function setCache(key, value) {
-  if (responseCache.size >= MAX_CACHE_SIZE) {
-    // Evict oldest entry
-    const firstKey = responseCache.keys().next().value;
-    responseCache.delete(firstKey);
-  }
-  responseCache.set(key, { value, timestamp: Date.now() });
-}
-
-// Clean cache every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of responseCache.entries()) {
-    if (now - entry.timestamp > CACHE_TTL) responseCache.delete(key);
-  }
-}, 10 * 60 * 1000);
-
-// ── Request queue ─────────────────────────────────────
-class RequestQueue {
-  constructor(concurrency = 10) {
-    this.concurrency = concurrency;
-    this.running = 0;
-    this.queue = [];
-  }
-
-  add(fn) {
-    return new Promise((resolve, reject) => {
-      this.queue.push({ fn, resolve, reject });
-      this.process();
-    });
-  }
-
-  process() {
-    while (this.running < this.concurrency && this.queue.length > 0) {
-      const { fn, resolve, reject } = this.queue.shift();
-      this.running++;
-      fn()
-        .then(resolve)
-        .catch(reject)
-        .finally(() => {
-          this.running--;
-          this.process();
-        });
-    }
-  }
-
-  get size() { return this.queue.length; }
-  get active() { return this.running; }
-}
-
-const chatQueue = new RequestQueue(10); // max 10 concurrent Groq calls
-
-// ── Circuit breaker ───────────────────────────────────
-const circuitBreaker = {
-  failures: 0,
-  lastFailure: null,
-  threshold: 5,       // open after 5 failures
-  timeout: 30000,     // try again after 30s
-  state: 'closed',    // closed = normal, open = rejecting, half-open = testing
-
-  isOpen() {
-    if (this.state === 'open') {
-      if (Date.now() - this.lastFailure > this.timeout) {
-        this.state = 'half-open';
-        return false;
-      }
-      return true;
-    }
-    return false;
-  },
-
-  success() {
-    this.failures = 0;
-    this.state = 'closed';
-  },
-
-  fail() {
-    this.failures++;
-    this.lastFailure = Date.now();
-    if (this.failures >= this.threshold) {
-      this.state = 'open';
-      console.error(`⚡ Circuit breaker OPEN after ${this.failures} failures`);
-    }
-  }
-};
-
-// ── Health metrics ────────────────────────────────────
-const metrics = {
-  totalRequests: 0,
-  cacheHits: 0,
-  queuedRequests: 0,
-  errors: 0,
-  startTime: Date.now(),
-  uptime() { return Math.floor((Date.now() - this.startTime) / 1000); }
-};
-
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB error:', err));
@@ -391,6 +267,31 @@ app.post("/chat", requireAuth, async (req, res) => {
   const isOwner = req.user.role === 'owner';
   const tid = String(threadId || uid + '_default');
 
+  // ── "post to channel:" command (owner only) ──────────
+  if (isOwner && message && message.toLowerCase().startsWith('post to channel:')) {
+    const postText = message.slice('post to channel:'.length).trim();
+    if (!postText) return res.json({ reply: "What should I post? Try: post to channel: [your message]" });
+    try {
+      await postToChannel(postText);
+      return res.json({ reply: `✅ Posted to @Luna1Claude!\n\n"${postText}"` });
+    } catch (err) {
+      return res.json({ reply: `❌ Could not post to channel: ${err.message}` });
+    }
+  }
+
+  // ── "post tweet:" command (owner only) ──────────────
+  if (isOwner && message && message.toLowerCase().startsWith('post tweet:')) {
+    const tweetText = message.slice('post tweet:'.length).trim();
+    if (!tweetText) return res.json({ reply: "What should I tweet? Try: post tweet: [your message]" });
+    if (tweetText.length > 280) return res.json({ reply: `Too long! That's ${tweetText.length} chars. Twitter max is 280.` });
+    try {
+      await postTweet(tweetText);
+      return res.json({ reply: `✅ Tweeted!\n\n"${tweetText}"` });
+    } catch (err) {
+      return res.json({ reply: `❌ Tweet failed: ${err.message}` });
+    }
+  }
+
   let thread = await Thread.findOne({ threadId: tid });
   if (!thread) {
     thread = new Thread({
@@ -423,32 +324,6 @@ app.post("/chat", requireAuth, async (req, res) => {
       : Array.isArray(m.content) ? (m.content.find(c => c.type === 'text')?.text || 'shared an image')
       : String(m.content)
   }));
-
-  // ── Scalability: queue + cache + circuit breaker ────
-  metrics.totalRequests++;
-
-  // Check circuit breaker
-  if (circuitBreaker.isOpen()) {
-    return res.status(503).json({ error: 'Luna is experiencing high demand. Please try again in 30 seconds.' });
-  }
-
-  // Check cache (only for text messages, not images)
-  if (!image && message) {
-    const cacheKey = getCacheKey(message, uid);
-    const cached = getFromCache(cacheKey);
-    if (cached) {
-      metrics.cacheHits++;
-      return res.json({ reply: cached, threadId: thread.threadId, title: thread.title, cached: true });
-    }
-  }
-
-  // Check queue size — reject if too backed up
-  if (chatQueue.size > 50) {
-    metrics.errors++;
-    return res.status(429).json({ error: 'Luna is very busy right now. Please try again in a moment.' });
-  }
-
-  metrics.queuedRequests++;
 
   try {
     let systemPrompt = getSystemPrompt(uid, isOwner);
@@ -525,18 +400,11 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     // Collect full reply from stream
     let fullReply = '';
-    const resolvedResponse = await response; // unwrap queue promise
-    for await (const chunk of resolvedResponse) {
+    for await (const chunk of response) {
       const delta = chunk.choices[0]?.delta?.content || '';
       if (delta) fullReply += delta;
     }
 
-    // Cache the response for repeated questions
-    if (!image && message) {
-      const cacheKey = getCacheKey(message, uid);
-      setCache(cacheKey, fullReply);
-    }
-    circuitBreaker.success();
     thread.messages.push({ role: 'assistant', content: fullReply, timestamp: new Date() });
     thread.lastUpdated = new Date();
     await thread.save();
@@ -936,24 +804,7 @@ function scheduleDailyTweet() {
 }
 if (process.env.TWITTER_API_KEY) scheduleDailyTweet();
 
-
-// ── Health & metrics endpoint ─────────────────────────
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    uptime: metrics.uptime() + 's',
-    requests: metrics.totalRequests,
-    cacheHits: metrics.cacheHits,
-    cacheSize: responseCache.size,
-    queueActive: chatQueue.active,
-    queueWaiting: chatQueue.size,
-    circuitBreaker: circuitBreaker.state,
-    errors: metrics.errors,
-    dbState: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
-  });
-});
-
-app.get("/", (req, res) => res.json({ status: "Luna is running ✅", queue: chatQueue.size, circuit: circuitBreaker.state }));
+app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
