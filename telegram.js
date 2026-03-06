@@ -790,20 +790,38 @@ app.delete("/history/:userId", requireAuth, async (req, res) => {
 app.post("/generate-image", requireAuth, async (req, res) => {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
-  try {
-    const response = await fetch(
-      "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0",
-      { method: "POST", headers: { Authorization: `Bearer ${HF_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ inputs: prompt }) }
-    );
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(500).json({ error: `HF failed: ${response.status} ${errText}` });
+
+  // Enhance prompt automatically for better quality
+  const enhancedPrompt = `${prompt}, highly detailed, sharp focus, professional quality, vivid colors, 4k, masterpiece`;
+
+  // Model chain — try best first, fall back if unavailable
+  const imageModels = [
+    "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev",
+    "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
+    "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-3-medium-diffusers",
+    "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0",
+  ];
+
+  for (const modelUrl of imageModels) {
+    try {
+      const response = await fetch(modelUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${HF_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs: enhancedPrompt })
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn(`Image model ${modelUrl} failed: ${response.status} ${errText}`);
+        continue; // try next model
+      }
+      const buffer = await response.arrayBuffer();
+      return res.json({ image: `data:image/png;base64,${Buffer.from(buffer).toString('base64')}` });
+    } catch (err) {
+      console.warn(`Image model ${modelUrl} error: ${err.message}`);
+      continue;
     }
-    const buffer = await response.arrayBuffer();
-    res.json({ image: `data:image/png;base64,${Buffer.from(buffer).toString('base64')}` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
+  res.status(500).json({ error: "Image generation failed. Please try again." });
 });
 
 
