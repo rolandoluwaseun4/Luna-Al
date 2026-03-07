@@ -550,8 +550,60 @@ if (process.env.TELEGRAM_BOT_TOKEN) {
   console.log('📢 Auto-poster started → Telegram @Luna1Claude + Discord');
 }
 
+// ── Standalone Groq caller (used by RO-1 and fallback) ───────
+async function callGroq(systemPrompt, safeHistory, image = null) {
+  const textModels = [
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
+    "llama3-70b-8192",
+    "llama-3.1-8b-instant"
+  ];
+  const imageModels = [
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "meta-llama/llama-4-scout-17b-16e-instruct"
+  ];
+  const models = image ? imageModels : textModels;
+  let msgPayload = [...safeHistory];
+  let response = null;
+  let usedModel = null;
+  for (const model of models) {
+    let currentPayload = [...msgPayload];
+    let attempts = 0;
+    while (attempts < 3) {
+      try {
+        response = await groq.chat.completions.create({
+          model,
+          max_tokens: 4096,
+          messages: [{ role: "system", content: systemPrompt }, ...currentPayload],
+          stream: false,
+        });
+        usedModel = model;
+        break;
+      } catch (err) {
+        const status = err?.status || err?.error?.status;
+        const msg = err?.message || '';
+        if (status === 413 || msg.includes('too large') || msg.includes('context')) {
+          currentPayload = currentPayload.slice(Math.ceil(currentPayload.length / 2));
+          attempts++;
+        } else if (status === 429 || msg.includes('rate_limit')) {
+          break;
+        } else if (status === 400 && msg.includes('decommissioned')) {
+          break;
+        } else {
+          throw err;
+        }
+      }
+    }
+    if (usedModel) break;
+  }
+  if (!response) throw new Error('All Groq models unavailable');
+  return response.choices[0]?.message?.content || '';
+}
+
 app.post("/chat", requireAuth, async (req, res) => {
-  const { message: rawMessage, userId, image, threadId } = req.body;
+  const { message: rawMessage, userId, image, threadId, model: selectedModel } = req.body;
   const message = sanitizeInput(rawMessage, 4000);
   if (!message && !image) return res.status(400).json({ error: "No message provided" });
 
@@ -641,25 +693,77 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    // ── Smart routing: AI classifier decides SIMPLE or COMPLEX ──
+    // ── Smart routing based on selected model ───────────────────
+    // Validate model — RO-1 is owner only
+    const clientModel = (selectedModel === 'ro1' && !isOwner) ? 'luna-flash' : (selectedModel || 'luna-flash');
+    // Deep Think / Luna Research only upgrades to Gemini if model allows it
+    // luna-flash users cannot bypass to Gemini via deep think
     const deepThinkRequested = message && (
       message.toLowerCase().includes('[deep think]') ||
       message.toLowerCase().includes('[luna research]')
-    );
+    ) && (clientModel === 'luna-pro' || clientModel === 'ro1');
+    let fullReply = '';
     let useGemini = false;
-    if (geminiClient && !image) {
+
+    if (clientModel === 'luna-flash') {
+      // ── Luna Flash: Groq only, fast ──────────────────────────
+      console.log('Model: Luna Flash → Groq');
+      useGemini = false;
+
+    } else if (clientModel === 'luna-pro') {
+      // ── Luna Pro: always Gemini ──────────────────────────────
+      console.log('Model: Luna Pro → Gemini');
+      useGemini = geminiClient ? true : false;
+
+    } else if (clientModel === 'ro1') {
+      // ── RO-1: smartest — classify then decide ────────────────
+      console.log('Model: RO-1 → Analyzing...');
       if (deepThinkRequested) {
         useGemini = true;
+      } else if (geminiClient) {
+        const complexity = await classifyTask(message);
+        if (complexity === 'COMPLEX') {
+          // Run both Groq and Gemini, pick best
+          useGemini = true;
+          console.log('RO-1: COMPLEX task — running Gemini + Groq race');
+          try {
+            const [geminiResult, groqResult] = await Promise.allSettled([
+              callGemini(systemPrompt, safeHistory, image || null),
+              callGroq(systemPrompt, safeHistory, image)
+            ]);
+            const geminiReply = geminiResult.status === 'fulfilled' ? geminiResult.value : null;
+            const groqReply = groqResult.status === 'fulfilled' ? groqResult.value : null;
+            // Pick best: prefer Gemini if it succeeded and is longer/richer
+            if (geminiReply && groqReply) {
+              fullReply = geminiReply.length >= groqReply.length ? geminiReply : groqReply;
+              console.log(`RO-1 picked: ${geminiReply.length >= groqReply.length ? 'Gemini' : 'Groq'}`);
+            } else {
+              fullReply = geminiReply || groqReply || '';
+            }
+          } catch(e) {
+            console.warn('RO-1 race failed:', e.message);
+          }
+        } else {
+          // SIMPLE — just use Gemini (still better than Groq for RO-1)
+          useGemini = true;
+          console.log('RO-1: SIMPLE task → Gemini');
+        }
+      } else {
+        useGemini = false;
+      }
+    } else {
+      // Default fallback — classify like before
+      if (deepThinkRequested) {
+        useGemini = geminiClient ? true : false;
       } else {
         const complexity = await classifyTask(message);
-        useGemini = complexity === 'COMPLEX';
+        useGemini = geminiClient && complexity === 'COMPLEX';
         console.log(`Task classified as ${complexity} — routing to ${useGemini ? 'Gemini' : 'Groq'}`);
       }
     }
-    let fullReply = '';
 
-    if (useGemini) {
-      // ── Gemini Flash (complex tasks) ──────────────────────────
+    if (!fullReply && useGemini) {
+      // ── Gemini ───────────────────────────────────────────────
       try {
         fullReply = await callGemini(systemPrompt, safeHistory, image || null);
       } catch (geminiErr) {
