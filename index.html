@@ -385,28 +385,43 @@
     .messages::-webkit-scrollbar { width: 0; }
 
     /* Message rows */
-    .mrow { display: flex; gap: 9px; align-items: flex-start; animation: msgIn .28s var(--ease); }
+    .mrow { display: flex; flex-direction: column; animation: msgIn .28s var(--ease); }
     @keyframes msgIn { from{opacity:0;transform:translateY(6px);} to{opacity:1;transform:translateY(0);} }
-    .mrow.user { flex-direction: row-reverse; }
+    .mrow.user { align-items: flex-end; padding: 8px 16px; }
+    .mrow.luna { width: 100%; padding: 18px 20px 6px 20px; border-top: 1px solid rgba(255,255,255,0.04); }
+    .mrow.luna:first-child { border-top: none; }
+
+    /* Luna avatar — small icon above message */
     .msg-avatar {
-      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0;
       display: flex; align-items: center; justify-content: center;
       font-size: 12px; font-weight: 700; overflow: hidden;
     }
-    .msg-avatar.luna-av { background: rgba(155,127,212,0.15); border: 1px solid rgba(155,127,212,0.25); }
-    .msg-avatar.luna-av img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
-    .msg-avatar.user-av { background: var(--accent); }
-    .mbody { display: flex; flex-direction: column; gap: 4px; max-width: 80%; }
-    .mrow.user .mbody { align-items: flex-end; }
+    .msg-avatar.luna-av { margin-bottom: 10px; }
+    .msg-avatar.luna-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .msg-avatar.user-av { display: none; }
+
+    /* Message body */
+    .mbody { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+    .mrow.user .mbody { align-items: flex-end; width: auto; max-width: 82%; }
     .bubble-wrap { position: relative; display: inline-block; max-width: 100%; }
+
+    /* Luna bubble — no box, full width prose */
     .bubble {
-      padding: 11px 15px; border-radius: 18px;
-      font-size: 14.5px; line-height: 1.65;
-      color: var(--text); word-break: break-word;
+      font-size: 15px; line-height: 1.78;
+      color: #f0ecff; word-break: break-word;
     }
-    .mrow.luna .bubble { background: var(--luna-bubble); border: 1px solid var(--border); border-top-left-radius: 5px; }
-    .mrow.user .bubble { background: var(--user-bubble); border-top-right-radius: 5px; }
-    .mtime { font-size: 11px; color: var(--text-dim); padding: 0 4px; }
+    .mrow.luna .bubble {
+      background: none; border: none; border-radius: 0;
+      padding: 0; width: 100%;
+    }
+    /* User bubble — compact right-aligned */
+    .mrow.user .bubble {
+      background: var(--user-bubble);
+      border-radius: 18px 18px 4px 18px;
+      padding: 11px 16px;
+    }
+    .mtime { font-size: 11px; color: var(--text-dim); padding: 0 2px; margin-top: 8px; }
     .msg-actions { display: flex; gap: 4px; margin-top: 3px; opacity: 0; transition: opacity .2s; }
     .mrow:hover .msg-actions { opacity: 1; }
     .mac {
@@ -749,15 +764,20 @@
     .scroll-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
 
     /* ─── MARKDOWN in bubbles ────────────────────────── */
-    .bubble h2 { font-size: 16px; font-weight: 700; margin: 12px 0 6px; }
-    .bubble h3 { font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
-    .bubble strong { font-weight: 700; }
-    .bubble em { font-style: italic; }
-    .bubble code { background: rgba(255,255,255,.1); padding: 2px 6px; border-radius: 5px; font-family: monospace; font-size: 13px; }
-    .bubble ul, .bubble ol { margin: 6px 0 6px 18px; }
-    .bubble li { margin-bottom: 3px; }
-    .bubble p { margin-bottom: 6px; }
-    .bubble p:last-child { margin-bottom: 0; }
+    .mrow.luna .bubble h2 { font-size: 16px; font-weight: 700; color: #fff; margin: 18px 0 8px; letter-spacing: -0.2px; }
+    .mrow.luna .bubble h3 { font-size: 15px; font-weight: 700; color: #fff; margin: 18px 0 8px; letter-spacing: -0.2px; }
+    .mrow.luna .bubble strong { font-weight: 600; color: #ffffff; }
+    .mrow.luna .bubble em { font-style: italic; color: rgba(240,236,255,0.82); }
+    .mrow.luna .bubble code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 5px; font-family: monospace; font-size: 13px; color: #c4a8ff; }
+    .mrow.luna .bubble pre { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px; overflow-x: auto; margin: 14px 0; font-size: 13px; color: #c4a8ff; line-height: 1.6; }
+    .mrow.luna .bubble ul, .mrow.luna .bubble ol { padding-left: 20px; margin: 8px 0 14px; display: flex; flex-direction: column; gap: 8px; }
+    .mrow.luna .bubble li { color: #f0ecff; line-height: 1.65; }
+    .mrow.luna .bubble p { margin-bottom: 14px; }
+    .mrow.luna .bubble p:last-child { margin-bottom: 0; }
+    .mrow.luna .bubble blockquote { border-left: 3px solid var(--accent); padding: 10px 16px; margin: 14px 0; background: var(--accent-soft); border-radius: 0 8px 8px 0; font-style: italic; color: rgba(240,236,255,0.85); }
+    /* User bubble markdown stays minimal */
+    .mrow.user .bubble p { margin-bottom: 4px; }
+    .mrow.user .bubble p:last-child { margin-bottom: 0; }
   
     /* ── Classes used in JS (missing from CSS) ──────────── */
     .history-loading { padding: 20px; color: var(--text-dim); font-size: 14px; text-align: center; }
