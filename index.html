@@ -714,10 +714,13 @@
     .artifact-btn { flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: rgba(255,255,255,.05); color: var(--text); font-size: 13px; cursor: pointer; transition: background .2s; }
     .artifact-btn:hover { background: rgba(255,255,255,.1); }
     .artifact-btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
-    .artifact-card { background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 13px; padding: 13px 15px; margin-top: 8px; cursor: pointer; transition: background .15s; }
-    .artifact-card:hover { background: rgba(255,255,255,.07); }
-    .artifact-name { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
-    .artifact-meta { font-size: 12px; color: var(--text-dim); }
+    .artifact-card { background: rgba(255,255,255,.06); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; margin-top: 8px; cursor: pointer; transition: background .15s; display: flex; align-items: center; gap: 12px; max-width: 260px; }
+    .artifact-card:hover { background: rgba(255,255,255,.1); }
+    .artifact-icon { width: 42px; height: 42px; border-radius: 10px; background: rgba(139,92,246,.15); border: 1px solid rgba(139,92,246,.25); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .artifact-icon svg { width: 18px; height: 18px; stroke: var(--accent); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .artifact-info { min-width: 0; }
+    .artifact-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .artifact-meta { font-size: 11px; color: var(--text-dim); }
 
     /* ─── SHARE SHEET ────────────────────────────────── */
     .share-sheet { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.72); display: none; align-items: flex-end; }
