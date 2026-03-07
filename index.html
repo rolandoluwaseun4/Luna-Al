@@ -35,7 +35,7 @@
       --glass-shine:rgba(155,127,212,0.15);
       --pill-shadow:0 2px 8px rgba(0,0,0,0.4),0 0 0 1px rgba(155,127,212,0.22),inset 0 1px 0 rgba(155,127,212,0.2);
       --pill-shadow-accent:0 4px 20px rgba(155,127,212,0.4),0 0 0 1px rgba(155,127,212,0.35),inset 0 1px 0 rgba(155,127,212,0.25);
-      --nav-bg:rgba(8,4,8,0.85);
+      --nav-bg:#080408;
       --sidebar:rgba(10,8,10,0.98);
     }
 
@@ -134,7 +134,7 @@
     .navbar {
       display: flex; align-items: center; justify-content: space-between;
       padding: 14px 18px;
-      background: var(--nav-bg); backdrop-filter: var(--glass-blur);
+      background: var(--nav-bg);
       border-bottom: none;
       flex-shrink: 0; position: relative; z-index: 10;
     }
@@ -174,7 +174,7 @@
     .nav-new-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
     /* ─── DRAWER / SIDEBAR ───────────────────────────── */
-    .drawer { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
+    .drawer { position: fixed; inset: 0; z-index: 100; pointer-events: none; }
     .drawer.open { pointer-events: all; }
     .drawer-overlay {
       position: absolute; inset: 0; background: var(--overlay);
