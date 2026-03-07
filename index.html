@@ -303,6 +303,70 @@
       display:flex;align-items:center;justify-content:center;flex-shrink:0;
     }
     .plus-menu-icon svg{width:20px;height:20px;stroke:var(--accent);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+    /* ── Model Selector ─────────────────────────────────── */
+    .model-selector-overlay{position:fixed;inset:0;z-index:399;display:none;}
+    .model-selector-overlay.active{display:block;}
+    .model-selector{
+      position:fixed;bottom:72px;left:12px;
+      background:rgba(40,25,70,0.96);
+      border:1px solid rgba(255,255,255,0.1);
+      border-radius:16px;
+      padding:6px;
+      min-width:180px;
+      max-width:200px;
+      z-index:400;
+      display:none;
+      flex-direction:column;
+      gap:2px;
+      backdrop-filter:blur(12px);
+      box-shadow:0 4px 20px rgba(0,0,0,0.2);
+    }
+    .model-selector.active{display:flex;}
+    .model-option{
+      padding:10px 14px;
+      border-radius:10px;
+      cursor:pointer;
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      transition:background 0.15s;
+      border:2px solid transparent;
+      background:transparent;
+      text-align:left;
+      width:100%;
+    }
+    .model-option:hover{background:var(--accent-soft);}
+    .model-option.active-model{border-color:var(--accent);background:var(--accent-soft);}
+    .model-option-name{font-size:14px;font-weight:600;color:rgba(255,255,255,0.9);}
+    .model-option-desc{font-size:11px;color:var(--text-dim);}
+    .model-option-locked{
+      padding:10px 14px;
+      border-radius:10px;
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      filter:none;
+      pointer-events:none;
+      user-select:none;
+      opacity:0.4;
+    }
+    .model-option-locked .model-option-name{font-size:14px;font-weight:600;color:rgba(255,255,255,0.9);}
+    .model-option-locked .model-option-desc{font-size:11px;color:var(--text-dim);}
+    .model-arrow-btn{
+      background:none;border:none;cursor:pointer;
+      color:var(--text-dim);padding:4px 5px;
+      border-radius:6px;transition:color 0.15s,background 0.15s;
+      display:flex;align-items:center;justify-content:center;
+      font-size:10px;
+    }
+    .model-arrow-btn:hover{color:var(--accent);background:var(--accent-soft);}
+    .model-arrow-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.5;}
+    .active-model-label{
+      font-size:11px;color:var(--accent);font-weight:600;
+      padding:2px 6px;border-radius:6px;
+      background:var(--accent-soft);
+      white-space:nowrap;
+    }
     .plus-btn{
       background:none;border:none;cursor:pointer;
       width:36px;height:36px;border-radius:100px;
@@ -1127,6 +1191,7 @@
         <div class="img-preview-bar" id="img-preview-bar"><img id="preview-thumb" src="" alt="preview"/><button class="img-remove-btn" onclick="clearImage()">✕ Remove</button></div>
         <div class="chat-row">
           <input type="file" id="img-upload" accept="image/*" style="display:none" onchange="previewImage(event)"/>
+          <button class="model-arrow-btn" id="model-arrow-btn" onclick="toggleModelSelector(event)" title="Switch model"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
           <button class="plus-btn" id="plus-btn" onclick="togglePlusMenu(event)" title="More options"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
           <textarea id="chat-input" placeholder="Message Luna..." rows="1"></textarea>
           <button class="clear-chat-btn" onclick="clearChat()" title="Clear chat"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
@@ -1195,6 +1260,24 @@
 
 
 <!-- Plus Menu -->
+<div class="model-selector-overlay" id="model-selector-overlay" onclick="closeModelSelector()"></div>
+<div class="model-selector" id="model-selector">
+  <div class="model-option active-model" id="model-luna-flash" onclick="selectModel('luna-flash')">
+    <div class="model-option-name">Luna Flash</div>
+  </div>
+  <div class="model-option" id="model-luna-pro" onclick="selectModel('luna-pro')">
+    <div class="model-option-name">Luna Pro</div>
+  </div>
+  <div class="model-option" id="model-ro1" onclick="selectModel('ro1')">
+    <div class="model-option-name">RO-1</div>
+  </div>
+  <div class="model-option-locked">
+    <div class="model-option-name">Luna Ultra</div>
+  </div>
+  <div class="model-option-locked">
+    <div class="model-option-name">Luna Omni</div>
+  </div>
+</div>
 <div class="plus-menu-overlay" id="plus-menu-overlay" onclick="closePlusMenu()"></div>
 <div class="plus-menu" id="plus-menu">
   <div class="plus-menu-item" onclick="plusAction('pdf')">
@@ -1385,6 +1468,7 @@
     submitLogin(document.getElementById('login-email')?.value, pw);
   }
   function enterApp(owner){
+    initModelSelector();
     document.getElementById('login-screen').classList.add('hidden');
     const name=currentUser?.displayName||currentUser?.username||'';
     document.getElementById('greeting-text').textContent=owner?'Good to see you, Roland':(name?'Good to see you, '+name:'Good to see you');
@@ -1689,7 +1773,7 @@
 
     // ── Streaming chat ────────────────────────────────────────
     try{
-      const res=await fetch(BACKEND_URL+'/chat',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify({message:text||'What is in this image?',userId:getUserId(),image:image||null,modeExtra:toolSystemExtra||null,threadId:isSecret?null:currentThreadId})});
+      const res=await fetch(BACKEND_URL+'/chat',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify({message:text||'What is in this image?',userId:getUserId(),image:image||null,modeExtra:toolSystemExtra||null,threadId:isSecret?null:currentThreadId,model:selectedModel})});
       if(!res.ok)throw new Error();
 
       // Get JSON then typewrite it
@@ -1892,6 +1976,57 @@
     if (isOpen) { closePlusMenu(); } 
     else { menu.classList.add('active'); overlay.classList.add('active'); }
   }
+  // ── Model Selector ───────────────────────────────────────
+  let selectedModel = 'luna-flash';
+
+  function toggleModelSelector(e) {
+    e.stopPropagation();
+    const sel = document.getElementById('model-selector');
+    const ov = document.getElementById('model-selector-overlay');
+    const isOpen = sel.classList.contains('active');
+    if (isOpen) { closeModelSelector(); }
+    else { sel.classList.add('active'); ov.classList.add('active'); }
+  }
+
+  function closeModelSelector() {
+    document.getElementById('model-selector').classList.remove('active');
+    document.getElementById('model-selector-overlay').classList.remove('active');
+  }
+
+  function selectModel(model) {
+    // RO-1 is owner only
+    if (model === 'ro1' && !isOwner) return;
+    selectedModel = model;
+    closeModelSelector();
+    // Update active state
+    document.querySelectorAll('.model-option').forEach(el => el.classList.remove('active-model'));
+    const el = document.getElementById('model-' + (model === 'ro1' ? 'ro1' : model));
+    if (el) el.classList.add('active-model');
+    // Update arrow button label
+    const labels = {'luna-flash':'Flash','luna-pro':'Pro','ro1':'RO-1'};
+    const btn = document.getElementById('model-arrow-btn');
+    if (btn) btn.title = 'Model: ' + (labels[model] || model);
+    haptic('light');
+  }
+
+  function initModelSelector() {
+    const ro1 = document.getElementById('model-ro1');
+    if (ro1) {
+      if (!isOwner) {
+        // Slightly dim RO-1 for non-owners — visible but locked
+        ro1.style.filter = 'none';
+        ro1.style.pointerEvents = 'none';
+        ro1.style.opacity = '0.4';
+        ro1.style.cursor = 'default';
+      } else {
+        ro1.style.filter = '';
+        ro1.style.pointerEvents = '';
+        ro1.style.opacity = '';
+        ro1.style.cursor = '';
+      }
+    }
+  }
+
   function closePlusMenu() {
     document.getElementById('plus-menu').classList.remove('active');
     document.getElementById('plus-menu-overlay').classList.remove('active');
