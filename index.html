@@ -1748,24 +1748,50 @@
   }
   function ts(){return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
   function renderMarkdown(text) {
-    return text
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      // Headers
-      .replace(/^### (.+)$/gm,'<h3 style="margin:10px 0 4px;font-size:15px;font-weight:700;color:var(--text)">$1</h3>')
-      .replace(/^## (.+)$/gm,'<h2 style="margin:12px 0 5px;font-size:16px;font-weight:700;color:var(--text)">$1</h2>')
-      .replace(/^# (.+)$/gm,'<h1 style="margin:12px 0 6px;font-size:18px;font-weight:800;color:var(--text)">$1</h1>')
-      // Bold and italic
-      .replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>')
-      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g,'<em>$1</em>')
-      // Inline code
-      .replace(/`([^`]+)`/g,'<code style="background:var(--accent-soft);padding:2px 6px;border-radius:4px;font-family:monospace;font-size:13px">$1</code>')
-      // Numbered lists
-      .replace(/^\d+\. (.+)$/gm,'<div style="margin:3px 0;padding-left:4px">$&</div>')
-      // Bullet lists
-      .replace(/^[-*] (.+)$/gm,'<div style="margin:3px 0;padding-left:12px">• $1</div>')
-      // Line breaks
-      .replace(/\n/g,'<br>');
+    // Escape HTML first
+    let t = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    // Code blocks (before anything else)
+    t = t.replace(/```[\w]*\n?([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+
+    // Headers
+    t = t.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+    t = t.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+    t = t.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+
+    // Bold and italic
+    t = t.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');
+    t = t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    t = t.replace(/\*(.+?)\*/g,'<em>$1</em>');
+
+    // Inline code
+    t = t.replace(/`([^`]+)`/g,'<code>$1</code>');
+
+    // Blockquote
+    t = t.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
+
+    // Numbered lists — group consecutive items
+    t = t.replace(/^(\d+\. .+)(\n\d+\. .+)*/gm, (match) => {
+      const items = match.split('\n').map(l => '<li>'+l.replace(/^\d+\. /,'')+'</li>').join('');
+      return '<ol>'+items+'</ol>';
+    });
+
+    // Bullet lists — group consecutive items
+    t = t.replace(/^([-*] .+)(\n[-*] .+)*/gm, (match) => {
+      const items = match.split('\n').map(l => '<li>'+l.replace(/^[-*] /,'')+'</li>').join('');
+      return '<ul>'+items+'</ul>';
+    });
+
+    // Paragraphs — split by double newline
+    t = t.split('\n\n').map(block => {
+      block = block.trim();
+      if (!block) return '';
+      // Don't wrap already-block elements
+      if (/^<(h[1-3]|ul|ol|pre|blockquote)/.test(block)) return block;
+      return '<p>' + block.replace(/\n/g,'<br>') + '</p>';
+    }).join('');
+
+    return t;
   }
 
   function addMsg(role,text,imgUrl){
@@ -1892,9 +1918,9 @@
           const artifactInfo = detectArtifact(fullText);
           if (artifactInfo) {
             const shortText = fullText.replace(/```[\s\S]*?```/g,'').trim().substring(0,200);
-            bubbleEl.innerHTML = (shortText ? shortText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') + '<br><br>' : '') + buildArtifactCard(fullText, artifactInfo);
+            bubbleEl.innerHTML = (shortText ? renderMarkdown(shortText) + '<br><br>' : '') + buildArtifactCard(fullText, artifactInfo);
           } else {
-            bubbleEl.innerHTML=fullText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+            bubbleEl.innerHTML=renderMarkdown(fullText);
           }
           const mbody=row.querySelector('.mbody');
           const enc=encodeURIComponent(fullText);
