@@ -56,6 +56,7 @@
     #app {
       position: relative; z-index: 1;
       height: 100%; display: flex; flex-direction: column;
+      overflow: hidden;
     }
 
     /* ─── AUTH ───────────────────────────────────────── */
@@ -134,7 +135,7 @@
       display: flex; align-items: center; justify-content: space-between;
       padding: 14px 18px;
       background: var(--nav-bg); backdrop-filter: var(--glass-blur);
-      border-bottom: 1px solid var(--border);
+      border-bottom: none;
       flex-shrink: 0; position: relative; z-index: 10;
     }
     /* Hamburger LEFT */
@@ -169,7 +170,7 @@
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       transition: background .2s;
     }
-    .nav-new-btn:hover { background: rgba(255,255,255,0.1); }
+    .nav-new-btn:hover { background: var(--accent-soft); }
     .nav-new-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
     /* ─── DRAWER / SIDEBAR ───────────────────────────── */
@@ -248,7 +249,7 @@
       cursor: pointer; position: relative;
       transition: background .15s;
     }
-    .sb-profile:hover { background: rgba(255,255,255,0.04); }
+    .sb-profile:hover { background: var(--accent-soft); }
     .sb-avatar {
       width: 38px; height: 38px; border-radius: 50%;
       overflow: hidden; flex-shrink: 0;
@@ -264,7 +265,7 @@
     /* Profile dropdown */
     .profile-dropdown {
       position: absolute; bottom: calc(100% + 4px); left: 10px; right: 10px;
-      background: rgba(18,12,28,0.98); border: 1px solid var(--border);
+      background: var(--nav-bg, #fff); border: 1px solid var(--border);
       border-radius: 14px; padding: 6px;
       display: none; flex-direction: column; gap: 2px;
       backdrop-filter: blur(20px); box-shadow: var(--shadow); z-index: 5;
@@ -314,7 +315,7 @@
     .luna-orb {
       width: 88px; height: 88px; border-radius: 22px;
       overflow: hidden; position: relative; z-index: 1;
-      box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+      box-shadow: 0 0 0 1px var(--border);
     }
     .luna-orb img { width: 100%; height: 100%; object-fit: cover; display: block; }
     /* Title */
@@ -325,29 +326,30 @@
     .home-title .accent { color: var(--accent); }
     .home-sub {
       font-size: 14px; color: var(--text-dim);
-      text-align: center; line-height: 1.65; margin-bottom: 30px; max-width: 340px;
+      text-align: center; line-height: 1.65; margin-bottom: 24px; max-width: 340px;
     }
     /* Starter cards 2x2 */
     .starter-grid {
       display: grid; grid-template-columns: 1fr 1fr;
-      gap: 10px; width: 100%; margin-bottom: 26px;
+      gap: 10px; width: 100%; margin-bottom: 28px;
     }
     .starter-card {
       padding: 17px 15px; border-radius: 16px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.07);
+      background: var(--surface);
+      border: 1px solid var(--border);
       cursor: pointer; transition: all .2s;
-      font-size: 13.5px; color: rgba(255,255,255,0.75);
+      font-size: 13.5px; color: var(--text-mid);
       line-height: 1.45;
     }
-    .starter-card:hover { background: rgba(255,255,255,0.09); color: #fff; transform: translateY(-1px); }
+    .starter-card:hover { background: var(--accent-soft); color: var(--text); transform: translateY(-1px); }
     .starter-card:active { transform: scale(0.98); }
     /* Home input */
     .home-input-pill {
       width: 100%; display: flex; align-items: center; gap: 10px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.09);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 100px; padding: 10px 10px 10px 20px;
+      margin-top: 0;
     }
     #home-input {
       flex: 1; background: none; border: none; outline: none;
@@ -413,7 +415,7 @@
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       transition: all .15s;
     }
-    .mac:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+    .mac:hover { background: var(--accent-soft); color: var(--accent); }
     .mac svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .gen-image { max-width: 260px; border-radius: 14px; margin-bottom: 6px; display: block; }
 
@@ -538,14 +540,14 @@
       padding: 11px 14px; border-radius: 10px; cursor: pointer;
       border: 2px solid transparent; background: transparent;
       text-align: left; width: 100%; transition: background .15s;
-      font-size: 14px; font-weight: 500; color: #fff;
+      font-size: 14px; font-weight: 500; color: var(--text);
     }
-    .model-option:hover { background: rgba(255,255,255,0.06); }
+    .model-option:hover { background: var(--accent-soft); }
     .model-option.active-model { border-color: var(--accent); background: var(--accent-soft); }
     .model-option-locked {
       padding: 11px 14px; border-radius: 10px;
       pointer-events: none; opacity: .35;
-      font-size: 14px; font-weight: 500; color: #fff;
+      font-size: 14px; font-weight: 500; color: var(--text);
     }
 
     /* ─── PLUS MENU ──────────────────────────────────── */
@@ -773,6 +775,12 @@
     .fb-textarea { width: 100%; padding: 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; resize: none; height: 80px; outline: none; margin-bottom: 4px; }
     .av-code { background: rgba(0,0,0,0.4); border-radius: 10px; padding: 14px; font-family: monospace; font-size: 13px; color: #e0d0ff; overflow-x: auto; white-space: pre; }
     .av-story p { margin-bottom: 10px; line-height: 1.7; color: var(--text-mid); }
+
+
+    /* ─── Light Mode ─────────────────────────────────── */
+    /* Strategy: keep dark cosmic feel but shift bg to soft lavender-white */
+
+    /* Only override what actually needs to change — hardcoded rgba(255,255,255) surfaces */
 
 </style>
 </head>
@@ -1080,8 +1088,7 @@
       <div class="settings-scroll">
         <div class="settings-section">
           <div class="settings-section-title">Appearance</div>
-          <div class="settings-row"><div class="settings-row-info"><h4>Dark Mode</h4><p>Switch between light and dark theme</p></div><label class="toggle"><input type="checkbox" id="dark-toggle" onchange="applyTheme(this.checked)"/><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
-        </div>
+          
         <div class="settings-section">
           <div class="settings-section-title">Personalize Luna</div>
           <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:12px;"><div class="settings-row-info"><h4>Your Name</h4><p>Luna will address you by name</p></div><input class="settings-input" id="profile-name" placeholder="e.g. Alex" maxlength="30"/></div>
@@ -1226,11 +1233,11 @@
 </div>
 
 <!-- FB MODAL (like/dislike feedback) -->
-<div id="fb-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.75);align-items:center;justify-content:center;padding:20px;">
+<div id="fb-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:20px;">
   <div style="width:100%;max-width:320px;background:rgba(18,10,30,0.98);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px;">
     <div style="font-size:28px;text-align:center;margin-bottom:10px;" id="fb-icon">👍</div>
-    <div style="font-size:16px;font-weight:700;text-align:center;margin-bottom:8px;color:#fff;" id="fb-title">Thanks!</div>
-    <div style="font-size:13px;color:rgba(255,255,255,0.6);text-align:center;line-height:1.5;margin-bottom:14px;" id="fb-body"></div>
+    <div style="font-size:16px;font-weight:700;text-align:center;margin-bottom:8px;color:var(--text);" id="fb-title">Thanks!</div>
+    <div style="font-size:13px;color:var(--text-mid);text-align:center;line-height:1.5;margin-bottom:14px;" id="fb-body"></div>
     <div id="fb-extra" style="margin-bottom:12px;"></div>
     <button id="fb-action-btn" style="width:100%;padding:13px;border:none;border-radius:12px;background:#9b7fd4;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">OK</button>
   </div>
@@ -1685,14 +1692,13 @@
       const res=await fetch(BACKEND_URL+'/threads/'+getUserId(),{method:'POST',headers:getAuthHeaders()});
       const data=await res.json();
       currentThreadId=data.threadId;
-    }catch(e){ currentThreadId=null; }
+    }catch(e){ currentThreadId=null; } // Backend will create thread on first message
     goHome();
   }
   function toggleDrawer(){document.getElementById('drawer').classList.toggle('open');document.getElementById('hamburger').classList.toggle('open');}
   function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('hamburger').classList.remove('open');}
-  function applyTheme(dark){document.documentElement.setAttribute('data-theme',dark?'dark':'light');localStorage.setItem('luna-theme',dark?'dark':'light');}
-  const savedTheme=localStorage.getItem('luna-theme');
-  if(savedTheme)document.documentElement.setAttribute('data-theme',savedTheme);
+  function applyTheme(dark){ /* dark mode only */ }
+  document.documentElement.setAttribute('data-theme','dark');
   function previewImage(event){
     const file=event.target.files[0];if(!file)return;
     const reader=new FileReader();
@@ -1842,13 +1848,13 @@
       // Get JSON then typewrite it
       const data=await res.json();
       typingRow.style.display='none';typingRow.classList.remove('thinking-row');document.getElementById('thinking-label').style.display='none';
-      if(data.threadId && !currentThreadId) currentThreadId=data.threadId;
+      if(data.threadId && !currentThreadId){ currentThreadId=data.threadId; loadSidebarThreads(); }
       const fullText=data.reply||'No response.';
       lastLunaText=fullText;
 
       // Create message row
       const row=document.createElement('div');row.className='mrow luna';
-      row.innerHTML='<div class="msg-avatar luna-av"><img src="icon-192.png" alt="L"/></div><div class="mbody"><div class="bubble"></div><div class="mtime">'+ts()+'</div></div>';
+      row.innerHTML='<div class="msg-avatar luna-av"><img src="icon-192.png" alt="L"/></div><div class="mbody"><div class="bubble"></div><div class="mtime" style="display:none">'+ts()+'</div></div>';
       messagesEl.insertBefore(row,typingRow);
       const bubbleEl=row.querySelector('.bubble');
 
@@ -1880,6 +1886,7 @@
             +'<button class="mac" title="Bad response" onclick="dislikeMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg></button>'
             +'<button class="mac" title="Regenerate" onclick="regenMac(this)"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg></button>';
           mbody.insertBefore(actions, mbody.querySelector('.mtime'));
+          const mtimeEl = mbody.querySelector('.mtime'); if(mtimeEl) mtimeEl.style.display='';
           messagesEl.scrollTop=messagesEl.scrollHeight;
         }
       }
@@ -2219,7 +2226,7 @@
   });
 
   // ── Share sheet ───────────────────────────────────────────
-  const LUNA_URL = 'https://rolandolumaseun4.github.io/Luna-Al/';
+  const LUNA_URL = 'https://rolandoluwaseun4.github.io/Luna-Al/';
   const LUNA_MSG = 'Try Luna AI — a smart personal assistant! 🌙 ';
   function openShareSheet() { document.getElementById('share-sheet').classList.add('show'); haptic('light'); }
   function closeShareSheet(e) { if (e.target === document.getElementById('share-sheet')) document.getElementById('share-sheet').classList.remove('show'); }
