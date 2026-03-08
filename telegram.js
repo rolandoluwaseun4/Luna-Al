@@ -294,6 +294,74 @@ async function callGeminiWithModel(modelName, systemPrompt, messages, imageBase6
   return result.response.text();
 }
 
+// ── Manus AI Agent Integration ────────────────────────────────
+const MANUS_API_KEY = process.env.MANUS_API_KEY;
+const MANUS_BASE_URL = process.env.MANUS_BASE_URL || 'https://api.manus.im/v1';
+
+function isManusTask(message) {
+  if (!message || !MANUS_API_KEY) return false;
+  const msg = message.toLowerCase();
+  const triggers = [
+    'research ', 'find me ', 'look up ', 'search for ',
+    'analyze ', 'analyse ', 'compare ', 'summarize ', 'summarise ',
+    'build ', 'create a ', 'make a ', 'write a report',
+    'draft a ', 'create a plan', 'deep research',
+    'give me a full breakdown', 'agent:', 'manus:'
+  ];
+  return triggers.some(t => msg.includes(t));
+}
+
+async function runManusTask(userMessage) {
+  if (!MANUS_API_KEY) throw new Error('MANUS_API_KEY not set');
+  const cleanMessage = userMessage.replace(/^(agent:|manus:)/i, '').trim();
+
+  // Step 1 — Create task
+  const createRes = await fetch(`${MANUS_BASE_URL}/tasks`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${MANUS_API_KEY}`
+    },
+    body: JSON.stringify({ prompt: cleanMessage })
+  });
+
+  if (!createRes.ok) {
+    const err = await createRes.json().catch(() => ({}));
+    throw new Error(err.message || `Manus error ${createRes.status}`);
+  }
+
+  const task = await createRes.json();
+  const taskId = task.id || task.task_id;
+  if (!taskId) throw new Error('No task ID from Manus');
+  console.log(`🤖 Manus task: ${taskId}`);
+
+  // Step 2 — Poll for completion (max 90s)
+  const MAX_POLLS = 45;
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const poll = await fetch(`${MANUS_BASE_URL}/tasks/${taskId}`, {
+      headers: { 'Authorization': `Bearer ${MANUS_API_KEY}` }
+    });
+    if (!poll.ok) continue;
+    const data = await poll.json();
+    const status = (data.status || data.state || '').toLowerCase();
+    console.log(`🤖 Manus poll ${i+1}: ${status}`);
+
+    if (['completed','done','finished','success'].includes(status)) {
+      const result = data.result || data.output || data.response || data.answer || '';
+      if (typeof result === 'string' && result) return result;
+      if (result && result.text) return result.text;
+      if (result && result.content) return result.content;
+      return JSON.stringify(result);
+    }
+    if (['failed','error','cancelled'].includes(status)) {
+      throw new Error(data.error || data.message || 'Manus task failed');
+    }
+  }
+  throw new Error('Manus timed out');
+}
+
+
 function getSystemPrompt(userId, isOwner = false) {
   const now = new Date();
   const hour = now.getHours();
@@ -603,7 +671,7 @@ async function callGroq(systemPrompt, safeHistory, image = null) {
 }
 
 app.post("/chat", requireAuth, async (req, res) => {
-  const { message: rawMessage, userId, image, threadId, model: selectedModel } = req.body;
+  const { message: rawMessage, userId, image, threadId, model: selectedModel, mode: chatMode } = req.body;
   const message = sanitizeInput(rawMessage, 4000);
   if (!message && !image) return res.status(400).json({ error: "No message provided" });
 
@@ -677,6 +745,29 @@ app.post("/chat", requireAuth, async (req, res) => {
   }));
 
   try {
+    // ── Manus Agent execution ─────────────────────────────────
+    if (!image && message && (chatMode === 'manus' || isManusTask(message))) {
+      try {
+        console.log('🤖 Manus:', message.substring(0, 80));
+        const result = await runManusTask(message);
+        const reply = `🤖 **Agent Result**\n\n${result}`;
+
+        // Save to thread
+        let thread = await Thread.findOne({ threadId: tid });
+        if (!thread) thread = new Thread({ userId: uid, threadId: tid, title: generateTitle(message), messages: [] });
+        thread.messages.push(
+          { role: 'user', content: message, timestamp: new Date() },
+          { role: 'assistant', content: reply, timestamp: new Date() }
+        );
+        if (thread.messages.length > 50) thread.messages = thread.messages.slice(-50);
+        await thread.save();
+        return res.json({ reply, threadId: tid, manusUsed: true });
+      } catch (err) {
+        console.error('Manus failed, falling back to Luna:', err.message);
+        // Fall through to normal Luna
+      }
+    }
+
     let systemPrompt = getSystemPrompt(uid, isOwner);
 
     if (!image && message) {
