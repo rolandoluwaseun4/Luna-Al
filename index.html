@@ -535,10 +535,12 @@
       width: 36px; height: 36px; border-radius: 50%; border: none; flex-shrink: 0;
       background: var(--accent); color: #fff; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
-      transition: opacity .2s;
+      transition: opacity .2s, background .2s;
     }
     .csend:disabled { opacity: .35; cursor: default; }
     .csend svg { width: 16px; height: 16px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .csend.stop-mode { background: #e05555; opacity: 1 !important; cursor: pointer; }
+    .csend.stop-mode svg { stroke: #fff; }
 
     /* ─── MODEL SELECTOR ─────────────────────────────── */
     .model-selector-overlay { position: fixed; inset: 0; z-index: 399; display: none; }
@@ -1955,34 +1957,56 @@
 
       // Typewriter effect
       let i=0;
+      let typingStopped=false;
+      let typeTimer=null;
+
+      // Turn send button into stop button
+      chatSend.classList.add('stop-mode');
+      chatSend.disabled=false;
+      chatSend.innerHTML='<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" fill="#fff" stroke="none"/></svg>';
+      chatSend.onclick=function(){ typingStopped=true; finishTyping(true); };
+
+      function finishTyping(stopped){
+        if(typeTimer) clearTimeout(typeTimer);
+        // Reset send button back to arrow
+        chatSend.classList.remove('stop-mode');
+        chatSend.innerHTML='<svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
+        chatSend.onclick=null;
+        chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;
+        // Render final text
+        const displayText=stopped ? fullText.slice(0,i) : fullText;
+        const artifactInfo=detectArtifact(fullText);
+        if(!stopped && artifactInfo){
+          const shortText=fullText.replace(/```[\s\S]*?```/g,'').trim().substring(0,200);
+          bubbleEl.innerHTML=(shortText ? renderMarkdown(shortText)+'<br><br>' : '')+buildArtifactCard(fullText,artifactInfo);
+        } else {
+          bubbleEl.innerHTML=renderMarkdown(displayText);
+        }
+        const mbody=row.querySelector('.mbody');
+        const enc=encodeURIComponent(fullText);
+        const actions=document.createElement('div');
+        actions.className='msg-actions';
+        actions.innerHTML='<button class="mac" title="Copy" onclick="copyMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'
+          +'<button class="mac" title="Read aloud" onclick="readAloud(\''+enc+'\')"><svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>'
+          +'<button class="mac" title="Good response" onclick="likeMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg></button>'
+          +'<button class="mac" title="Bad response" onclick="dislikeMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg></button>'
+          +'<button class="mac" title="Regenerate" onclick="regenMac(this)"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg></button>';
+        mbody.insertBefore(actions, mbody.querySelector('.mtime'));
+        const mtimeEl=mbody.querySelector('.mtime'); if(mtimeEl) mtimeEl.style.display='';
+        messagesEl.scrollTop=messagesEl.scrollHeight;
+      }
+
       function typeNext(){
+        if(typingStopped) return;
         if(i<fullText.length){
           i+=Math.ceil(Math.random()*3);
-          if(i>fullText.length)i=fullText.length;
-          bubbleEl.innerHTML=fullText.slice(0,i).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'<span class="typing-cursor"></span>';
-          messagesEl.scrollTop=messagesEl.scrollHeight;
-          setTimeout(typeNext,12);
+          if(i>fullText.length) i=fullText.length;
+          // Render markdown during typing so formatting shows immediately
+          bubbleEl.innerHTML=renderMarkdown(fullText.slice(0,i))+'<span class="typing-cursor"></span>';
+          // No auto-scroll while typing — user scrolls manually
+          typeTimer=setTimeout(typeNext,12);
         } else {
-          // Check if artifact
-          const artifactInfo = detectArtifact(fullText);
-          if (artifactInfo) {
-            const shortText = fullText.replace(/```[\s\S]*?```/g,'').trim().substring(0,200);
-            bubbleEl.innerHTML = (shortText ? renderMarkdown(shortText) + '<br><br>' : '') + buildArtifactCard(fullText, artifactInfo);
-          } else {
-            bubbleEl.innerHTML=renderMarkdown(fullText);
-          }
-          const mbody=row.querySelector('.mbody');
-          const enc=encodeURIComponent(fullText);
-          const actions=document.createElement('div');
-          actions.className='msg-actions';
-          actions.innerHTML='<button class="mac" title="Copy" onclick="copyMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'
-            +'<button class="mac" title="Read aloud" onclick="readAloud(\''+enc+'\')"><svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>'
-            +'<button class="mac" title="Good response" onclick="likeMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg></button>'
-            +'<button class="mac" title="Bad response" onclick="dislikeMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg></button>'
-            +'<button class="mac" title="Regenerate" onclick="regenMac(this)"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg></button>';
-          mbody.insertBefore(actions, mbody.querySelector('.mtime'));
-          const mtimeEl = mbody.querySelector('.mtime'); if(mtimeEl) mtimeEl.style.display='';
-          messagesEl.scrollTop=messagesEl.scrollHeight;
+          finishTyping(false);
         }
       }
       typeNext();
@@ -1991,7 +2015,10 @@
       typingRow.style.display='none';typingRow.classList.remove('thinking-row');document.getElementById('thinking-label').style.display='none';stopManusStatusAnimation();
       addMsg('luna','Could not connect. Please try again.');
     }finally{
-      busy=false;chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;
+      busy=false;
+      if(!chatSend.classList.contains('stop-mode')){
+        chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;
+      }
     }
   }
   // ── Profile / Personalization ────────────────────────────
