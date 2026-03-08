@@ -906,9 +906,14 @@
       </div>
       Luna
     </div>
-    <button class="nav-new-btn" onclick="newChat()" title="New chat">
-      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    </button>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <button class="nav-new-btn" id="share-chat-btn" onclick="shareCurrentChat()" title="Share chat" style="display:none;">
+        <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      </button>
+      <button class="nav-new-btn" onclick="newChat()" title="New chat">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
   </nav>
 
   <!-- ── DRAWER / SIDEBAR ───────────────────────────── -->
@@ -1185,6 +1190,17 @@
           <div class="settings-section-title">App</div>
           <div class="settings-row"><div class="settings-row-info"><h4>Install Luna</h4><p>Add Luna to your home screen</p></div></div>
           <button class="install-btn" onclick="installApp()">Install App</button>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">Notifications</div>
+          <div class="settings-row">
+            <div class="settings-row-info"><h4>Daily message from Luna</h4><p>Get a morning motivation or tip from Luna every day</p></div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="notif-toggle" onchange="toggleNotifications(this.checked)"/>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div id="notif-status" style="font-size:12px;color:var(--text-dim);margin-top:6px;display:none;"></div>
         </div>
         <div class="settings-section">
           <div class="settings-section-title">Share</div>
@@ -1634,6 +1650,8 @@
       localStorage.setItem(onboardKey, '1');
       setTimeout(() => showOnboarding(), 600);
     }
+    // Check if opened via shared chat link
+    setTimeout(() => checkSharedThread(), 300);
   }
   function logout(){localStorage.removeItem('luna-token');localStorage.removeItem('luna-user');authToken=null;currentUser=null;isOwner=false;location.reload();}
   function toggleEye(id){const inp=document.getElementById(id);if(inp)inp.type=inp.type==='password'?'text':'password';}
@@ -1662,7 +1680,7 @@
     showScreen('history');
   }
   function goHome(){showScreen('home');}
-  function goSettings(){const tog=document.getElementById('dark-toggle');if(tog)tog.checked=document.documentElement.getAttribute('data-theme')==='dark';showScreen('settings');loadProfile();loadMemories();}
+  function goSettings(){const tog=document.getElementById('dark-toggle');if(tog)tog.checked=document.documentElement.getAttribute('data-theme')==='dark';showScreen('settings');loadProfile();loadMemories();loadNotifState();}
   function goSaved(){showScreen('saved');}
   async function clearChat(){
     if(!confirm('Clear all messages? This cannot be undone.'))return;
@@ -2744,10 +2762,12 @@
     screens.forEach(id=>{
       const el=document.getElementById(id);
       if(!el) return;
-      // Match: 'home' matches 'home-screen', 'history-detail' matches 'history-detail-screen'
       const matches = (id === name + '-screen') || (id === name);
       el.classList.toggle('active', matches);
     });
+    // Show share button only when in chat with an active thread
+    const shareBtn=document.getElementById('share-chat-btn');
+    if(shareBtn) shareBtn.style.display=(name==='chat' && currentThreadId)?'flex':'none';
   }
 
   // goHistory defined above
@@ -2810,6 +2830,122 @@
     } catch(e){ btn.textContent='×'; }
   }
 
+  // ── Share current chat ────────────────────────────────────
+  function shareCurrentChat() {
+    if (!currentThreadId) { showToast('Start a chat first'); return; }
+    const shareUrl = `https://rolandoluwaseun4.github.io/Luna-Al/?thread=${currentThreadId}`;
+    if (navigator.share) {
+      navigator.share({ title: 'Chat with Luna AI', text: 'Check out this conversation with Luna AI', url: shareUrl }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(shareUrl).then(() => showToast('Chat link copied!'));
+    }
+    haptic('medium');
+  }
+
+  // Show/hide share chat button based on screen
+  function updateShareBtn() {
+    const btn = document.getElementById('share-chat-btn');
+    if (btn) btn.style.display = currentThreadId ? 'flex' : 'none';
+  }
+
+  // Check URL for shared thread on load
+  function checkSharedThread() {
+    const params = new URLSearchParams(window.location.search);
+    const threadId = params.get('thread');
+    if (!threadId) return;
+    loadSharedThread(threadId);
+  }
+
+  async function loadSharedThread(threadId) {
+    const overlay = document.getElementById('shared-chat-overlay');
+    const msgContainer = document.getElementById('shared-chat-messages');
+    if (!overlay || !msgContainer) return;
+    overlay.style.display = 'flex';
+    msgContainer.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:40px;">Loading...</div>';
+    try {
+      const res = await fetch(BACKEND_URL + '/shared/' + threadId);
+      const data = await res.json();
+      if (!data.messages || data.messages.length === 0) {
+        msgContainer.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:40px;">Chat not found.</div>';
+        return;
+      }
+      document.getElementById('shared-chat-title').textContent = data.title || 'Shared Chat';
+      document.getElementById('shared-chat-meta').textContent = data.messages.length + ' messages · Luna AI';
+      msgContainer.innerHTML = data.messages.map(m => {
+        const isLuna = m.role === 'assistant';
+        return `<div style="display:flex;gap:10px;align-items:flex-start;${isLuna ? '' : 'flex-direction:row-reverse;'}">
+          <div style="width:30px;height:30px;border-radius:50%;flex-shrink:0;background:${isLuna ? 'var(--accent)' : 'rgba(255,255,255,0.1)'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;">
+            ${isLuna ? '<img src="icon-192.png" style="width:100%;height:100%;border-radius:50%;"/>' : 'U'}
+          </div>
+          <div style="max-width:78%;background:${isLuna ? 'rgba(255,255,255,0.05)' : 'var(--accent)'};padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.6;">
+            ${renderMarkdown(m.text || '')}
+          </div>
+        </div>`;
+      }).join('');
+    } catch(e) {
+      msgContainer.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:40px;">Could not load this chat.</div>';
+    }
+  }
+
+  // ── Push Notifications ────────────────────────────────────
+  const VAPID_PUBLIC_KEY = 'BOmXDkr9yB5VkFvqyQ3nZwXJlLFmG_kWaS8hN4pTvEw3dRbIuYoC6MxQeAzPj5nKtH2cVGsO8WfD1LrUiNgJ';
+
+  async function toggleNotifications(enabled) {
+    const status = document.getElementById('notif-status');
+    if (!status) return;
+    if (!enabled) {
+      localStorage.removeItem('luna-push-sub');
+      status.textContent = 'Notifications turned off.';
+      status.style.display = 'block';
+      return;
+    }
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      status.textContent = 'Push notifications not supported on this browser.';
+      status.style.display = 'block';
+      document.getElementById('notif-toggle').checked = false;
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      status.textContent = 'Permission denied. Enable notifications in your browser settings.';
+      status.style.display = 'block';
+      document.getElementById('notif-toggle').checked = false;
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+      await fetch(BACKEND_URL + '/push/subscribe', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ subscription: sub, userId: getUserId() })
+      });
+      localStorage.setItem('luna-push-sub', '1');
+      status.textContent = 'You will get a daily message from Luna each morning.';
+      status.style.display = 'block';
+    } catch(e) {
+      status.textContent = 'Could not enable notifications. Try again.';
+      status.style.display = 'block';
+      document.getElementById('notif-toggle').checked = false;
+    }
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+  }
+
+  // Restore notification toggle state on settings open
+  function loadNotifState() {
+    const tog = document.getElementById('notif-toggle');
+    if (tog) tog.checked = !!localStorage.getItem('luna-push-sub');
+  }
+
   if('serviceWorker' in navigator){navigator.serviceWorker.register('/Luna-AI/sw.js').catch(function(){});}
 </script>
 
@@ -2839,6 +2975,22 @@
       </div>
     </div>
     <button onclick="closeOnboarding()" style="width:100%;padding:14px;background:var(--accent);border:none;border-radius:14px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Get started</button>
+  </div>
+</div>
+<!-- SHARED CHAT OVERLAY -->
+<div id="shared-chat-overlay" style="display:none;position:fixed;inset:0;z-index:9998;background:var(--bg);flex-direction:column;">
+  <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);">
+    <button onclick="document.getElementById('shared-chat-overlay').style.display='none'" style="background:none;border:none;color:var(--text);cursor:pointer;padding:4px;">
+      <svg viewBox="0 0 24 24" style="width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div>
+      <div id="shared-chat-title" style="font-size:15px;font-weight:600;">Shared Chat</div>
+      <div id="shared-chat-meta" style="font-size:12px;color:var(--text-dim);">Luna AI</div>
+    </div>
+  </div>
+  <div id="shared-chat-messages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;"></div>
+  <div style="padding:16px;border-top:1px solid var(--border);">
+    <button onclick="startChat('Hi Luna!')" style="width:100%;padding:13px;background:var(--accent);border:none;border-radius:14px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Start your own chat with Luna</button>
   </div>
 </div>
 

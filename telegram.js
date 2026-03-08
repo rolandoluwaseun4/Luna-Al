@@ -1143,11 +1143,12 @@ Reply with only YES or NO.`
       // ── Gemini ───────────────────────────────────────────────
       try {
         fullReply = await callGemini(systemPrompt, safeHistory, image || null);
-        // Stream Gemini reply word by word (Gemini doesn't support true streaming here)
+        // Stream Gemini reply word by word with natural delay
         if (fullReply) {
           const words = fullReply.split(' ');
           for (const word of words) {
             sendChunk({ delta: word + ' ' });
+            await new Promise(r => setTimeout(r, 18));
           }
         }
       } catch (geminiErr) {
@@ -1328,6 +1329,44 @@ app.delete('/memories/:userId/:memoryId', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch(e) {
     res.status(500).json({ error: 'Could not delete memory' });
+  }
+});
+
+// ── Public shared thread (no auth required) ──────────────────
+app.get('/shared/:threadId', async (req, res) => {
+  try {
+    const tid = String(req.params.threadId).replace(/[^a-zA-Z0-9_\-]/g, '').substring(0, 128);
+    const thread = await Thread.findOne({ threadId: tid });
+    if (!thread) return res.status(404).json({ error: 'Chat not found' });
+    const messages = thread.messages.slice(-50).map(m => ({
+      role: m.role,
+      text: typeof m.content === 'string' ? m.content
+        : Array.isArray(m.content) ? (m.content.find(c => c.type === 'text')?.text || '[image]')
+        : String(m.content)
+    }));
+    res.json({ title: thread.title, messages });
+  } catch(e) {
+    res.status(500).json({ error: 'Could not load chat' });
+  }
+});
+
+// ── Push notification subscription ───────────────────────────
+const pushSubSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  subscription: { type: mongoose.Schema.Types.Mixed, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+const PushSub = mongoose.model('PushSub', pushSubSchema);
+
+app.post('/push/subscribe', requireAuth, async (req, res) => {
+  try {
+    const uid = String(req.user.id);
+    const { subscription } = req.body;
+    if (!subscription) return res.status(400).json({ error: 'No subscription provided' });
+    await PushSub.findOneAndUpdate({ userId: uid }, { userId: uid, subscription }, { upsert: true, new: true });
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: 'Could not save subscription' });
   }
 });
 
@@ -1780,6 +1819,61 @@ function scheduleDailyTweet() {
 if (process.env.TWITTER_API_KEY) scheduleDailyTweet();
 
 app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
+
+// ── Daily push notifications ──────────────────────────────────
+const webpush = (() => { try { return require('web-push'); } catch(e) { return null; } })();
+
+if (webpush && process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    'mailto:' + (process.env.OWNER_EMAIL || 'admin@luna.ai'),
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+
+  const dailyMessages = [
+    "Good morning. What are we building today?",
+    "New day. What's on your mind?",
+    "Morning. I'm here whenever you need to think something through.",
+    "Start your day with a clear head. What do you want to figure out today?",
+    "I've been thinking. What are you working on right now?",
+    "Every great thing starts with a conversation. Let's talk.",
+    "You've got ideas worth building. Let's work on them.",
+  ];
+
+  async function sendDailyPushNotifications() {
+    if (!webpush) return;
+    const subs = await PushSub.find({}).lean().catch(() => []);
+    const msg = dailyMessages[Math.floor(Math.random() * dailyMessages.length)];
+    console.log(`📲 Sending daily push to ${subs.length} subscribers`);
+    for (const sub of subs) {
+      try {
+        await webpush.sendNotification(sub.subscription, JSON.stringify({
+          title: 'Luna',
+          body: msg,
+          icon: 'https://rolandoluwaseun4.github.io/Luna-Al/icon-192.png',
+          url: 'https://rolandoluwaseun4.github.io/Luna-Al/'
+        }));
+      } catch(e) {
+        if (e.statusCode === 410) await PushSub.findByIdAndDelete(sub._id); // expired
+      }
+    }
+  }
+
+  // Schedule at 8am daily
+  function scheduleDailyPush() {
+    const now = new Date();
+    const next = new Date();
+    next.setHours(8, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    const delay = next - now;
+    console.log(`📲 Next push notification in ${Math.round(delay / 60000)} minutes`);
+    setTimeout(async () => {
+      await sendDailyPushNotifications();
+      scheduleDailyPush();
+    }, delay);
+  }
+  scheduleDailyPush();
+}
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
