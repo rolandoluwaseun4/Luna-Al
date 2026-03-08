@@ -337,9 +337,9 @@ async function runManusTask(userMessage) {
   console.log(`🤖 Manus task: ${taskId}`);
 
   // Step 2 — Poll for completion (max 90s)
-  const MAX_POLLS = 45;
+  const MAX_POLLS = 90; // 3 minutes max
   for (let i = 0; i < MAX_POLLS; i++) {
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 3000));
     const poll = await fetch(`${MANUS_BASE_URL}/tasks/${taskId}`, {
       headers: { 'API_KEY': MANUS_API_KEY, 'accept': 'application/json' }
     });
