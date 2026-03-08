@@ -1192,6 +1192,12 @@
           <button class="install-btn" onclick="openShareSheet()">Share Luna</button>
         </div>
         <div class="settings-section">
+          <div class="settings-section-title">Luna's Memory</div>
+          <div class="settings-row"><div class="settings-row-info"><h4>What Luna knows about you</h4><p>Luna learns facts about you as you chat. You can delete any memory below.</p></div></div>
+          <div id="memories-list" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;"></div>
+          <button class="install-btn" onclick="loadMemories()" style="margin-top:10px;">Refresh Memories</button>
+        </div>
+        <div class="settings-section">
           <div class="settings-section-title">About</div>
           <div class="settings-row"><div class="settings-row-info"><h4>Luna AI</h4><p>Personal AI assistant built by Roland</p></div></div>
           <div class="settings-row"><div class="settings-row-info"><h4>Version</h4><p>2.0.0</p></div></div>
@@ -1622,6 +1628,12 @@
     if(authToken && currentUser && currentUser.role!=='guest') loadSidebarThreads();
     initModelSelector();
     showScreen('home');
+    // Show onboarding for first-time users
+    const onboardKey = 'luna-onboarded-' + (currentUser?.id || 'guest');
+    if (!localStorage.getItem(onboardKey)) {
+      localStorage.setItem(onboardKey, '1');
+      setTimeout(() => showOnboarding(), 600);
+    }
   }
   function logout(){localStorage.removeItem('luna-token');localStorage.removeItem('luna-user');authToken=null;currentUser=null;isOwner=false;location.reload();}
   function toggleEye(id){const inp=document.getElementById(id);if(inp)inp.type=inp.type==='password'?'text':'password';}
@@ -1650,7 +1662,7 @@
     showScreen('history');
   }
   function goHome(){showScreen('home');}
-  function goSettings(){const tog=document.getElementById('dark-toggle');if(tog)tog.checked=document.documentElement.getAttribute('data-theme')==='dark';showScreen('settings');loadProfile();}
+  function goSettings(){const tog=document.getElementById('dark-toggle');if(tog)tog.checked=document.documentElement.getAttribute('data-theme')==='dark';showScreen('settings');loadProfile();loadMemories();}
   function goSaved(){showScreen('saved');}
   async function clearChat(){
     if(!confirm('Clear all messages? This cannot be undone.'))return;
@@ -1936,54 +1948,45 @@
       return;
     }
 
-    // ── Streaming chat ────────────────────────────────────────
+    // ── Real-time streaming chat ───────────────────────────────
     if (manusMode && text) startManusStatusAnimation(text);
     try{
       const res=await fetch(BACKEND_URL+'/chat',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify({message:text||'What is in this image?',userId:getUserId(),image:image||null,modeExtra:toolSystemExtra||null,threadId:isSecret?null:currentThreadId,model:selectedModel,mode:manusMode?'manus':null})});
       if(!res.ok)throw new Error();
 
-      // Get JSON then typewrite it
-      const data=await res.json();
+      // Hide typing indicator — first chunk arrives immediately
       typingRow.style.display='none';typingRow.classList.remove('thinking-row');document.getElementById('thinking-label').style.display='none';stopManusStatusAnimation();
-      if(data.threadId && !currentThreadId){ currentThreadId=data.threadId; loadSidebarThreads(); }
-      const fullText=data.reply||'No response.';
-      lastLunaText=fullText;
 
-      // Create message row
+      // Create message row right away
       const row=document.createElement('div');row.className='mrow luna';
-      row.innerHTML='<div class="msg-avatar luna-av"><img src="icon-192.png" alt="L"/></div><div class="mbody"><div class="bubble"></div><div class="mtime" style="display:none">'+ts()+'</div></div>';
+      row.innerHTML='<div class="msg-avatar luna-av"><img src="icon-192.png" alt="L"/></div><div class="mbody"><div class="bubble"><span class="typing-cursor"></span></div><div class="mtime" style="display:none">'+ts()+'</div></div>';
       messagesEl.insertBefore(row,typingRow);
       const bubbleEl=row.querySelector('.bubble');
 
-      // Typewriter effect
-      let i=0;
-      let typingStopped=false;
-      let typeTimer=null;
+      let fullText='';
+      let streamStopped=false;
 
       // Turn send button into stop button
       chatSend.classList.add('stop-mode');
       chatSend.disabled=false;
       chatSend.innerHTML='<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" fill="#fff" stroke="none"/></svg>';
-      chatSend.onclick=function(){ typingStopped=true; finishTyping(true); };
+      chatSend.onclick=function(){ streamStopped=true; finalizeMessage(fullText); };
 
-      function finishTyping(stopped){
-        if(typeTimer) clearTimeout(typeTimer);
-        // Reset send button back to arrow
+      function finalizeMessage(text){
         chatSend.classList.remove('stop-mode');
         chatSend.innerHTML='<svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
         chatSend.onclick=null;
         chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;
-        // Render final text
-        const displayText=stopped ? fullText.slice(0,i) : fullText;
-        const artifactInfo=detectArtifact(fullText);
-        if(!stopped && artifactInfo){
-          const shortText=fullText.replace(/```[\s\S]*?```/g,'').trim().substring(0,200);
-          bubbleEl.innerHTML=(shortText ? renderMarkdown(shortText)+'<br><br>' : '')+buildArtifactCard(fullText,artifactInfo);
+        lastLunaText=text;
+        const artifactInfo=detectArtifact(text);
+        if(artifactInfo){
+          const shortText=text.replace(/```[\s\S]*?```/g,'').trim().substring(0,200);
+          bubbleEl.innerHTML=(shortText?renderMarkdown(shortText)+'<br><br>':'')+buildArtifactCard(text,artifactInfo);
         } else {
-          bubbleEl.innerHTML=renderMarkdown(displayText);
+          bubbleEl.innerHTML=renderMarkdown(text);
         }
         const mbody=row.querySelector('.mbody');
-        const enc=encodeURIComponent(fullText);
+        const enc=encodeURIComponent(text);
         const actions=document.createElement('div');
         actions.className='msg-actions';
         actions.innerHTML='<button class="mac" title="Copy" onclick="copyMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'
@@ -1991,25 +1994,38 @@
           +'<button class="mac" title="Good response" onclick="likeMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg></button>'
           +'<button class="mac" title="Bad response" onclick="dislikeMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg></button>'
           +'<button class="mac" title="Regenerate" onclick="regenMac(this)"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg></button>';
-        mbody.insertBefore(actions, mbody.querySelector('.mtime'));
-        const mtimeEl=mbody.querySelector('.mtime'); if(mtimeEl) mtimeEl.style.display='';
+        mbody.insertBefore(actions,mbody.querySelector('.mtime'));
+        const mtimeEl=mbody.querySelector('.mtime');if(mtimeEl)mtimeEl.style.display='';
         messagesEl.scrollTop=messagesEl.scrollHeight;
       }
 
-      function typeNext(){
-        if(typingStopped) return;
-        if(i<fullText.length){
-          i+=Math.ceil(Math.random()*3);
-          if(i>fullText.length) i=fullText.length;
-          // Render markdown during typing so formatting shows immediately
-          bubbleEl.innerHTML=renderMarkdown(fullText.slice(0,i))+'<span class="typing-cursor"></span>';
-          // No auto-scroll while typing — user scrolls manually
-          typeTimer=setTimeout(typeNext,12);
-        } else {
-          finishTyping(false);
+      // Read SSE stream chunk by chunk
+      const reader=res.body.getReader();
+      const decoder=new TextDecoder();
+      let buffer='';
+      while(true){
+        const {done,value}=await reader.read();
+        if(done) break;
+        buffer+=decoder.decode(value,{stream:true});
+        const lines=buffer.split('\n');
+        buffer=lines.pop()||'';
+        for(const line of lines){
+          if(!line.startsWith('data:')) continue;
+          try{
+            const json=JSON.parse(line.slice(5).trim());
+            if(json.error){ addMsg('luna',json.error||'Something went wrong.'); break; }
+            if(json.delta && !streamStopped){
+              fullText+=json.delta;
+              bubbleEl.innerHTML=renderMarkdown(fullText)+'<span class="typing-cursor"></span>';
+            }
+            if(json.done){
+              if(json.threadId && !currentThreadId){ currentThreadId=json.threadId; loadSidebarThreads(); }
+              if(!streamStopped) finalizeMessage(fullText);
+            }
+          }catch(e){}
         }
+        if(streamStopped) break;
       }
-      typeNext();
 
     }catch(e){
       typingRow.style.display='none';typingRow.classList.remove('thinking-row');document.getElementById('thinking-label').style.display='none';stopManusStatusAnimation();
@@ -2754,9 +2770,77 @@
   }
 
 
+  // ── Onboarding ────────────────────────────────────────────
+  function showOnboarding(){
+    const el=document.getElementById('onboarding-overlay');
+    if(el){el.style.display='flex';}
+  }
+  function closeOnboarding(){
+    const el=document.getElementById('onboarding-overlay');
+    if(el){el.style.display='none';}
+  }
+
+  // ── Memories ──────────────────────────────────────────────
+  async function loadMemories(){
+    const list=document.getElementById('memories-list');
+    if(!list||!authToken||!currentUser||currentUser.role==='guest') return;
+    list.innerHTML='<div style="color:var(--text-dim);font-size:13px;">Loading...</div>';
+    try {
+      const res=await fetch(BACKEND_URL+'/memories/'+getUserId(),{headers:getAuthHeaders()});
+      const data=await res.json();
+      const memories=data.memories||[];
+      if(memories.length===0){
+        list.innerHTML='<div style="color:var(--text-dim);font-size:13px;">No memories yet — Luna will learn about you as you chat.</div>';
+        return;
+      }
+      list.innerHTML=memories.map(m=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(255,255,255,0.04);border-radius:10px;padding:9px 12px;">
+          <span style="font-size:13px;flex:1;">🧠 ${m.fact}</span>
+          <button onclick="deleteMemory('${m._id}',this)" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;padding:0 4px;flex-shrink:0;">×</button>
+        </div>`).join('');
+    } catch(e){
+      list.innerHTML='<div style="color:var(--text-dim);font-size:13px;">Could not load memories.</div>';
+    }
+  }
+  async function deleteMemory(id,btn){
+    btn.textContent='...';
+    try {
+      await fetch(BACKEND_URL+'/memories/'+getUserId()+'/'+id,{method:'DELETE',headers:getAuthHeaders()});
+      btn.closest('div[style]').remove();
+    } catch(e){ btn.textContent='×'; }
+  }
+
   if('serviceWorker' in navigator){navigator.serviceWorker.register('/Luna-AI/sw.js').catch(function(){});}
 </script>
 
+<!-- ONBOARDING OVERLAY -->
+<div id="onboarding-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(8,4,8,0.92);backdrop-filter:blur(12px);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:var(--sidebar-bg);border:1px solid var(--border);border-radius:24px;max-width:360px;width:100%;padding:28px 24px;text-align:center;">
+    <div style="width:64px;height:64px;border-radius:50%;background:var(--accent);margin:0 auto 16px;display:flex;align-items:center;justify-content:center;">
+      <img src="icon-192.png" style="width:48px;height:48px;border-radius:50%;"/>
+    </div>
+    <h2 style="font-size:22px;font-weight:700;margin-bottom:8px;">Hey, I'm Luna</h2>
+    <p style="color:var(--text-dim);font-size:14px;line-height:1.6;margin-bottom:20px;">Your personal AI — smarter, more creative, and actually useful. Here's what I can do:</p>
+    <div style="text-align:left;display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
+      <div style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.04);border-radius:12px;padding:10px 14px;">
+        <span style="font-size:20px;">💬</span><span style="font-size:13px;">Chat about anything — I think, reason, and give real answers</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.04);border-radius:12px;padding:10px 14px;">
+        <span style="font-size:20px;">🎨</span><span style="font-size:13px;">Generate images — just describe what you want</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.04);border-radius:12px;padding:10px 14px;">
+        <span style="font-size:20px;">🔍</span><span style="font-size:13px;">Search the web — I find real-time answers for you</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.04);border-radius:12px;padding:10px 14px;">
+        <span style="font-size:20px;">🧠</span><span style="font-size:13px;">Remember you — the more we talk, the better I know you</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.04);border-radius:12px;padding:10px 14px;">
+        <span style="font-size:20px;">✍️</span><span style="font-size:13px;">Write anything — stories, emails, pitches, code, poems</span>
+      </div>
+    </div>
+    <button onclick="closeOnboarding()" style="width:100%;padding:14px;background:var(--accent);border:none;border-radius:14px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Get started</button>
+  </div>
+</div>
 
 </body>
 </html>

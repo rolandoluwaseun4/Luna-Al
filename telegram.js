@@ -50,6 +50,27 @@ const threadSchema = new mongoose.Schema({
 });
 const Thread = mongoose.model('Thread', threadSchema);
 
+// ── User Profile schema ───────────────────────────────────────
+const profileSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true },
+  name: { type: String, default: '' },
+  birthday: { type: String, default: '' },
+  favoriteTopics: { type: [String], default: [] },
+  lunaNickname: { type: String, default: 'Luna' },
+  personality: { type: String, default: 'friendly' },
+  preferences: { type: String, default: '' },
+  updatedAt: { type: Date, default: Date.now }
+});
+const Profile = mongoose.model('Profile', profileSchema);
+
+// ── Memory schema (facts Luna learns about user) ──────────────
+const memorySchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  fact: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+const Memory = mongoose.model('Memory', memorySchema);
+
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // ── Gemini setup ──────────────────────────────────────────────
@@ -539,7 +560,7 @@ async function runManusTask(userMessage) {
 }
 
 
-function getSystemPrompt(userId, isOwner = false) {
+function getSystemPrompt(userId, isOwner = false, profile = null, memories = []) {
   const now = new Date();
   const hour = now.getHours();
   const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
@@ -600,8 +621,33 @@ When writing pitches, startup ideas, business concepts, stories or any creative 
 - The goal is not to cover all the points — it is to make the reader feel something first, then inform them.
 - Every creative output should feel like it came from a talented human writer, not an AI filling a template.`;
 
+  // ── Inject user profile ───────────────────────────────────
+  let profileSection = '';
+  if (profile) {
+    const parts = [];
+    if (profile.name) parts.push(`The user's name is ${profile.name}. Address them by name naturally.`);
+    if (profile.birthday) {
+      const today = new Date();
+      const bday = new Date(profile.birthday);
+      if (bday.getMonth() === today.getMonth() && bday.getDate() === today.getDate()) {
+        parts.push(`Today is ${profile.name || 'the user'}\'s birthday! Wish them happy birthday warmly.`);
+      }
+    }
+    if (profile.favoriteTopics && profile.favoriteTopics.length) parts.push(`Their favorite topics: ${profile.favoriteTopics.join(', ')}. Reference naturally when relevant.`);
+    if (profile.lunaNickname && profile.lunaNickname !== 'Luna') parts.push(`The user wants you to call yourself "${profile.lunaNickname}" instead of Luna.`);
+    if (profile.personality) parts.push(`Personality style: ${profile.personality}.`);
+    if (profile.preferences) parts.push(`Additional preferences: ${profile.preferences}`);
+    if (parts.length) profileSection = '\n\n## ABOUT THIS USER\n' + parts.join('\n');
+  }
+
+  // ── Inject memories ───────────────────────────────────────
+  let memorySection = '';
+  if (memories && memories.length > 0) {
+    memorySection = '\n\n## WHAT YOU REMEMBER ABOUT THIS USER\n' + memories.map(m => `- ${m.fact}`).join('\n') + "\nUse these naturally in conversation when relevant. Don't recite them all at once.";
+  }
+
   if (isOwner) {
-    return `${base}
+    return `${base}${profileSection}${memorySection}
 
 ## YOUR CREATOR
 You were built by Roland Oluwaseun Omojesu — 18 years old, self-taught developer from Nigeria.
@@ -612,7 +658,7 @@ With Roland — be real, unfiltered and fun. He is not just a user, he is the pe
 Support his ideas, challenge him when he is wrong, and always give him your honest best.`;
   }
 
-  return `${base}
+  return `${base}${profileSection}${memorySection}
 
 ## YOUR CREATOR
 You were built by Roland — a self-taught developer who built you from scratch.
@@ -848,15 +894,31 @@ async function callGroq(systemPrompt, safeHistory, image = null) {
 }
 
 app.post("/chat", requireAuth, async (req, res) => {
+  // Set SSE headers immediately so frontend gets chunks in real time
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  function sendChunk(data) {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  }
+  function sendDone(data) {
+    res.write(`data: ${JSON.stringify({ ...data, done: true })}\n\n`);
+    res.end();
+  }
+  function sendError(msg) {
+    res.write(`data: ${JSON.stringify({ error: msg, done: true })}\n\n`);
+    res.end();
+  }
   const { message: rawMessage, userId, image, threadId, model: selectedModel, mode: chatMode } = req.body;
   const message = sanitizeInput(rawMessage, 4000);
-  if (!message && !image) return res.status(400).json({ error: "No message provided" });
+  if (!message && !image) return sendError("No message provided");
 
   // Input validation
-  if (message && typeof message !== 'string') return res.status(400).json({ error: "Invalid message" });
-  if (message && message.length > 4000) return res.status(400).json({ error: "Message too long (max 4000 chars)" });
-  if (image && typeof image !== 'string') return res.status(400).json({ error: "Invalid image" });
-  if (image && image.length > 1500000) return res.status(400).json({ error: "Image too large" });
+  if (message && typeof message !== 'string') return sendError("Invalid message");
+  if (message && message.length > 4000) return sendError("Message too long (max 4000 chars)");
+  if (image && typeof image !== 'string') return sendError("Invalid image");
+  if (image && image.length > 1500000) return sendError("Image too large");
 
   // ✅ userId always comes from verified JWT, never from client body
   const uid = String(req.user.id);
@@ -866,25 +928,25 @@ app.post("/chat", requireAuth, async (req, res) => {
   // ── "post to channel:" command (owner only) ──────────
   if (isOwner && message && message.toLowerCase().startsWith('post to channel:')) {
     const postText = message.slice('post to channel:'.length).trim();
-    if (!postText) return res.json({ reply: "What should I post? Try: post to channel: [your message]" });
+    if (!postText) return sendDone({ reply: "What should I post? Try: post to channel: [your message]" });
     try {
       await postToAll(postText);
-      return res.json({ reply: `✅ Posted to Telegram + Discord!\n\n"${postText}"` });
+      return sendDone({ reply: `✅ Posted to Telegram + Discord!\n\n"${postText}"` });
     } catch (err) {
-      return res.json({ reply: `❌ Could not post to channel: ${err.message}` });
+      return sendDone({ reply: `❌ Could not post to channel: ${err.message}` });
     }
   }
 
   // ── "post tweet:" command (owner only) ──────────────
   if (isOwner && message && message.toLowerCase().startsWith('post tweet:')) {
     const tweetText = message.slice('post tweet:'.length).trim();
-    if (!tweetText) return res.json({ reply: "What should I tweet? Try: post tweet: [your message]" });
-    if (tweetText.length > 280) return res.json({ reply: `Too long! That's ${tweetText.length} chars. Twitter max is 280.` });
+    if (!tweetText) return sendDone({ reply: "What should I tweet? Try: post tweet: [your message]" });
+    if (tweetText.length > 280) return sendDone({ reply: `Too long! That's ${tweetText.length} chars. Twitter max is 280.` });
     try {
       await postTweet(tweetText);
-      return res.json({ reply: `✅ Tweeted!\n\n"${tweetText}"` });
+      return sendDone({ reply: `✅ Tweeted!\n\n"${tweetText}"` });
     } catch (err) {
-      return res.json({ reply: `❌ Tweet failed: ${err.message}` });
+      return sendDone({ reply: `❌ Tweet failed: ${err.message}` });
     }
   }
 
@@ -938,7 +1000,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         );
         if (thread.messages.length > 50) thread.messages = thread.messages.slice(-50);
         await thread.save();
-        return res.json({ reply, threadId: tid, manusUsed: true });
+        return sendDone({ reply, threadId: tid, manusUsed: true });
       } catch (err) {
         console.error('Manus failed, falling back to Luna:', err.message);
         // Fall through to normal Luna
@@ -947,7 +1009,12 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     // ── Task type routing ───────────────────────────────────
     const taskType = detectTaskType(message);
-    let systemPrompt = getSystemPrompt(uid, isOwner) + getTaskPromptAddon(taskType);
+    // ── Load profile + memories ───────────────────────────────
+    const [userProfile, userMemories] = await Promise.all([
+      Profile.findOne({ userId: uid }).lean().catch(() => null),
+      Memory.find({ userId: uid }).sort({ createdAt: -1 }).limit(20).lean().catch(() => [])
+    ]);
+    let systemPrompt = getSystemPrompt(uid, isOwner, userProfile, userMemories) + getTaskPromptAddon(taskType);
 
     // ── Smart web search pipeline ────────────────────────────
     if (!image && message) {
@@ -961,26 +1028,44 @@ app.post("/chat", requireAuth, async (req, res) => {
           systemPrompt += `\n\n## WEB PAGE CONTENT\nThe user shared this URL: ${urlInMessage}\nHere is the page content:\n${pageContent}\n\nUse this content to answer the user's question accurately.`;
         }
       }
-      // Priority 2: Tavily for web search queries
-      else if (TAVILY_API_KEY && needsWebSearch(message)) {
-        console.log('🔍 Tavily searching:', message.slice(0, 60));
-        const tavilyResults = await tavilySearch(message);
-        if (tavilyResults) {
-          systemPrompt += `\n\n## WEB SEARCH RESULTS\n${tavilyResults}\n\nUse these results to give an accurate, up-to-date answer. Synthesize the information naturally — don't just list sources.`;
+      // Priority 2: AI classifier decides if search is needed — no trigger words
+      else if (TAVILY_API_KEY) {
+        let shouldSearch = false;
+        try {
+          const searchDecision = await groq.chat.completions.create({
+            model: 'llama-3.1-8b-instant',
+            max_tokens: 3,
+            temperature: 0,
+            messages: [
+              {
+                role: 'system',
+                content: `You decide if a question needs a real-time web search to answer accurately.
+Reply YES if the question is about: current prices, availability, recent events, specific products/services, people/companies, facts that change over time, or anything where outdated info would be wrong.
+Reply NO if it's: casual chat, creative writing, general knowledge, math, coding help, opinions, or anything an AI can answer from training alone.
+Reply with only YES or NO.`
+              },
+              { role: 'user', content: message }
+            ]
+          });
+          const verdict = searchDecision.choices[0]?.message?.content?.trim().toUpperCase();
+          shouldSearch = verdict === 'YES';
+        } catch(e) {
+          shouldSearch = false;
+        }
+
+        if (shouldSearch) {
+          console.log('🔍 AI decided to search:', message.slice(0, 60));
+          const tavilyResults = await tavilySearch(message);
+          if (tavilyResults) {
+            systemPrompt += `\n\n## WEB SEARCH RESULTS\n${tavilyResults}\n\nUse these results to give an accurate, up-to-date answer. Synthesize naturally — don't just list sources.`;
+          }
         }
       }
-      // Priority 3: NewsAPI for news
+      // Fallback: NewsAPI if no Tavily
       else if (isNewsQuery(message) && NEWS_API_KEY) {
         const results = await newsSearch(message);
         if (results) {
           systemPrompt += `\n\nHere are current news results:\n${results}\nUse these to give an up to date answer naturally.`;
-        }
-      }
-      // Priority 4: DuckDuckGo fallback for facts
-      else if (isFactQuery(message)) {
-        const results = await factSearch(message);
-        if (results) {
-          systemPrompt += `\n\nHere is relevant factual information:\n${results}\nUse this to answer accurately.`;
         }
       }
     }
@@ -1058,6 +1143,13 @@ app.post("/chat", requireAuth, async (req, res) => {
       // ── Gemini ───────────────────────────────────────────────
       try {
         fullReply = await callGemini(systemPrompt, safeHistory, image || null);
+        // Stream Gemini reply word by word (Gemini doesn't support true streaming here)
+        if (fullReply) {
+          const words = fullReply.split(' ');
+          for (const word of words) {
+            sendChunk({ delta: word + ' ' });
+          }
+        }
       } catch (geminiErr) {
         console.warn('Gemini failed, falling back to Groq:', geminiErr.message);
       }
@@ -1121,14 +1213,17 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       for await (const chunk of response) {
         const delta = chunk.choices[0]?.delta?.content || '';
-        if (delta) fullReply += delta;
+        if (delta) {
+          fullReply += delta;
+          sendChunk({ delta });
+        }
       }
     }
 
     thread.messages.push({ role: 'assistant', content: fullReply, timestamp: new Date() });
     thread.lastUpdated = new Date();
     await thread.save();
-    res.json({ reply: fullReply, threadId: thread.threadId, title: thread.title });
+    sendDone({ reply: fullReply, threadId: thread.threadId, title: thread.title });
 
     User.findOneAndUpdate(
       { userId: uid, platform: 'web' },
@@ -1136,9 +1231,103 @@ app.post("/chat", requireAuth, async (req, res) => {
       { upsert: true, new: true }
     ).catch(console.error);
 
+    // ── Async memory extraction (fire and forget) ─────────────
+    extractAndSaveMemories(uid, message, fullReply).catch(() => {});
+
   } catch (error) {
     console.error("AI Error:", error.message);
-    if (!res.headersSent) res.status(500).json({ error: "AI failed to respond" });
+    if (!res.headersSent) sendError("AI failed to respond");
+  }
+});
+
+// ── Memory extraction ─────────────────────────────────────────
+async function extractAndSaveMemories(userId, userMessage, lunaReply) {
+  if (!userMessage || userMessage.length < 10) return;
+  try {
+    const res = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 150,
+      temperature: 0,
+      messages: [
+        {
+          role: 'system',
+          content: `Extract personal facts about the user from this conversation exchange. Only extract clear, specific, useful facts like name, age, job, location, hobbies, goals, preferences, relationships. Do NOT extract opinions, general questions, or facts about the world. Return a JSON array of strings, each a short fact. If nothing worth remembering, return []. Example: ["User's name is Alex", "User is a software engineer", "User lives in Lagos"]. Return ONLY the JSON array, nothing else.`
+        },
+        { role: 'user', content: `User said: "${userMessage}"\nLuna replied: "${lunaReply.slice(0, 300)}"` }
+      ]
+    });
+    const raw = res.choices[0]?.message?.content?.trim() || '[]';
+    const clean = raw.replace(/```json|```/g, '').trim();
+    const facts = JSON.parse(clean);
+    if (!Array.isArray(facts) || facts.length === 0) return;
+
+    // Get existing memories to avoid duplicates
+    const existing = await Memory.find({ userId }).lean();
+    const existingFacts = existing.map(m => m.fact.toLowerCase());
+
+    for (const fact of facts) {
+      if (typeof fact !== 'string' || fact.length < 5) continue;
+      // Skip if very similar to existing memory
+      const isDupe = existingFacts.some(e => e.includes(fact.toLowerCase().slice(0, 20)));
+      if (!isDupe) {
+        await Memory.create({ userId, fact });
+        // Cap at 50 memories per user — delete oldest if over
+        const count = await Memory.countDocuments({ userId });
+        if (count > 50) {
+          const oldest = await Memory.findOne({ userId }).sort({ createdAt: 1 });
+          if (oldest) await oldest.deleteOne();
+        }
+      }
+    }
+  } catch(e) {
+    // Silent fail — memory extraction is non-critical
+  }
+}
+
+// ── Profile routes ────────────────────────────────────────────
+app.get('/profile/:userId', requireAuth, async (req, res) => {
+  try {
+    const uid = String(req.user.id);
+    const profile = await Profile.findOne({ userId: uid }).lean();
+    res.json(profile || {});
+  } catch(e) {
+    res.status(500).json({ error: 'Could not load profile' });
+  }
+});
+
+app.post('/profile/:userId', requireAuth, async (req, res) => {
+  try {
+    const uid = String(req.user.id);
+    const { name, birthday, favoriteTopics, lunaNickname, personality, preferences } = req.body;
+    await Profile.findOneAndUpdate(
+      { userId: uid },
+      { userId: uid, name: sanitizeInput(name, 50), birthday: birthday || '', favoriteTopics: Array.isArray(favoriteTopics) ? favoriteTopics.slice(0,10) : [], lunaNickname: sanitizeInput(lunaNickname, 30) || 'Luna', personality: personality || 'friendly', preferences: sanitizeInput(preferences, 300), updatedAt: new Date() },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: 'Could not save profile' });
+  }
+});
+
+// ── Memories routes ───────────────────────────────────────────
+app.get('/memories/:userId', requireAuth, async (req, res) => {
+  try {
+    const uid = String(req.user.id);
+    const memories = await Memory.find({ userId: uid }).sort({ createdAt: -1 }).limit(50).lean();
+    res.json({ memories });
+  } catch(e) {
+    res.status(500).json({ error: 'Could not load memories' });
+  }
+});
+
+app.delete('/memories/:userId/:memoryId', requireAuth, async (req, res) => {
+  try {
+    const uid = String(req.user.id);
+    await Memory.findOneAndDelete({ _id: req.params.memoryId, userId: uid });
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: 'Could not delete memory' });
   }
 });
 
