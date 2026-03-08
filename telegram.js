@@ -296,7 +296,7 @@ async function callGeminiWithModel(modelName, systemPrompt, messages, imageBase6
 
 // ── Manus AI Agent Integration ────────────────────────────────
 const MANUS_API_KEY = process.env.MANUS_API_KEY;
-const MANUS_BASE_URL = process.env.MANUS_BASE_URL || 'https://api.manus.im/v1';
+const MANUS_BASE_URL = process.env.MANUS_BASE_URL || 'https://api.manus.ai/v1';
 
 function isManusTask(message) {
   if (!message || !MANUS_API_KEY) return false;
@@ -320,7 +320,8 @@ async function runManusTask(userMessage) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${MANUS_API_KEY}`
+      'accept': 'application/json',
+      'API_KEY': MANUS_API_KEY
     },
     body: JSON.stringify({ prompt: cleanMessage })
   });
@@ -340,7 +341,7 @@ async function runManusTask(userMessage) {
   for (let i = 0; i < MAX_POLLS; i++) {
     await new Promise(r => setTimeout(r, 2000));
     const poll = await fetch(`${MANUS_BASE_URL}/tasks/${taskId}`, {
-      headers: { 'Authorization': `Bearer ${MANUS_API_KEY}` }
+      headers: { 'API_KEY': MANUS_API_KEY, 'accept': 'application/json' }
     });
     if (!poll.ok) continue;
     const data = await poll.json();
