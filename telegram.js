@@ -349,11 +349,32 @@ async function runManusTask(userMessage) {
     console.log(`🤖 Manus poll ${i+1}: ${status}`);
 
     if (['completed','done','finished','success'].includes(status)) {
-      const result = data.result || data.output || data.response || data.answer || '';
-      if (typeof result === 'string' && result) return result;
-      if (result && result.text) return result.text;
-      if (result && result.content) return result.content;
-      return JSON.stringify(result);
+      // Manus returns messages array — extract assistant text content
+      const messages = data.messages || data.result || data.output || data.response || data.answer || '';
+
+      // If it's an array of message objects (Manus format)
+      if (Array.isArray(messages)) {
+        const textParts = [];
+        for (const msg of messages) {
+          if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+            for (const block of msg.content) {
+              if (block.type === 'output_text' && block.text) {
+                textParts.push(block.text.trim());
+              }
+            }
+          }
+        }
+        if (textParts.length > 0) {
+          // Return only the last meaningful assistant message (the final answer)
+          return textParts[textParts.length - 1];
+        }
+      }
+
+      // Fallback for other formats
+      if (typeof messages === 'string' && messages) return messages;
+      if (messages && messages.text) return messages.text;
+      if (messages && messages.content) return messages.content;
+      return JSON.stringify(messages);
     }
     if (['failed','error','cancelled'].includes(status)) {
       throw new Error(data.error || data.message || 'Manus task failed');
