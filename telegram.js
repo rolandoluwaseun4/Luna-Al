@@ -136,6 +136,161 @@ passport.use(new GoogleStrategy({
 }));
 
 // NewsAPI for current news
+
+// ── Tavily Web Search (replaces DuckDuckGo) ──────────────────
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
+
+async function tavilySearch(query, maxResults = 5) {
+  if (!TAVILY_API_KEY) return null;
+  try {
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: TAVILY_API_KEY,
+        query,
+        search_depth: 'basic',
+        max_results: maxResults,
+        include_answer: true,
+        include_raw_content: false
+      })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const parts = [];
+    if (data.answer) parts.push(`Summary: ${data.answer}`);
+    if (data.results?.length) {
+      const results = data.results.slice(0, maxResults).map(r =>
+        `• ${r.title}\n  ${r.content?.slice(0, 200) || ''}\n  Source: ${r.url}`
+      );
+      parts.push(results.join('\n\n'));
+    }
+    return parts.length ? parts.join('\n\n') : null;
+  } catch (e) {
+    console.error('Tavily error:', e.message);
+    return null;
+  }
+}
+
+// ── Jina URL Reader ──────────────────────────────────────────
+async function jinaReadUrl(url) {
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, {
+      headers: {
+        'Accept': 'text/plain',
+        'X-Return-Format': 'text'
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    // Trim to avoid token overflow
+    return text?.slice(0, 6000) || null;
+  } catch (e) {
+    console.error('Jina error:', e.message);
+    return null;
+  }
+}
+
+// ── Detect if message contains a URL ────────────────────────
+function extractUrl(message) {
+  const urlRegex = /https?:\/\/[^\s]+/i;
+  const match = message.match(urlRegex);
+  return match ? match[0] : null;
+}
+
+// ── Smarter search trigger detection ────────────────────────
+function needsWebSearch(message) {
+  if (!message) return false;
+  const msg = message.toLowerCase();
+  const triggers = [
+    'news', 'latest', 'recent', 'today', 'current', 'right now',
+    'happened', 'breaking', 'update on', 'what happened',
+    'price of', 'cost of', 'how much is', 'stock',
+    'who is', 'who are', 'what is', 'where is', 'when did',
+    'research', 'find', 'search', 'look up', 'tell me about',
+    'compare', 'difference between', 'vs ', 'versus',
+    'best ', 'top ', 'review of', 'should i use',
+    'how to', 'tutorial', 'guide to', 'steps to'
+  ];
+  return triggers.some(t => msg.includes(t));
+}
+
+// ── Daily message limit ──────────────────────────────────────
+const DAILY_FREE_LIMIT = 20;
+const DAILY_IMAGE_LIMIT = 5;
+
+async function checkDailyLimit(account, type = 'message') {
+  if (!account || account.role === 'owner') return { allowed: true };
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+
+  // Reset counters if new day
+  const lastReset = account.lastReset ? new Date(account.lastReset).toISOString().slice(0, 10) : null;
+  if (lastReset !== todayStr) {
+    await Account.findByIdAndUpdate(account._id, {
+      dailyMessages: 0,
+      dailyImages: 0,
+      lastReset: now
+    });
+    account.dailyMessages = 0;
+    account.dailyImages = 0;
+  }
+
+  if (type === 'image') {
+    const count = account.dailyImages || 0;
+    if (count >= DAILY_IMAGE_LIMIT) {
+      return { allowed: false, message: `🌙 You've used your ${DAILY_IMAGE_LIMIT} free image generations for today. Come back tomorrow!` };
+    }
+    await Account.findByIdAndUpdate(account._id, { $inc: { dailyImages: 1 }, lastReset: account.lastReset || now });
+    return { allowed: true };
+  }
+
+  const count = account.dailyMessages || 0;
+  if (count >= DAILY_FREE_LIMIT) {
+    return { allowed: false, message: `🌙 You've used your ${DAILY_FREE_LIMIT} free messages for today. Come back tomorrow for more!` };
+  }
+  await Account.findByIdAndUpdate(account._id, { $inc: { dailyMessages: 1 }, lastReset: account.lastReset || now });
+  return { allowed: true, remaining: DAILY_FREE_LIMIT - count - 1 };
+}
+
+// ── Task type classifier for prompt routing ──────────────────
+function detectTaskType(message) {
+  if (!message) return 'general';
+  const msg = message.toLowerCase();
+  if (/```|function |const |let |var |def |class |import |export |<html|<div|npm |pip /.test(msg) ||
+      /code|debug|fix (the|my|this)|error|bug|script|program|api|backend|frontend|deploy/.test(msg)) return 'code';
+  if (/story|poem|script|creative|fiction|write a|draft|essay|blog|article|letter|email/.test(msg)) return 'creative';
+  if (/research|analyze|analyse|compare|report|breakdown|summarize|study|explain in detail|comprehensive/.test(msg)) return 'research';
+  if (/advice|should i|help me decide|what would you|opinion|recommend|suggest|mentor|coach/.test(msg)) return 'advisor';
+  if (/calculate|math|solve|equation|formula|statistics|data|chart|graph/.test(msg)) return 'analytical';
+  return 'general';
+}
+
+// ── Specialized system prompt addons per task type ───────────
+function getTaskPromptAddon(taskType) {
+  switch (taskType) {
+    case 'code':
+      return `\n\n## CURRENT TASK: CODE
+You are in coding mode. Write clean, production-ready code with comments. Always specify the language. Explain what the code does after writing it. If there's a bug, identify the exact line and explain why it's wrong before fixing it.`;
+    case 'creative':
+      return `\n\n## CURRENT TASK: CREATIVE WRITING
+You are in creative mode. Be cinematic and vivid. Use strong verbs, specific details, atmosphere. Never be generic. Write like a talented human author, not an AI filling a template. Make the reader feel something.`;
+    case 'research':
+      return `\n\n## CURRENT TASK: RESEARCH & ANALYSIS
+You are in research mode. Be thorough, structured, and cite your reasoning. Use headers and clear sections. Give depth over breadth. If you have web results, synthesize them into insight — don't just list facts.`;
+    case 'advisor':
+      return `\n\n## CURRENT TASK: ADVISOR MODE
+You are in advisor mode. Be direct and honest — give a real recommendation, not a list of options with no conclusion. Think like a trusted senior advisor who knows this person's situation. Don't hedge endlessly.`;
+    case 'analytical':
+      return `\n\n## CURRENT TASK: ANALYTICAL MODE
+You are in analytical mode. Show your working. Break down the problem step by step. Be precise with numbers. If there's uncertainty, quantify it.`;
+    default:
+      return '';
+  }
+}
+
 async function newsSearch(query) {
   try {
     const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&sortBy=publishedAt&pageSize=3&apiKey=${NEWS_API_KEY}`;
@@ -790,18 +945,42 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    let systemPrompt = getSystemPrompt(uid, isOwner);
+    // ── Task type routing ───────────────────────────────────
+    const taskType = detectTaskType(message);
+    let systemPrompt = getSystemPrompt(uid, isOwner) + getTaskPromptAddon(taskType);
 
+    // ── Smart web search pipeline ────────────────────────────
     if (!image && message) {
-      if (isNewsQuery(message) && NEWS_API_KEY) {
+      const urlInMessage = extractUrl(message);
+
+      // Priority 1: URL detected → read with Jina
+      if (urlInMessage) {
+        console.log('🔗 Jina reading URL:', urlInMessage);
+        const pageContent = await jinaReadUrl(urlInMessage);
+        if (pageContent) {
+          systemPrompt += `\n\n## WEB PAGE CONTENT\nThe user shared this URL: ${urlInMessage}\nHere is the page content:\n${pageContent}\n\nUse this content to answer the user's question accurately.`;
+        }
+      }
+      // Priority 2: Tavily for web search queries
+      else if (TAVILY_API_KEY && needsWebSearch(message)) {
+        console.log('🔍 Tavily searching:', message.slice(0, 60));
+        const tavilyResults = await tavilySearch(message);
+        if (tavilyResults) {
+          systemPrompt += `\n\n## WEB SEARCH RESULTS\n${tavilyResults}\n\nUse these results to give an accurate, up-to-date answer. Synthesize the information naturally — don't just list sources.`;
+        }
+      }
+      // Priority 3: NewsAPI for news
+      else if (isNewsQuery(message) && NEWS_API_KEY) {
         const results = await newsSearch(message);
         if (results) {
-          systemPrompt += `\n\nHere are current news results for the user's question:\n${results}\nUse these to give an up to date answer naturally.`;
+          systemPrompt += `\n\nHere are current news results:\n${results}\nUse these to give an up to date answer naturally.`;
         }
-      } else if (isFactQuery(message)) {
+      }
+      // Priority 4: DuckDuckGo fallback for facts
+      else if (isFactQuery(message)) {
         const results = await factSearch(message);
         if (results) {
-          systemPrompt += `\n\nHere is relevant information from a web search:\n${results}\nUse this to answer accurately and naturally.`;
+          systemPrompt += `\n\nHere is relevant factual information:\n${results}\nUse this to answer accurately.`;
         }
       }
     }
@@ -1085,6 +1264,11 @@ async function generateWithGemini(prompt) {
 }
 
 app.post("/generate-image", requireAuth, async (req, res) => {
+  // Daily image limit
+  const imgAccount = await Account.findById(req.user.id);
+  const imgLimit = await checkDailyLimit(imgAccount, 'image');
+  if (!imgLimit.allowed) return res.json({ error: imgLimit.message, limitReached: true });
+
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
 
