@@ -80,9 +80,31 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // ── Gemini setup ──────────────────────────────────────────────
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const geminiClient = process.env.GEMINI_API_KEY
-  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  : null;
+
+// ── Gemini key rotation pool ──────────────────────────────────
+const geminiKeys = [
+  process.env.GEMINI_API_KEY,
+  process.env.GEMINI_API_KEY_2,
+  process.env.GEMINI_API_KEY_3,
+].filter(Boolean);
+
+let geminiKeyIndex = 0;
+
+function getGeminiClient() {
+  if (geminiKeys.length === 0) return null;
+  return new GoogleGenerativeAI(geminiKeys[geminiKeyIndex]);
+}
+
+function rotateGeminiKey() {
+  if (geminiKeys.length <= 1) return false;
+  geminiKeyIndex = (geminiKeyIndex + 1) % geminiKeys.length;
+  console.warn(`Rotating to Gemini key ${geminiKeyIndex + 1}/${geminiKeys.length}`);
+  return true;
+}
+
+// Keep geminiClient as a compatibility alias — always points to current key
+const geminiClient = geminiKeys.length > 0 ? getGeminiClient() : null;
+console.log(`Gemini: ${geminiKeys.length} key(s) loaded`);
 const HF_API_KEY = process.env.HF_API_KEY;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
 
@@ -441,34 +463,52 @@ async function callOpenAI(systemPrompt, messages) {
 
 // ── Call Gemini Flash for complex tasks ───────────────────────
 async function callGemini(systemPrompt, messages, imageBase64 = null, videoBase64 = null, fileData = null) {
-  if (!geminiClient) throw new Error('Gemini not configured');
-  // Gemini model chain — try best first, fall back on quota/error
+  if (geminiKeys.length === 0) throw new Error('Gemini not configured');
   const geminiModels = [
     'gemini-2.5-flash-preview-05-20',
     'gemini-2.5-flash-preview-04-17',
     'gemini-2.0-flash',
   ];
-  let lastErr = null;
-  for (const modelName of geminiModels) {
-    try {
-      const result = await callGeminiWithModel(modelName, systemPrompt, messages, imageBase64, videoBase64, fileData);
-      console.log(`Gemini responded using: ${modelName}`);
-      return result;
-    } catch (err) {
-      const msg = err?.message || '';
-      if (msg.includes('429') || msg.includes('quota') || msg.includes('rate') || msg.includes('not found') || msg.includes('404')) {
-        console.warn(`Gemini model ${modelName} failed (${msg.slice(0,60)}), trying next...`);
-        lastErr = err;
-        continue;
+
+  // Try each key × each model until something works
+  const startKeyIndex = geminiKeyIndex;
+  let keysAttempted = 0;
+
+  while (keysAttempted < geminiKeys.length) {
+    let lastModelErr = null;
+    for (const modelName of geminiModels) {
+      try {
+        const result = await callGeminiWithModel(modelName, systemPrompt, messages, imageBase64, videoBase64, fileData);
+        console.log(`Gemini responded using key ${geminiKeyIndex + 1}, model: ${modelName}`);
+        return result;
+      } catch (err) {
+        const msg = err?.message || '';
+        const isQuota = msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED');
+        const isModelGone = msg.includes('not found') || msg.includes('404') || msg.includes('decommissioned');
+        if (isQuota) {
+          console.warn(`Gemini key ${geminiKeyIndex + 1} quota exceeded on ${modelName}`);
+          lastModelErr = err;
+          break; // quota on this key — rotate to next key, no point trying other models
+        } else if (isModelGone) {
+          lastModelErr = err;
+          continue; // try next model on same key
+        }
+        throw err; // unexpected error — bubble up
       }
-      throw err; // non-quota error, don't retry
     }
+    // Rotate to next key
+    const rotated = rotateGeminiKey();
+    if (!rotated) break;
+    keysAttempted++;
   }
-  throw lastErr || new Error('All Gemini models failed');
+
+  throw new Error('All Gemini keys and models exhausted. Try again later.');
 }
 
 async function callGeminiWithModel(modelName, systemPrompt, messages, imageBase64 = null, videoBase64 = null, fileData = null) {
-  const model = geminiClient.getGenerativeModel({
+  const client = getGeminiClient();
+  if (!client) throw new Error('Gemini not configured');
+  const model = client.getGenerativeModel({
     model: modelName,
     systemInstruction: systemPrompt,
     generationConfig: { maxOutputTokens: 4096, temperature: 0.9 }
@@ -1605,7 +1645,7 @@ function isRealisticOrEdit(prompt) {
 // ── Generate realistic image via Gemini Imagen ────────────────
 async function generateWithGemini(prompt) {
   if (!geminiClient) throw new Error('Gemini not configured');
-  const model = geminiClient.getGenerativeModel({ model: 'gemini-2.0-flash-exp-image-generation' }); // imagen
+  const model = getGeminiClient().getGenerativeModel({ model: 'gemini-2.0-flash-exp-image-generation' }); // imagen
   const result = await model.generateContent({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { responseModalities: ['image', 'text'] }
