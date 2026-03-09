@@ -27,6 +27,7 @@ const accountSchema = new mongoose.Schema({
   dailyMessages: { type: Number, default: 0 },
   dailyImages: { type: Number, default: 0 },
   dailyProMessages: { type: Number, default: 0 },
+  dailyVideos: { type: Number, default: 0 },
   lastReset: { type: Date, default: null }
 });
 const Account = mongoose.model('Account', accountSchema);
@@ -245,6 +246,7 @@ function needsWebSearch(message) {
 const DAILY_FREE_LIMIT = 20;
 const DAILY_IMAGE_LIMIT = 5;
 const DAILY_PRO_LIMIT = 10;
+const DAILY_VIDEO_LIMIT = 1;
 
 async function checkDailyLimit(account, type = 'message') {
   if (!account || account.role === 'owner') return { allowed: true };
@@ -259,11 +261,22 @@ async function checkDailyLimit(account, type = 'message') {
       dailyMessages: 0,
       dailyImages: 0,
       dailyProMessages: 0,
+      dailyVideos: 0,
       lastReset: now
     });
     account.dailyMessages = 0;
     account.dailyImages = 0;
     account.dailyProMessages = 0;
+    account.dailyVideos = 0;
+  }
+
+  if (type === 'video') {
+    const count = account.dailyVideos || 0;
+    if (count >= DAILY_VIDEO_LIMIT) {
+      return { allowed: false, message: `You've used your ${DAILY_VIDEO_LIMIT} free video analysis for today. Come back tomorrow.` };
+    }
+    await Account.findByIdAndUpdate(account._id, { $inc: { dailyVideos: 1 }, lastReset: account.lastReset || now });
+    return { allowed: true };
   }
 
   if (type === 'pro') {
@@ -378,29 +391,27 @@ function isFactQuery(message) {
 }
 
 // ── AI classifier: asks Groq to decide SIMPLE or COMPLEX ────
-async function classifyTask(message) {
-  if (!message || message.trim().length < 10) return 'SIMPLE';
-  try {
-    const res = await groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant', // fastest model for classification
-      max_tokens: 5,
-      temperature: 0,
-      messages: [
-        {
-          role: 'system',
-          content: `You are a task classifier. Respond with exactly one word: COMPLEX or SIMPLE.
-COMPLEX = long-form writing (stories, pitches, essays, poems, scripts, reports, business plans), deep analysis, research, strategy, code review, comparison, step-by-step guides.
-SIMPLE = casual chat, greetings, short questions, quick facts, jokes, basic questions.`
-        },
-        { role: 'user', content: message }
-      ]
-    });
-    const verdict = res.choices[0]?.message?.content?.trim().toUpperCase();
-    return verdict === 'COMPLEX' ? 'COMPLEX' : 'SIMPLE';
-  } catch (e) {
-    console.warn('Classifier failed, defaulting to SIMPLE:', e.message);
-    return 'SIMPLE';
+
+function classifyTask(message) {
+  if (!message) return 'SIMPLE';
+  const msg = message.toLowerCase();
+
+  // long messages are likely complex
+  if (msg.length > 250) return 'COMPLEX';
+
+  // complexity keywords
+  const complexTriggers = [
+    'write a', 'story', 'essay', 'article', 'report', 'analysis',
+    'compare', 'difference between', 'step by step', 'guide',
+    'business plan', 'strategy', 'research', 'deep dive',
+    'code review', 'debug', 'architecture', 'design a system'
+  ];
+
+  for (const t of complexTriggers) {
+    if (msg.includes(t)) return 'COMPLEX';
   }
+
+  return 'SIMPLE';
 }
 
 // ── Call OpenAI GPT-4.1 mini for Luna Pro ─────────────────────
@@ -429,18 +440,18 @@ async function callOpenAI(systemPrompt, messages) {
 }
 
 // ── Call Gemini Flash for complex tasks ───────────────────────
-async function callGemini(systemPrompt, messages, imageBase64 = null) {
+async function callGemini(systemPrompt, messages, imageBase64 = null, videoBase64 = null, fileData = null) {
   if (!geminiClient) throw new Error('Gemini not configured');
   // Gemini model chain — try best first, fall back on quota/error
   const geminiModels = [
-    'gemini-2.5-flash-preview-05-20',  // latest 2.5 flash
-    'gemini-2.5-flash-preview-04-17',  // older 2.5 flash
-    'gemini-2.0-flash',                // stable fallback
+    'gemini-2.5-flash-preview-05-20',
+    'gemini-2.5-flash-preview-04-17',
+    'gemini-2.0-flash',
   ];
   let lastErr = null;
   for (const modelName of geminiModels) {
     try {
-      const result = await callGeminiWithModel(modelName, systemPrompt, messages, imageBase64);
+      const result = await callGeminiWithModel(modelName, systemPrompt, messages, imageBase64, videoBase64, fileData);
       console.log(`Gemini responded using: ${modelName}`);
       return result;
     } catch (err) {
@@ -456,12 +467,39 @@ async function callGemini(systemPrompt, messages, imageBase64 = null) {
   throw lastErr || new Error('All Gemini models failed');
 }
 
-async function callGeminiWithModel(modelName, systemPrompt, messages, imageBase64 = null) {
+async function callGeminiWithModel(modelName, systemPrompt, messages, imageBase64 = null, videoBase64 = null, fileData = null) {
   const model = geminiClient.getGenerativeModel({
     model: modelName,
     systemInstruction: systemPrompt,
     generationConfig: { maxOutputTokens: 4096, temperature: 0.9 }
   });
+
+  // If video is attached
+  if (videoBase64) {
+    const lastMsg = messages[messages.length - 1];
+    const textPart = typeof lastMsg.content === 'string'
+      ? lastMsg.content
+      : (lastMsg.content?.find?.(c => c.type === 'text')?.text || 'What is in this video?');
+    const base64Data = videoBase64.includes(',') ? videoBase64.split(',')[1] : videoBase64;
+    const mimeType = videoBase64.match(/data:(video\/[^;]+);/) ? videoBase64.match(/data:(video\/[^;]+);/)[1] : 'video/mp4';
+    const result = await model.generateContent([
+      { text: textPart },
+      { inlineData: { mimeType, data: base64Data } }
+    ]);
+    return result.response.text();
+  }
+
+  // If file (PDF/doc) is attached
+  if (fileData) {
+    const lastMsg = messages[messages.length - 1];
+    const textPart = typeof lastMsg.content === 'string'
+      ? lastMsg.content
+      : (lastMsg.content?.find?.(c => c.type === 'text')?.text || 'Analyze this document.');
+    const result = await model.generateContent([
+      { text: `${textPart}\n\nDocument content:\n${fileData.text}` }
+    ]);
+    return result.response.text();
+  }
 
   // If image is attached — send as multimodal single turn
   if (imageBase64) {
@@ -958,7 +996,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     res.write(`data: ${JSON.stringify({ error: msg, done: true })}\n\n`);
     res.end();
   }
-  const { message: rawMessage, userId, image, threadId, model: selectedModel, mode: chatMode } = req.body;
+  const { message: rawMessage, userId, image, video, file, threadId, model: selectedModel, mode: chatMode } = req.body;
   const message = sanitizeInput(rawMessage, 4000);
   if (!message && !image) return sendError("No message provided");
 
@@ -1119,6 +1157,22 @@ Reply with only YES or NO.`
       }
     }
 
+    // ── Video / File model gate ──────────────────────────────
+    const clientModelRaw = selectedModel || 'luna-flash';
+    if (video || file) {
+      const modelAllowed = clientModelRaw === 'luna-pro' || clientModelRaw === 'ro1';
+      if (!modelAllowed) {
+        return sendDone({ reply: 'Video and file analysis are available on Luna Pro and RO-1. Switch your model to use this feature.' });
+      }
+      if (!account) {
+        return sendDone({ reply: 'You need a registered account to use video and file analysis. Sign up for free.' });
+      }
+    }
+    if (video && account && account.role !== 'owner') {
+      const videoLimit = await checkDailyLimit(account, 'video');
+      if (!videoLimit.allowed) return sendDone({ reply: videoLimit.message });
+    }
+
     // ── Smart routing based on selected model ───────────────────
     // Validate model — RO-1 is owner only
     const clientModel = (selectedModel === 'ro1' && !isOwner) ? 'luna-flash' : (selectedModel || 'luna-flash');
@@ -1177,7 +1231,7 @@ Reply with only YES or NO.`
           console.log('RO-1: COMPLEX task — running Gemini + Groq race');
           try {
             const [geminiResult, groqResult] = await Promise.allSettled([
-              callGemini(systemPrompt, safeHistory, image || null),
+              callGemini(systemPrompt, safeHistory, image || null, video || null, file || null),
               callGroq(systemPrompt, safeHistory, image)
             ]);
             const geminiReply = geminiResult.status === 'fulfilled' ? geminiResult.value : null;
@@ -1214,7 +1268,7 @@ Reply with only YES or NO.`
     if (!fullReply && useGemini) {
       // ── Gemini ───────────────────────────────────────────────
       try {
-        fullReply = await callGemini(systemPrompt, safeHistory, image || null);
+        fullReply = await callGemini(systemPrompt, safeHistory, image || null, video || null, file || null);
         // Stream Gemini reply word by word with natural delay
         if (fullReply) {
           const words = fullReply.split(' ');

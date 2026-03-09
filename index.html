@@ -1038,7 +1038,8 @@
           <span class="reply-bar-text" id="reply-bar-text"></span>
           <button class="reply-cancel" onclick="cancelReply()">×</button>
         </div>
-        <input type="file" id="pdf-upload" accept="application/pdf" style="display:none" onchange="handlePDF(event)"/>
+        <input type="file" id="pdf-upload" accept="application/pdf,.doc,.docx,.txt,.csv" style="display:none" onchange="handleFile(event)"/>
+        <input type="file" id="video-upload" accept="video/*" style="display:none" onchange="handleVideo(event)"/>
         <div class="yt-bar" id="yt-bar">
           <input class="yt-input" id="yt-input" placeholder="Paste YouTube link..." type="url"/>
           <button class="yt-go-btn" onclick="summarizeYT()">Go</button>
@@ -1053,6 +1054,13 @@
         <div class="img-preview-bar" id="img-preview-bar">
           <img id="preview-thumb" src="" alt="preview"/>
           <button class="img-remove-btn" onclick="clearImage()">✕ Remove</button>
+        </div>
+        <div class="pdf-strip" id="video-strip" style="display:none;">
+          <div class="pdf-strip-info">
+            <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+            <span class="pdf-name" id="video-name">video.mp4</span>
+          </div>
+          <button class="pdf-clear" onclick="clearVideo()">Remove</button>
         </div>
 
         <div class="chat-row">
@@ -1251,6 +1259,9 @@
 <div class="plus-menu" id="plus-menu">
   <div class="plus-menu-item" onclick="plusAction('image')">
     <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>Photos
+  </div>
+  <div class="plus-menu-item" onclick="plusAction('video')">
+    <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>Video
   </div>
   <div class="plus-menu-item" onclick="plusAction('pdf')">
     <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>Files
@@ -1500,7 +1511,7 @@
   }
 
   const BACKEND_URL='https://luna-al-production.up.railway.app';
-  let isOwner=false,busy=false,selectedImageBase64=null;
+  let isOwner=false,busy=false,selectedImageBase64=null,selectedVideoBase64=null,selectedFileData=null;
   let authToken=localStorage.getItem('luna-token');
   let currentUser=JSON.parse(localStorage.getItem('luna-user')||'null');
 
@@ -1814,7 +1825,7 @@
     const nearBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120;
     btn.classList.toggle('show',!nearBottom);
   });
-  chatInput.addEventListener('input',()=>{chatInput.style.height='auto';chatInput.style.height=Math.min(chatInput.scrollHeight,90)+'px';chatSend.disabled=(!chatInput.value.trim()&&!selectedImageBase64)||busy;});
+  chatInput.addEventListener('input',()=>{chatInput.style.height='auto';chatInput.style.height=Math.min(chatInput.scrollHeight,90)+'px';chatSend.disabled=(!chatInput.value.trim()&&!selectedImageBase64&&!selectedVideoBase64)||busy;});
   chatInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!chatSend.disabled)send();}});
   chatSend.addEventListener('click',send);
   function startChat(text){
@@ -1894,8 +1905,8 @@
   }
   function send(){
     const text=chatInput.value.trim();const imgToSend=selectedImageBase64;
-    if((!text&&!imgToSend)||busy)return;
-    chatInput.value='';chatInput.style.height='auto';chatSend.disabled=true;clearImage();
+    if((!text&&!imgToSend&&!selectedVideoBase64)||busy)return;
+    chatInput.value='';chatInput.style.height='auto';chatSend.disabled=true;clearImage();clearVideo();
     const row=document.createElement('div');row.className='mrow user';
     const av='<div class="msg-avatar user-av">'+(isOwner?'R':'G')+'</div>';
     const imgHtml=imgToSend?'<img src="'+imgToSend+'" style="max-width:200px;border-radius:10px;margin-bottom:4px;"/>'  :'';
@@ -1949,7 +1960,7 @@
         typingRow.style.display='none';
         addMsg('luna', '❌ Could not post tweet. Check your Twitter credentials on Railway.');
       }
-      finally{busy=false;chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;}
+      finally{busy=false;chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64&&!selectedVideoBase64;}
       return;
     }
 
@@ -1962,14 +1973,14 @@
         if(!res.ok)throw new Error();
         const data=await res.json();typingRow.style.display='none';addMsg('luna','',data.image);
       }catch(e){typingRow.style.display='none';addMsg('luna','Could not generate that image. Try a different description.');}
-      finally{busy=false;chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;}
+      finally{busy=false;chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64&&!selectedVideoBase64;}
       return;
     }
 
     // ── Real-time streaming chat ───────────────────────────────
     if (manusMode && text) startManusStatusAnimation(text);
     try{
-      const res=await fetch(BACKEND_URL+'/chat',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify({message:text||'What is in this image?',userId:getUserId(),image:image||null,modeExtra:toolSystemExtra||null,threadId:isSecret?null:currentThreadId,model:selectedModel,mode:manusMode?'manus':null})});
+      const res=await fetch(BACKEND_URL+'/chat',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify({message:text||(selectedVideoBase64?'What is in this video?':'What is in this image?'),userId:getUserId(),image:image||null,video:selectedVideoBase64||null,file:selectedFileData||null,modeExtra:toolSystemExtra||null,threadId:isSecret?null:currentThreadId,model:selectedModel,mode:manusMode?'manus':null})});
       if(!res.ok)throw new Error();
 
       // Hide typing indicator — first chunk arrives immediately
@@ -1994,7 +2005,7 @@
         chatSend.classList.remove('stop-mode');
         chatSend.innerHTML='<svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
         chatSend.onclick=null;
-        chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;
+        chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64&&!selectedVideoBase64;
         lastLunaText=text;
         const artifactInfo=detectArtifact(text);
         if(artifactInfo){
@@ -2051,7 +2062,7 @@
     }finally{
       busy=false;
       if(!chatSend.classList.contains('stop-mode')){
-        chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64;
+        chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64&&!selectedVideoBase64;
       }
     }
   }
@@ -2171,6 +2182,62 @@
     closeTool();
   }
 
+  // ── Video upload ──────────────────────────────────────────
+
+
+  async function handleVideo(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) { showToast('Video too large. Max 20MB.'); document.getElementById('video-upload').value = ''; return; }
+    document.getElementById('video-name').textContent = file.name;
+    document.getElementById('video-strip').style.display = 'flex';
+    chatSend.disabled = false;
+    addMsg('luna', 'Video loaded: ' + file.name + ' — ask me anything about it.');
+    const reader = new FileReader();
+    reader.onload = (e) => { selectedVideoBase64 = e.target.result; };
+    reader.readAsDataURL(file);
+    chatInput.placeholder = 'Ask Luna about this video...';
+  }
+
+  function clearVideo() {
+    selectedVideoBase64 = null;
+    document.getElementById('video-upload').value = '';
+    document.getElementById('video-strip').style.display = 'none';
+    chatInput.placeholder = 'Message Luna...';
+  }
+
+  // ── File upload (PDF/doc/txt/csv) ─────────────────────────
+
+
+  async function handleFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (selectedModel !== 'luna-pro' && selectedModel !== 'ro1') {
+      showToast('Switch to Luna Pro or RO-1 for file analysis');
+      document.getElementById('pdf-upload').value = '';
+      return;
+    }
+    // PDF — use existing pdf.js extraction
+    if (file.type === 'application/pdf') {
+      handlePDF(event);
+      return;
+    }
+    // Text files — read directly
+    document.getElementById('pdf-name').textContent = file.name;
+    document.getElementById('pdf-strip').classList.add('active');
+    activeTool = 'file';
+    chatInput.placeholder = 'Ask Luna about this file...';
+    try {
+      const text = await file.text();
+      selectedFileData = { name: file.name, text: text.substring(0, 12000) };
+      pdfText = selectedFileData.text; // reuse pdfText slot for context injection
+      addMsg('luna', 'File loaded: ' + file.name + ' — ask me anything about it.');
+    } catch(e) {
+      addMsg('luna', 'Could not read that file. Try a .txt or .csv file.');
+      clearPDF();
+    }
+  }
+
   async function summarizeYT() {
     const url = document.getElementById('yt-input').value.trim();
     if (!url) { chatInput.focus(); return; }
@@ -2273,6 +2340,12 @@
     closePlusMenu();
     if (type === 'pdf') {
       document.getElementById('pdf-upload').click();
+    } else if (type === 'video') {
+      if (selectedModel !== 'luna-pro' && selectedModel !== 'ro1') {
+        showToast('Switch to Luna Pro or RO-1 for video analysis');
+        return;
+      }
+      document.getElementById('video-upload').click();
     } else if (type === 'yt') {
       document.getElementById('yt-bar').classList.add('active');
       document.getElementById('yt-input').focus();
