@@ -660,7 +660,14 @@ When writing pitches, startup ideas, business concepts, stories or any creative 
 - Use specific, vivid details instead of generic descriptions. Not "a coffee shop" — "a low-lit corner café that smells like cardamom and rain."
 - Write the kind of pitch that makes an investor lean forward or a reader forget to scroll.
 - The goal is not to cover all the points — it is to make the reader feel something first, then inform them.
-- Every creative output should feel like it came from a talented human writer, not an AI filling a template.`;
+- Every creative output should feel like it came from a talented human writer, not an AI filling a template.
+
+## RESPONSE LENGTH — CRITICAL
+- Short or simple question → answer in 1-3 sentences. No lists, no headers, no padding.
+- Medium question → 1-2 short paragraphs max.
+- Only write long responses when the user explicitly asks for something detailed, a full document, code, a story, a list, or a report.
+- Never over-explain. Never repeat yourself. Never add filler sentences to seem thorough.
+- If the answer is one sentence, write one sentence.`;
 
   // ── Inject user profile ───────────────────────────────────
   let profileSection = '';
@@ -1282,6 +1289,7 @@ Reply with only YES or NO.`
         if (delta) {
           fullReply += delta;
           sendChunk({ delta });
+          await new Promise(r => setTimeout(r, 15));
         }
       }
     }
