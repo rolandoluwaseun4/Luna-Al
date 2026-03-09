@@ -23,7 +23,11 @@ const accountSchema = new mongoose.Schema({
   googleId: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
   lastSeen: { type: Date, default: Date.now },
-  messageCount: { type: Number, default: 0 }
+  messageCount: { type: Number, default: 0 },
+  dailyMessages: { type: Number, default: 0 },
+  dailyImages: { type: Number, default: 0 },
+  dailyProMessages: { type: Number, default: 0 },
+  lastReset: { type: Date, default: null }
 });
 const Account = mongoose.model('Account', accountSchema);
 
@@ -240,6 +244,7 @@ function needsWebSearch(message) {
 // ── Daily message limit ──────────────────────────────────────
 const DAILY_FREE_LIMIT = 20;
 const DAILY_IMAGE_LIMIT = 5;
+const DAILY_PRO_LIMIT = 10;
 
 async function checkDailyLimit(account, type = 'message') {
   if (!account || account.role === 'owner') return { allowed: true };
@@ -253,10 +258,21 @@ async function checkDailyLimit(account, type = 'message') {
     await Account.findByIdAndUpdate(account._id, {
       dailyMessages: 0,
       dailyImages: 0,
+      dailyProMessages: 0,
       lastReset: now
     });
     account.dailyMessages = 0;
     account.dailyImages = 0;
+    account.dailyProMessages = 0;
+  }
+
+  if (type === 'pro') {
+    const count = account.dailyProMessages || 0;
+    if (count >= DAILY_PRO_LIMIT) {
+      return { allowed: false, message: `You've used your ${DAILY_PRO_LIMIT} Luna Pro replies for today. Come back tomorrow, or continue with Luna Flash.` };
+    }
+    await Account.findByIdAndUpdate(account._id, { $inc: { dailyProMessages: 1 }, lastReset: account.lastReset || now });
+    return { allowed: true, remaining: DAILY_PRO_LIMIT - count - 1 };
   }
 
   if (type === 'image') {
@@ -385,6 +401,31 @@ SIMPLE = casual chat, greetings, short questions, quick facts, jokes, basic ques
     console.warn('Classifier failed, defaulting to SIMPLE:', e.message);
     return 'SIMPLE';
   }
+}
+
+// ── Call OpenAI GPT-4.1 mini for Luna Pro ─────────────────────
+async function callOpenAI(systemPrompt, messages) {
+  if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI not configured');
+  const payload = messages.map(m => ({
+    role: m.role === 'assistant' ? 'assistant' : 'user',
+    content: typeof m.content === 'string' ? m.content
+      : Array.isArray(m.content) ? (m.content.find(c => c.type === 'text')?.text || '') : String(m.content)
+  }));
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: 'gpt-4.1-mini',
+      max_tokens: 4096,
+      messages: [{ role: 'system', content: systemPrompt }, ...payload]
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `OpenAI error ${res.status}`);
+  }
+  const data = await res.json();
+  return data.choices[0]?.message?.content || '';
 }
 
 // ── Call Gemini Flash for complex tasks ───────────────────────
@@ -1009,10 +1050,11 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     // ── Task type routing ───────────────────────────────────
     const taskType = detectTaskType(message);
-    // ── Load profile + memories ───────────────────────────────
-    const [userProfile, userMemories] = await Promise.all([
+    // ── Load profile + memories + account ─────────────────────
+    const [userProfile, userMemories, account] = await Promise.all([
       Profile.findOne({ userId: uid }).lean().catch(() => null),
-      Memory.find({ userId: uid }).sort({ createdAt: -1 }).limit(20).lean().catch(() => [])
+      Memory.find({ userId: uid }).sort({ createdAt: -1 }).limit(20).lean().catch(() => []),
+      Account.findById(req.user.id).catch(() => null)
     ]);
     let systemPrompt = getSystemPrompt(uid, isOwner, userProfile, userMemories) + getTaskPromptAddon(taskType);
 
@@ -1088,9 +1130,32 @@ Reply with only YES or NO.`
       useGemini = false;
 
     } else if (clientModel === 'luna-pro') {
-      // ── Luna Pro: always Gemini ──────────────────────────────
-      console.log('Model: Luna Pro → Gemini');
-      useGemini = geminiClient ? true : false;
+      // ── Luna Pro: OpenAI GPT-4.1 mini ────────────────────────
+      // Block guests
+      if (!account) {
+        return sendDone({ reply: 'Luna Pro is available to registered users only. Sign up for free to unlock it.' });
+      }
+      // Check daily limit (owner is unlimited)
+      if (account.role !== 'owner') {
+        const proLimit = await checkDailyLimit(account, 'pro');
+        if (!proLimit.allowed) {
+          return sendDone({ reply: proLimit.message });
+        }
+      }
+      console.log('Model: Luna Pro → OpenAI GPT-4.1 mini');
+      try {
+        fullReply = await callOpenAI(systemPrompt, safeHistory);
+        if (fullReply) {
+          const words = fullReply.split(' ');
+          for (const word of words) {
+            sendChunk({ delta: word + ' ' });
+            await new Promise(r => setTimeout(r, 18));
+          }
+        }
+      } catch (openAIErr) {
+        console.warn('OpenAI failed, falling back to Gemini:', openAIErr.message);
+        useGemini = true;
+      }
 
     } else if (clientModel === 'ro1') {
       // ── RO-1: smartest — classify then decide ────────────────
