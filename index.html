@@ -462,6 +462,34 @@
     @keyframes dotBounce { 0%,60%,100%{transform:translateY(0);} 30%{transform:translateY(-6px);} }
     #thinking-label { font-size: 12px; color: var(--text-dim); margin-top: 4px; display: none; }
 
+    /* ─── LUNA THINKING BLOCK ───────────────────────── */
+    .luna-think-wrap { margin-bottom: 8px; }
+    .luna-think-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; color: var(--text-dim);
+      cursor: pointer; background: none; border: none;
+      padding: 0; margin: 0 0 0 0; user-select: none;
+      transition: color 0.2s;
+    }
+    .luna-think-toggle:hover { color: var(--accent); }
+    .luna-think-arrow {
+      font-size: 11px; display: inline-block;
+      transition: transform 0.25s ease;
+    }
+    .luna-think-toggle.open .luna-think-arrow { transform: rotate(90deg); }
+    .luna-think-content {
+      display: none;
+      margin-top: 8px;
+      padding: 10px 14px;
+      border-left: 2px solid rgba(255,255,255,0.15);
+      font-size: 13px; color: var(--text-dim);
+      line-height: 1.65; white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 260px; overflow-y: auto;
+    }
+    .luna-think-content.open { display: block; }
+    .luna-reply-text { margin-top: 4px; }
+
     /* ─── CHAT BAR ───────────────────────────────────── */
     .chat-bar { padding: 8px 14px 28px; flex-shrink: 0; }
     .reply-bar {
@@ -2001,31 +2029,34 @@
         chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64&&!selectedVideoBase64;
         lastLunaText=text;
         const artifactInfo=detectArtifact(text);
-        // Build final content — think block on top (if any), reply below
-        function buildFinalBubble(replyHtml){
-          bubbleEl.innerHTML='';
-          if(thinkEl){
-            const newToggle=document.createElement('button');
-            newToggle.className='luna-think-toggle';
-            newToggle.innerHTML='Luna is thinking <span class="think-arrow">›</span>';
-            const newBox=document.createElement('div');
-            newBox.className='luna-think-box';
-            newBox.textContent=thinkText;
-            newToggle.onclick=function(){ newToggle.classList.toggle('open'); newBox.classList.toggle('open'); };
-            bubbleEl.appendChild(newToggle);
-            bubbleEl.appendChild(newBox);
-          }
-          const replyDiv=document.createElement('div');
-          replyDiv.className='luna-reply';
-          replyDiv.innerHTML=replyHtml;
-          bubbleEl.appendChild(replyDiv);
+        // Rebuild bubble cleanly — think block stays collapsed at top, reply below
+        bubbleEl.innerHTML='';
+        if(thinkEl && thinkText){
+          const wrap=document.createElement('div');
+          wrap.className='luna-think-wrap';
+          const toggle=document.createElement('button');
+          toggle.className='luna-think-toggle';
+          toggle.innerHTML='Thought for a moment <span class="luna-think-arrow">›</span>';
+          const thinkContent=document.createElement('div');
+          thinkContent.className='luna-think-content';
+          thinkContent.textContent=thinkText;
+          toggle.onclick=function(){
+            toggle.classList.toggle('open');
+            thinkContent.classList.toggle('open');
+          };
+          wrap.appendChild(toggle);
+          wrap.appendChild(thinkContent);
+          bubbleEl.appendChild(wrap);
         }
+        const replyDiv=document.createElement('div');
+        replyDiv.className='luna-reply-text';
         if(artifactInfo){
           const shortText=text.replace(/```[\s\S]*?```/g,'').trim().substring(0,200);
-          buildFinalBubble((shortText?renderMarkdown(shortText)+'<br><br>':'')+buildArtifactCard(text,artifactInfo));
+          replyDiv.innerHTML=(shortText?renderMarkdown(shortText)+'<br><br>':'')+buildArtifactCard(text,artifactInfo);
         } else {
-          buildFinalBubble(renderMarkdown(text));
+          replyDiv.innerHTML=renderMarkdown(text);
         }
+        bubbleEl.appendChild(replyDiv);
         const mbody=row.querySelector('.mbody');
         const enc=encodeURIComponent(text);
         const actions=document.createElement('div');
@@ -2055,31 +2086,35 @@
           try{
             const json=JSON.parse(line.slice(5).trim());
             if(json.error){ addMsg('luna',json.error||'Something went wrong.'); break; }
-            // Handle think signal — show collapsible, don't add to reply text
+            // Handle think signal — build collapsible, collapsed by default
             if(json.think && !streamStopped){
               thinkText=json.think;
-              // Build the "Luna is thinking ›" toggle + box
+              bubbleEl.innerHTML='';
+              const wrap=document.createElement('div');
+              wrap.className='luna-think-wrap';
               const toggle=document.createElement('button');
               toggle.className='luna-think-toggle';
-              toggle.innerHTML='Luna is thinking <span class="think-arrow">›</span>';
-              const box=document.createElement('div');
-              box.className='luna-think-box';
-              box.textContent=thinkText;
-              toggle.onclick=function(){ toggle.classList.toggle('open'); box.classList.toggle('open'); };
-              bubbleEl.innerHTML='';
-              bubbleEl.appendChild(toggle);
-              bubbleEl.appendChild(box);
-              thinkEl={toggle,box};
+              toggle.innerHTML='Thought for a moment <span class="luna-think-arrow">›</span>';
+              const thinkContent=document.createElement('div');
+              thinkContent.className='luna-think-content';
+              thinkContent.textContent=thinkText;
+              toggle.onclick=function(){
+                toggle.classList.toggle('open');
+                thinkContent.classList.toggle('open');
+              };
+              wrap.appendChild(toggle);
+              wrap.appendChild(thinkContent);
+              bubbleEl.appendChild(wrap);
+              thinkEl={wrap,toggle,thinkContent};
             }
-            // Handle reply text — stream into bubble below the think block
+            // Handle reply text — stream below the think block
             if(json.delta && !streamStopped){
               fullText+=json.delta;
               if(thinkEl){
-                // Keep think block, update reply div below it
-                let replyDiv=bubbleEl.querySelector('.luna-reply');
+                let replyDiv=bubbleEl.querySelector('.luna-reply-text');
                 if(!replyDiv){
                   replyDiv=document.createElement('div');
-                  replyDiv.className='luna-reply';
+                  replyDiv.className='luna-reply-text';
                   bubbleEl.appendChild(replyDiv);
                 }
                 replyDiv.innerHTML=renderMarkdown(fullText)+'<span class="typing-cursor"></span>';
