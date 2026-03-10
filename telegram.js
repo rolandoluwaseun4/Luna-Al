@@ -1232,7 +1232,17 @@ app.post("/chat", requireAuth, async (req, res) => {
       video: video || null,
       file: file || null,
       webSearchFn,
-      onChunk: (delta) => sendChunk({ delta })
+      onChunk: (data) => {
+        // luna.js sends either { delta: '...' } for reply text
+        // or { think: '...' } for DeepSeek R1 thinking content
+        if (typeof data === 'string') {
+          sendChunk({ delta: data });
+        } else if (data && data.think) {
+          sendChunk({ think: data.think });
+        } else if (data && data.delta) {
+          sendChunk({ delta: data.delta });
+        }
+      }
     });
 
     // ── Image generation signal ──────────────────────────────

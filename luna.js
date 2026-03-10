@@ -52,10 +52,10 @@ const LUNA_MODELS = {
     provider: 'groq'
   },
 
-  // Luna Pro — qwen3 with thinking, falls back to Gemini then Groq
+  // Luna Pro — qwen3-32b primary (powerful, constraint-injected), llama fallback
   PRO: {
     primary: 'qwen/qwen3-32b',
-    fallbacks: ['llama-3.3-70b-versatile'],
+    fallbacks: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
     provider: 'groq',
     geminiAllowed: true
   },
@@ -69,6 +69,18 @@ const LUNA_MODELS = {
     raceGemini: true
   }
 };
+
+// ── Think tag extractor ─────────────────────────────────────────
+// Separates DeepSeek R1's <think>...</think> reasoning from the actual reply.
+// Returns { thinkContent, cleanReply }
+function extractThinkTags(text) {
+  if (!text) return { thinkContent: null, cleanReply: text };
+  const match = text.match(/<think>([\s\S]*?)<\/think>/);
+  if (!match) return { thinkContent: null, cleanReply: text };
+  const thinkContent = match[1].trim();
+  const cleanReply = text.replace(/<think>[\s\S]*?<\/think>/, '').trimStart();
+  return { thinkContent, cleanReply };
+}
 
 // ── Luna's Brain — thinks before every response ─────────────────
 /**
@@ -261,22 +273,58 @@ function craft(plan, baseSystemPrompt, webSearchResults = null, conversationCont
     craftedPrompt += `\n\n## LIVE WEB SEARCH RESULTS\n${webSearchResults}\nUse these results to answer accurately. Synthesize naturally — don't just list sources.`;
   }
 
-  // Inject Luna's plan as explicit final instructions — placed LAST so model reads it right before generating
-  craftedPrompt += `\n\n## RESPONSE INSTRUCTIONS — FOLLOW EXACTLY
+  // Inject Luna's plan as explicit final instructions — LAST thing model reads
+  craftedPrompt += `\n\n## YOUR INSTRUCTIONS FOR THIS RESPONSE
+Topic: ${plan.topic}
+Intent: ${plan.intent}
 ${lengthInstructions[plan.response_length] || lengthInstructions.short}
 ${formatInstructions[plan.response_format] || formatInstructions.prose}
 ${toneInstructions[plan.tone] || toneInstructions.casual}
-Topic to address: ${plan.topic}
-CRITICAL: Do not add headers, bullet points, or structure unless the format instruction above explicitly says to. Do not pad your response to seem thorough. Do not repeat yourself. The instruction above about length is a hard limit — obey it exactly.`;
+Follow these instructions exactly. They override any default tendencies.
+ABSOLUTE RULE: If the length says one sentence or 2-4 sentences — write that and STOP. Do not add more. Do not summarize at the end. Do not add a closing line. Just stop.`;
 
   return craftedPrompt;
 }
 
+// ── Inject length constraint into last user message ─────────────
+// qwen3 and other strong models ignore system prompt length rules.
+// Injecting directly into the user turn is much harder to ignore.
+function injectLengthConstraint(history, plan) {
+  if (!history || history.length === 0) return history;
+  const constrained = [...history];
+  const lastUserIdx = [...constrained].map((m,i) => ({m,i})).reverse().find(({m}) => m.role === 'user');
+  if (!lastUserIdx) return constrained;
+
+  const lengthTag = {
+    one_sentence: '[Reply in ONE sentence only. No lists, no headers.]',
+    short:        '[Reply in 2-4 sentences only. No lists, no headers.]',
+    medium:       '[Reply in 1-3 paragraphs. No headers unless content is a document.]',
+    long:         '[Write a thorough response. Stay focused, no padding.]',
+    full_document:'[Write the full document the user requested.]'
+  }[plan.response_length] || '[Reply in 2-4 sentences only.]';
+
+  const formatTag = (plan.response_format === 'prose' || !plan.response_format)
+    ? '[Plain prose only. No bullet points, no headers.]'
+    : '';
+
+  const constraint = `
+
+${lengthTag}${formatTag ? ' ' + formatTag : ''}`;
+
+  const lastMsg = { ...constrained[lastUserIdx.i] };
+  lastMsg.content = (typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content)) + constraint;
+  constrained[lastUserIdx.i] = lastMsg;
+  return constrained;
+}
+
 // ── Execute on Groq ──────────────────────────────────────────────
-async function executeGroq(systemPrompt, history, modelConfig, stream = true, onChunk = null) {
+async function executeGroq(systemPrompt, history, modelConfig, stream = true, onChunk = null, plan = null) {
   const allModels = [modelConfig.primary, ...modelConfig.fallbacks];
   let response = null;
   let usedModel = null;
+
+  // Models that need extra fighting — inject constraint into user message
+  const needsConstraintInjection = (m) => m.includes('qwen') || m.includes('deepseek');
 
   for (const model of allModels) {
     let currentHistory = [...history];
@@ -284,10 +332,15 @@ async function executeGroq(systemPrompt, history, modelConfig, stream = true, on
 
     while (attempts < 3) {
       try {
+        // For stubborn models, inject length constraint directly into last user message
+        const finalHistory = (plan && needsConstraintInjection(model))
+          ? injectLengthConstraint(currentHistory, plan)
+          : currentHistory;
+
         const res = await groq.chat.completions.create({
           model,
           max_tokens: 4096,
-          messages: [{ role: 'system', content: systemPrompt }, ...currentHistory],
+          messages: [{ role: 'system', content: systemPrompt }, ...finalHistory],
           stream
         });
 
@@ -303,7 +356,11 @@ async function executeGroq(systemPrompt, history, modelConfig, stream = true, on
         if (status === 413 || msg.includes('too large') || msg.includes('context')) {
           currentHistory = currentHistory.slice(Math.ceil(currentHistory.length / 2));
           attempts++;
-          console.warn(`[Luna] ${model} context too large — trimming history`);
+          console.warn(`[Luna] ${model} context too large — trimming history (attempt ${attempts})`);
+          if (attempts >= 3) {
+            console.warn(`[Luna] ${model} still too large after trimming — trying next model`);
+            break; // try next model
+          }
         } else if (status === 429 || msg.includes('rate_limit')) {
           console.warn(`[Luna] ${model} rate limited — trying next`);
           break;
@@ -497,42 +554,31 @@ async function respond(ctx) {
   const routeDecision = route(plan, clientModel, isOwner);
   console.log(`[Luna] ${routeDecision.label}`);
 
-  let fullReply = '';
+  let rawReply = '';
 
-  // ── Step 7: Execute ───────────────────────────────────────────
+  // ── Step 7: Execute — always collect full reply first ────────
+  // We collect first so we can extract <think> tags cleanly
+  // before anything reaches the user.
   if (routeDecision.raceGemini) {
     // RO-1: race DeepSeek R1 vs Gemini, pick the best
     try {
       const [groqResult, geminiResult] = await Promise.allSettled([
-        executeGroq(systemPrompt, history, routeDecision.models, false),
+        executeGroq(systemPrompt, history, routeDecision.models, false, null, plan),
         executeGemini(systemPrompt, history, image, video, file)
       ]);
-      const groqReply = groqResult.status === 'fulfilled' ? groqResult.value : null;
-      const geminiReply = geminiResult.status === 'fulfilled' ? geminiResult.value : null;
+      const groqRaw = groqResult.status === 'fulfilled' ? groqResult.value : null;
+      const geminiRaw = geminiResult.status === 'fulfilled' ? geminiResult.value : null;
 
-      // Strip <think> blocks before comparing — DeepSeek inflates length with thought text
-      const cleanThink = (t) => t ? t.replace(/<think>[\s\S]*?<\/think>/g, '').trimStart() : '';
-      const cleanGroq = cleanThink(groqReply);
-      const cleanGemini = cleanThink(geminiReply);
-      const thinkMatch = groqReply && groqReply.match(/<think>([\s\S]*?)<\/think>/);
-      const thinkContent = thinkMatch ? thinkMatch[1].trim() : '';
+      // Strip think tags before comparing lengths
+      const { cleanReply: groqClean } = extractThinkTags(groqRaw || '');
+      const { cleanReply: geminiClean } = extractThinkTags(geminiRaw || '');
 
-      if (cleanGroq && cleanGemini) {
-        fullReply = cleanGemini.length >= cleanGroq.length ? cleanGemini : cleanGroq;
-        console.log(`[Luna RO-1] Picked: ${cleanGemini.length >= cleanGroq.length ? 'Gemini' : 'DeepSeek R1'}`);
+      // Pick the longer clean reply
+      if (groqClean && geminiClean) {
+        rawReply = geminiClean.length >= groqClean.length ? (geminiRaw || '') : (groqRaw || '');
+        console.log(`[Luna RO-1] Picked: ${geminiClean.length >= groqClean.length ? 'Gemini' : 'DeepSeek R1'}`);
       } else {
-        fullReply = cleanGroq || cleanGemini || '';
-      }
-
-      // Send think signal first so frontend can show the collapsible
-      if (thinkContent && onChunk) onChunk('\x00THINK\x00' + thinkContent + '\x00ENDTHINK\x00');
-
-      // Stream the winner word by word
-      if (fullReply && onChunk) {
-        for (const word of fullReply.split(' ')) {
-          onChunk(word + ' ');
-          await new Promise(r => setTimeout(r, 18));
-        }
+        rawReply = groqRaw || geminiRaw || '';
       }
     } catch (e) {
       console.warn('[Luna RO-1] Race failed:', e.message);
@@ -540,83 +586,49 @@ async function respond(ctx) {
   } else if (routeDecision.useGemini) {
     // Gemini only (Pro fallback)
     try {
-      fullReply = await executeGemini(systemPrompt, history, image, video, file);
-      if (fullReply && onChunk) {
-        for (const word of fullReply.split(' ')) {
-          onChunk(word + ' ');
-          await new Promise(r => setTimeout(r, 18));
-        }
-      }
+      rawReply = await executeGemini(systemPrompt, history, image, video, file);
     } catch (e) {
       console.warn('[Luna] Gemini failed, falling back to Groq:', e.message);
     }
   }
 
-  // Groq execution (primary or fallback)
-  if (!fullReply) {
-    // For DeepSeek R1 (RO-1), we need to intercept chunks to separate <think> from reply
-    let thinkBuffer = '';
-    let replyBuffer = '';
-    let inThinkBlock = false;
-    let thinkDone = false;
-
-    const isDeepSeek = routeDecision.models.primary === 'deepseek-r1-distill-llama-70b';
-
-    if (isDeepSeek) {
-      // Custom chunking — intercept to strip <think> tags before sending to user
-      fullReply = await executeGroq(systemPrompt, history, routeDecision.models, true, (delta) => {
-        replyBuffer += delta;
-
-        // Detect opening think tag
-        if (!thinkDone && replyBuffer.includes('<think>')) {
-          inThinkBlock = true;
-        }
-
-        // Detect closing think tag
-        if (inThinkBlock && replyBuffer.includes('</think>')) {
-          // Extract think content
-          const thinkMatch = replyBuffer.match(/<think>([\s\S]*?)<\/think>/);
-          if (thinkMatch) {
-            thinkBuffer = thinkMatch[1].trim();
-            // Everything after </think> is the real reply
-            replyBuffer = replyBuffer.slice(replyBuffer.indexOf('</think>') + '</think>'.length).trimStart();
-            inThinkBlock = false;
-            thinkDone = true;
-            // Signal frontend that thinking is done, send thought content
-            if (onChunk) onChunk('\x00THINK\x00' + thinkBuffer + '\x00ENDTHINK\x00');
-          }
-        }
-
-        // Only stream to user once think block is done
-        if (thinkDone && !inThinkBlock && delta && !delta.includes('<think>')) {
-          if (onChunk) onChunk(delta);
-        }
-      });
-
-      // Strip any remaining think tags from fullReply
-      fullReply = fullReply.replace(/<think>[\s\S]*?<\/think>/g, '').trimStart();
-
-    } else {
-      fullReply = await executeGroq(systemPrompt, history, routeDecision.models, true, onChunk);
-    }
+  // Groq execution (primary path or fallback)
+  if (!rawReply) {
+    rawReply = await executeGroq(systemPrompt, history, routeDecision.models, false, null, plan);
   }
 
-  // ── Step 8: Detect if fullReply is an image JSON signal ───────
+  // ── Step 8: Extract think tags from raw reply ─────────────────
+  const { thinkContent, cleanReply } = extractThinkTags(rawReply);
+  const fullReply = cleanReply || '';
+
+  // ── Step 9: Detect image JSON signal ─────────────────────────
   try {
     const trimmed = fullReply.trim();
     if (trimmed.startsWith('{') && trimmed.includes('"generateImage"')) {
       const parsed = JSON.parse(trimmed);
       if (parsed.generateImage && parsed.prompt) {
-        return {
-          generateImage: true,
-          prompt: parsed.prompt,
-          editLastImage: !!parsed.editLastImage
-        };
+        return { generateImage: true, prompt: parsed.prompt, editLastImage: !!parsed.editLastImage };
       }
     }
   } catch (e) { /* not a signal */ }
 
-  return { reply: fullReply };
+  // ── Step 10: Stream clean reply to user ──────────────────────
+  // Send think content as a separate SSE event BEFORE streaming reply
+  // Frontend receives { think: "..." } and renders the collapsible
+  if (thinkContent && onChunk) {
+    onChunk({ think: thinkContent });
+  }
+
+  // Stream the clean reply word by word
+  if (fullReply && onChunk) {
+    const words = fullReply.split(' ');
+    for (const word of words) {
+      onChunk({ delta: word + ' ' });
+      await new Promise(r => setTimeout(r, 15));
+    }
+  }
+
+  return { reply: fullReply, thinkContent };
 }
 
 module.exports = { think, route, craft, respond };
