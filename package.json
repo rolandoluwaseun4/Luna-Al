@@ -14,7 +14,8 @@
     "node-telegram-bot-api": "^0.67.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "@google/generative-ai": "^0.21.0"
+    "@google/generative-ai": "^0.21.0",
+    "openai": "^4.98.0"
   },
   "scripts": {
     "start": "node telegram.js"
