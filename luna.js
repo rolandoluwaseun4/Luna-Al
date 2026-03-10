@@ -144,7 +144,7 @@ USER'S MODEL TIER: ${clientModel}
 Analyze the message and respond with ONLY a valid JSON object — no explanation, no markdown, just the JSON:
 
 {
-  "intent": "one of: chat | code | creative | analysis | image_generate | image_edit | search_needed | agent_task",
+  "intent": "one of: chat | code | ui_build | creative | analysis | image_generate | image_edit | search_needed | agent_task",
   "is_followup": true or false,
   "topic": "brief topic of what they're asking about",
   "response_format": "one of: prose | code | list | table | document",
@@ -164,7 +164,9 @@ GUIDANCE:
 - full_document: report, essay, story, or guide the user explicitly asked for
 - needs_web_search: only true for current events, prices, news, real-time data
 - For image_edit: only if user is clearly modifying a previous image in context
-- NEVER choose full_document or long unless the user explicitly asked for it`;
+- NEVER choose full_document or long unless the user explicitly asked for it
+- ui_build: use this when user asks to build a website, landing page, dashboard, UI, app interface, or any visual HTML/CSS output. Always set response_format: code and response_length: full_document for ui_build.
+- code: use for scripts, functions, algorithms, backend code, non-UI programming tasks`;
 
   try {
     const res = await groq.chat.completions.create({
@@ -232,7 +234,7 @@ function route(plan, clientModel, isOwner) {
       };
 
     case 'ro1':
-      const isComplex = ['analysis', 'code', 'creative', 'agent_task'].includes(plan.intent) ||
+      const isComplex = ['analysis', 'code', 'ui_build', 'creative', 'agent_task'].includes(plan.intent) ||
                         ['long', 'full_document'].includes(plan.response_length);
       return {
         models: LUNA_MODELS.RO1,
@@ -289,8 +291,53 @@ function craft(plan, baseSystemPrompt, webSearchResults = null, conversationCont
     craftedPrompt += `\n\n## LIVE WEB SEARCH RESULTS\n${webSearchResults}\nUse these results to answer accurately. Synthesize naturally — don't just list sources.`;
   }
 
-  // Inject Luna's plan as explicit final instructions — LAST thing model reads
-  craftedPrompt += `\n\n## YOUR INSTRUCTIONS FOR THIS RESPONSE
+  // ── UI Build special instructions ───────────────────────────────
+  if (plan.intent === 'ui_build') {
+    craftedPrompt += `
+
+## UI/WEBSITE BUILD INSTRUCTIONS — FOLLOW EXACTLY
+
+You are building a complete, visually stunning, production-ready website in a SINGLE HTML file.
+
+DESIGN STANDARDS — these are non-negotiable:
+- Choose the BEST color scheme for the project based on what it is. Think like a professional designer:
+  • SaaS/Tech product → dark sleek (deep navy/black + electric blue/purple accents)
+  • Portfolio/Creative → bold and distinctive, match the person's vibe
+  • Restaurant/Food → warm rich colors (deep burgundy, golden, cream)
+  • Healthcare/Medical → clean light (white/soft blue, trustworthy)
+  • Fashion/Beauty → elegant (black + gold, or soft pastels depending on brand)
+  • Kids/Education → bright, playful, high contrast colors
+  • Finance/Corporate → professional light or dark (navy, white, green accents)
+  • Music/Entertainment → dark, vibrant, energetic gradients
+  • Nature/Eco → earthy greens, organic warmth
+  • Minimal/Clean → lots of white space, muted accents
+  IF the user specifies colors or a theme — use exactly what they asked for, no exceptions
+- Modern typography — use Google Fonts (Inter, Plus Jakarta Sans, or similar). Import via @import in <style>
+- Smooth animations — subtle fade-ins, hover transitions (0.2-0.3s ease), micro-interactions
+- Glassmorphism or neumorphism where appropriate — backdrop-filter: blur(), rgba surfaces
+- Proper spacing — generous padding, breathing room between sections
+- Fully responsive — mobile-first, works on all screen sizes with media queries
+- No Bootstrap, no external CSS frameworks — write pure CSS that actually looks good
+- Hero sections with gradient text, CTAs with hover glow effects
+- Cards with subtle borders (rgba white/black), box shadows, border-radius: 16px+
+- Consistent color system — define CSS variables at :root level
+
+CODE STANDARDS:
+- Complete, self-contained single HTML file — everything in one file (HTML + CSS + JS)
+- Semantic HTML5 elements (header, nav, main, section, footer)
+- CSS variables for theming (:root { --bg, --accent, --text, etc })
+- Smooth scroll behavior
+- Working navigation if multiple sections
+- Placeholder images use https://picsum.photos/ or CSS gradients — never broken img tags
+- All interactive elements must actually work (buttons, forms, modals)
+
+OUTPUT:
+- Output the COMPLETE file — no truncation, no "add more content here" placeholders
+- Start with <!DOCTYPE html> and end with </html>
+- Brief 1-sentence description before the code block, nothing after`;
+  } else {
+    // Standard instructions for non-UI intents
+    craftedPrompt += `\n\n## YOUR INSTRUCTIONS FOR THIS RESPONSE
 Topic: ${plan.topic}
 Intent: ${plan.intent}
 ${lengthInstructions[plan.response_length] || lengthInstructions.short}
@@ -298,6 +345,7 @@ ${formatInstructions[plan.response_format] || formatInstructions.prose}
 ${toneInstructions[plan.tone] || toneInstructions.casual}
 Follow these instructions exactly. They override any default tendencies.
 ABSOLUTE RULE: If the length says one sentence or 2-4 sentences — write that and STOP. Do not add more. Do not summarize at the end. Do not add a closing line. Just stop.`;
+  }
 
   return craftedPrompt;
 }
@@ -340,7 +388,7 @@ async function tryGroqModel(model, systemPrompt, history, plan, enableThinking =
 
   const params = {
     model,
-    max_tokens: enableThinking ? 8000 : 4096,
+    max_tokens: enableThinking ? 8000 : (plan && plan.intent === 'ui_build' ? 8192 : 4096),
     messages: [{ role: 'system', content: systemPrompt }, ...finalHistory],
   };
 
@@ -410,7 +458,7 @@ async function executeOpenRouter(systemPrompt, history, modelConfig, plan = null
 
         const res = await openrouter.chat.completions.create({
           model,
-          max_tokens: 4096,
+          max_tokens: (plan && plan.intent === 'ui_build') ? 8192 : 4096,
           messages: [{ role: 'system', content: systemPrompt }, ...finalHistory],
         });
 
