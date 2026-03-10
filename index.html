@@ -1968,8 +1968,15 @@
     const isImg=!image&&text&&imgPhrases.some(t=>text.toLowerCase().startsWith(t)||text.toLowerCase().startsWith('can you '+t)||text.toLowerCase().startsWith('please '+t));
 
     // Detect edit request on last generated image
-    const editPhrases=/^(make it|change|edit|update|remove|add|replace|turn it|now make|modify|adjust|fix|make the|make him|make her|make them|darker|lighter|brighter|smaller|bigger|different|instead|now |but )/i;
-    const isImgEdit = !image && text && lastGeneratedImageUrl && editPhrases.test(text.trim());
+    // Detect edit request on last generated image — broad pattern
+    const isImgEdit = !image && text && lastGeneratedImageUrl && (
+      // Explicit edit words
+      /\b(edit|change|modify|update|adjust|turn|transform|convert|replace|remove|add|make|put|give|swap)\b/i.test(text) ||
+      // Color/style changes
+      /\b(darker|lighter|brighter|bigger|smaller|taller|wider|different|another|instead|more|less)\b/i.test(text) ||
+      // Short imperative sentences (under 10 words) when there's already an image
+      text.trim().split(' ').length <= 10
+    );
 
     if(isImg || isImgEdit){
       const prompt = isImgEdit ? text : (text.replace(/^(please |can you )?(generate an? image( of)?|draw an? image( of)?|draw a |create an? image( of)?|make an? image( of)?|make a picture( of)?|imagine a )/i,'').trim()||text);
