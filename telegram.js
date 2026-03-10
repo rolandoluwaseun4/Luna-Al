@@ -330,34 +330,50 @@ async function checkDailyLimit(account, type = 'message') {
 // ── Task type classifier for prompt routing ──────────────────
 function detectTaskType(message) {
   if (!message) return 'general';
-  const msg = message.toLowerCase();
+  const msg = message.toLowerCase().trim();
+
+  // Short follow-up messages are always general — never force a task mode on them.
+  // These are conversational continuations like "explain that more", "why?", "how so?"
+  const followUpPhrases = [
+    'why', 'how so', 'explain that', 'tell me more', 'go on', 'what do you mean',
+    'can you elaborate', 'more detail', 'what about', 'and then', 'so what',
+    'really', 'interesting', 'ok', 'okay', 'got it', 'i see', 'makes sense',
+    'what else', 'anything else', 'continue', 'keep going'
+  ];
+  if (msg.length < 60 && followUpPhrases.some(p => msg.includes(p))) return 'general';
+
+  // Only classify as a task type if the message is clearly asking for that type of output
   if (/```|function |const |let |var |def |class |import |export |<html|<div|npm |pip /.test(msg) ||
       /code|debug|fix (the|my|this)|error|bug|script|program|api|backend|frontend|deploy/.test(msg)) return 'code';
   if (/story|poem|script|creative|fiction|write a|draft|essay|blog|article|letter|email/.test(msg)) return 'creative';
-  if (/research|analyze|analyse|compare|report|breakdown|summarize|study|explain in detail|comprehensive/.test(msg)) return 'research';
+  // Only trigger research mode for explicit, detailed requests — not casual "compare" questions
+  if (/deep research|full research|comprehensive analysis|detailed report|in depth analysis|explain in detail|give me a breakdown/.test(msg)) return 'research';
+  if (/research|analyze|analyse|summarize|study/.test(msg) && msg.length > 80) return 'research';
   if (/advice|should i|help me decide|what would you|opinion|recommend|suggest|mentor|coach/.test(msg)) return 'advisor';
-  if (/calculate|math|solve|equation|formula|statistics|data|chart|graph/.test(msg)) return 'analytical';
+  if (/calculate|math|solve|equation|formula|statistics/.test(msg)) return 'analytical';
   return 'general';
 }
 
 // ── Specialized system prompt addons per task type ───────────
 function getTaskPromptAddon(taskType) {
+  // IMPORTANT: These addons only change HOW Luna responds — never override the response
+  // length rules. Short questions still get short answers even in these modes.
   switch (taskType) {
     case 'code':
       return `\n\n## CURRENT TASK: CODE
-You are in coding mode. Write clean, production-ready code with comments. Always specify the language. Explain what the code does after writing it. If there's a bug, identify the exact line and explain why it's wrong before fixing it.`;
+Write clean, production-ready code with comments. Always specify the language. If it's a short question about code, answer concisely — don't write full programs when a snippet will do. If there's a bug, identify the exact line and explain why it's wrong before fixing it.`;
     case 'creative':
       return `\n\n## CURRENT TASK: CREATIVE WRITING
-You are in creative mode. Be cinematic and vivid. Use strong verbs, specific details, atmosphere. Never be generic. Write like a talented human author, not an AI filling a template. Make the reader feel something.`;
+Be cinematic and vivid. Use strong verbs, specific details, atmosphere. Write like a talented human author. But match the length the user actually asked for — a quick poem is short, a full story is long. Never pad.`;
     case 'research':
       return `\n\n## CURRENT TASK: RESEARCH & ANALYSIS
-You are in research mode. Be thorough, structured, and cite your reasoning. Use headers and clear sections. Give depth over breadth. If you have web results, synthesize them into insight — don't just list facts.`;
+Be thorough but proportionate. If the user asked a focused question, give a focused answer — not an essay. Only use headers and sections if the response is genuinely long and structured. If you have web results, synthesize them naturally — don't list sources.`;
     case 'advisor':
       return `\n\n## CURRENT TASK: ADVISOR MODE
-You are in advisor mode. Be direct and honest — give a real recommendation, not a list of options with no conclusion. Think like a trusted senior advisor who knows this person's situation. Don't hedge endlessly.`;
+Be direct — give a real recommendation, not endless options. Think like a trusted senior advisor. Match your length to the complexity of what was asked. Simple advice questions get direct short answers.`;
     case 'analytical':
       return `\n\n## CURRENT TASK: ANALYTICAL MODE
-You are in analytical mode. Show your working. Break down the problem step by step. Be precise with numbers. If there's uncertainty, quantify it.`;
+Show your working proportionate to the complexity. Simple calculations get brief answers. Only break things down step-by-step if the problem genuinely requires it.`;
     default:
       return '';
   }
@@ -757,8 +773,18 @@ When writing pitches, startup ideas, business concepts, stories or any creative 
 - NEVER use ## headers in a normal conversational reply. Only in long documents the user asked for.
 
 ## IMAGE GENERATION
-- If the user says something vague like "generate an image", "make an image", "create a picture" without specifying what — always ask what they want first. Never guess or generate something random.
-- Only generate immediately if the user gives a clear description of what they want.`;
+You have the ability to generate and edit images. When the user wants an image, do NOT describe it in text — instead respond with ONLY this exact JSON format and nothing else:
+
+{"generateImage":true,"prompt":"detailed image prompt here","editLastImage":false}
+
+Set editLastImage to true if the user is asking to modify or edit the previous image (e.g. "make it darker", "remove the background", "make it look vintage", "change the color").
+Set editLastImage to false for fresh image generation requests.
+
+Rules:
+- If the user is vague (e.g. "generate an image" with no description) — ask what they want first. Do not output the JSON.
+- If the user gives a clear description — output the JSON immediately, nothing else.
+- Make the prompt vivid and detailed for best results.
+- You understand natural language: "draw me a sunset", "I want a picture of a dog", "paint something beautiful" are all image requests.`;
 
   // ── Inject user profile ───────────────────────────────────
   let profileSection = '';
@@ -1159,7 +1185,19 @@ app.post("/chat", requireAuth, async (req, res) => {
       Memory.find({ userId: uid }).sort({ createdAt: -1 }).limit(20).lean().catch(() => []),
       Account.findById(req.user.id).catch(() => null)
     ]);
-    let systemPrompt = getSystemPrompt(uid, isOwner, userProfile, userMemories) + getTaskPromptAddon(taskType);
+    // Build conversation context hint so Luna always knows what was discussed recently
+    const recentHistory = thread.messages.slice(-10); // last 10 messages
+    let contextHint = '';
+    if (recentHistory.length > 2) {
+      const lastUserMsg = [...recentHistory].reverse().find(m => m.role === 'user' && toStringContent(m.content) !== message);
+      const lastAssistantMsg = [...recentHistory].reverse().find(m => m.role === 'assistant');
+      if (lastAssistantMsg) {
+        const prevContent = toStringContent(lastAssistantMsg.content).slice(0, 300);
+        contextHint = `\n\n## CONVERSATION CONTEXT\nYou are in the middle of an ongoing conversation. Your last reply was about: "${prevContent}...". If the user's current message is a follow-up or references something from earlier, use that context naturally — do not ask them to repeat or clarify what was already discussed.`;
+      }
+    }
+
+    let systemPrompt = getSystemPrompt(uid, isOwner, userProfile, userMemories) + getTaskPromptAddon(taskType) + contextHint;
 
     // ── Smart web search pipeline ────────────────────────────
     if (!image && message) {
@@ -1407,6 +1445,32 @@ Reply with only YES or NO.`
           await new Promise(r => setTimeout(r, 15));
         }
       }
+    }
+
+    // ── Detect if Luna responded with an image generation signal ──
+    let imageSignal = null;
+    try {
+      const trimmed = fullReply.trim();
+      if (trimmed.startsWith('{') && trimmed.includes('"generateImage"')) {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.generateImage && parsed.prompt) {
+          imageSignal = parsed;
+        }
+      }
+    } catch(e) { /* not a JSON signal, treat as normal reply */ }
+
+    if (imageSignal) {
+      // Don't save the raw JSON to thread — save a placeholder instead
+      thread.messages.push({ role: 'assistant', content: '[image generated]', timestamp: new Date() });
+      thread.lastUpdated = new Date();
+      await thread.save();
+      return sendDone({
+        generateImage: true,
+        prompt: imageSignal.prompt,
+        editLastImage: !!imageSignal.editLastImage,
+        threadId: thread.threadId,
+        title: thread.title
+      });
     }
 
     thread.messages.push({ role: 'assistant', content: fullReply, timestamp: new Date() });
@@ -1712,21 +1776,23 @@ app.post("/generate-image", requireAuth, async (req, res) => {
   const imgLimit = await checkDailyLimit(imgAccount, 'image');
   if (!imgLimit.allowed) return res.json({ error: imgLimit.message, limitReached: true });
 
-  const { prompt } = req.body;
+  const { prompt, existingImage } = req.body;
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
 
   const uid = String(req.user.id);
   const lastImg = lastGeneratedImage.get(uid);
 
-  // Check if this is an edit request on the last generated image
-  const isEdit = lastImg && isImageEditRequest(prompt);
+  // existingImage comes from Luna's edit signal (frontend passes lastGeneratedImageUrl)
+  // Fall back to server-side last image if frontend didn't send one
+  const editBase = existingImage || (lastImg ? lastImg.base64 : null);
+  const isEdit = !!existingImage || (lastImg && isImageEditRequest(prompt));
   const useGeminiImage = geminiClient && (isRealisticOrEdit(prompt) || isEdit);
 
   // ── Gemini: realistic / editing prompts ──────────────────────
   if (useGeminiImage) {
     console.log(isEdit ? 'Routing to Gemini image edit' : 'Routing image to Gemini (realistic/edit)');
     try {
-      const image = await generateWithGemini(prompt, isEdit ? lastImg.base64 : null);
+      const image = await generateWithGemini(prompt, isEdit ? editBase : null);
       lastGeneratedImage.set(uid, { base64: image, prompt });
       return res.json({ image, edited: isEdit });
     } catch (err) {

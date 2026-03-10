@@ -1830,10 +1830,11 @@
   chatSend.addEventListener('click',send);
   function startChat(text){
     if(!text||!text.trim()) return;
-    // Clear any previous messages
+    // Clear previous messages and reset thread so context doesn't leak from old chats
     Array.from(messagesEl.children).forEach(c=>{if(c.id!=='typing-row')c.remove();});
+    currentThreadId = null; // force new thread for this conversation
+    lastGeneratedImageUrl = null; // reset image edit context too
     showScreen('chat');
-    // Add message immediately — no timeout needed since DOM is always ready
     addMsg('user', text.trim());
     fetchReply(text.trim(), null);
   }
@@ -1964,37 +1965,8 @@
       return;
     }
 
-    const imgPhrases=['generate an image','generate image','generate a picture','generate a photo','draw an image','draw a ','create an image','create image','create a picture','make an image','make a picture','make a photo','imagine a ','picture of ','photo of '];
-    const isImg=!image&&text&&imgPhrases.some(t=>text.toLowerCase().startsWith(t)||text.toLowerCase().startsWith('can you '+t)||text.toLowerCase().startsWith('please '+t));
-
-    // Detect edit request on last generated image
-    // Detect edit request on last generated image — broad pattern
-    const isImgEdit = !image && text && lastGeneratedImageUrl && (
-      // Explicit edit words
-      /\b(edit|change|modify|update|adjust|turn|transform|convert|replace|remove|add|make|put|give|swap)\b/i.test(text) ||
-      // Color/style changes
-      /\b(darker|lighter|brighter|bigger|smaller|taller|wider|different|another|instead|more|less)\b/i.test(text) ||
-      // Short imperative sentences (under 10 words) when there's already an image
-      text.trim().split(' ').length <= 10
-    );
-
-    if(isImg || isImgEdit){
-      const prompt = isImgEdit ? text : (text.replace(/^(please |can you )?(generate an? image( of)?|draw an? image( of)?|draw a |create an? image( of)?|make an? image( of)?|make a picture( of)?|imagine a )/i,'').trim()||text);
-      try{
-        const res=await fetch(BACKEND_URL+'/generate-image',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify({prompt:prompt})});
-        if(!res.ok)throw new Error();
-        const data=await res.json();
-        typingRow.style.display='none';
-        if(data.image){
-          lastGeneratedImageUrl = data.image;
-          addMsg('luna', data.edited ? 'Here is the edited image:' : '', data.image);
-        } else {
-          addMsg('luna', data.error || 'Could not generate that image.');
-        }
-      }catch(e){typingRow.style.display='none';addMsg('luna','Could not generate that image. Try a different description.');}
-      finally{busy=false;chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64&&!selectedVideoBase64;}
-      return;
-    }
+    // Image generation is now fully handled by Luna's intelligence — no trigger phrases needed.
+    // Luna signals image intent via the SSE done event: { generateImage: true, prompt, editLastImage }
 
     // ── Real-time streaming chat ───────────────────────────────
     if (manusMode && text) startManusStatusAnimation(text);
@@ -2067,7 +2039,37 @@
               bubbleEl.innerHTML=renderMarkdown(fullText)+'<span class="typing-cursor"></span>';
             }
             if(json.done){
-              if(json.threadId && !currentThreadId){ currentThreadId=json.threadId; loadSidebarThreads(); }
+              if(json.threadId){ currentThreadId=json.threadId; loadSidebarThreads(); }
+              // ── Luna signalled image generation ──────────────────
+              if(json.generateImage && json.prompt){
+                typingRow.style.display='none';
+                // Show a brief "generating..." message while we fetch the image
+                const genRow = document.createElement('div'); genRow.className='mrow luna';
+                genRow.innerHTML='<div class="msg-avatar luna-av"><img src="icon-192.png" alt="L"/></div><div class="mbody"><div class="bubble" style="color:var(--text-dim);font-size:14px;">Generating image...</div></div>';
+                messagesEl.insertBefore(genRow, typingRow);
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+                try {
+                  const baseImg = json.editLastImage ? lastGeneratedImageUrl : null;
+                  const imgRes = await fetch(BACKEND_URL+'/generate-image', {
+                    method:'POST', headers: getAuthHeaders(),
+                    body: JSON.stringify({ prompt: json.prompt, existingImage: baseImg })
+                  });
+                  const imgData = await imgRes.json();
+                  genRow.remove(); // remove "Generating..." placeholder
+                  if(imgData.image){
+                    lastGeneratedImageUrl = imgData.image;
+                    addMsg('luna', json.editLastImage ? 'Here is the edited image:' : '', imgData.image);
+                  } else {
+                    addMsg('luna', imgData.error || 'Could not generate that image. Try describing it differently.');
+                  }
+                } catch(e) {
+                  genRow.remove();
+                  addMsg('luna', 'Could not generate that image. Try again.');
+                } finally {
+                  busy=false; chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64&&!selectedVideoBase64;
+                }
+                return;
+              }
               if(!streamStopped) finalizeMessage(fullText);
             }
           }catch(e){}
