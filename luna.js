@@ -261,14 +261,13 @@ function craft(plan, baseSystemPrompt, webSearchResults = null, conversationCont
     craftedPrompt += `\n\n## LIVE WEB SEARCH RESULTS\n${webSearchResults}\nUse these results to answer accurately. Synthesize naturally — don't just list sources.`;
   }
 
-  // Inject Luna's plan as explicit final instructions
-  craftedPrompt += `\n\n## YOUR INSTRUCTIONS FOR THIS RESPONSE
-Topic: ${plan.topic}
-Intent: ${plan.intent}
+  // Inject Luna's plan as explicit final instructions — placed LAST so model reads it right before generating
+  craftedPrompt += `\n\n## RESPONSE INSTRUCTIONS — FOLLOW EXACTLY
 ${lengthInstructions[plan.response_length] || lengthInstructions.short}
 ${formatInstructions[plan.response_format] || formatInstructions.prose}
 ${toneInstructions[plan.tone] || toneInstructions.casual}
-Follow these instructions exactly. They override any default tendencies.`;
+Topic to address: ${plan.topic}
+CRITICAL: Do not add headers, bullet points, or structure unless the format instruction above explicitly says to. Do not pad your response to seem thorough. Do not repeat yourself. The instruction above about length is a hard limit — obey it exactly.`;
 
   return craftedPrompt;
 }
@@ -511,12 +510,22 @@ async function respond(ctx) {
       const groqReply = groqResult.status === 'fulfilled' ? groqResult.value : null;
       const geminiReply = geminiResult.status === 'fulfilled' ? geminiResult.value : null;
 
-      if (groqReply && geminiReply) {
-        fullReply = geminiReply.length >= groqReply.length ? geminiReply : groqReply;
-        console.log(`[Luna RO-1] Picked: ${geminiReply.length >= groqReply.length ? 'Gemini' : 'DeepSeek R1'}`);
+      // Strip <think> blocks before comparing — DeepSeek inflates length with thought text
+      const cleanThink = (t) => t ? t.replace(/<think>[\s\S]*?<\/think>/g, '').trimStart() : '';
+      const cleanGroq = cleanThink(groqReply);
+      const cleanGemini = cleanThink(geminiReply);
+      const thinkMatch = groqReply && groqReply.match(/<think>([\s\S]*?)<\/think>/);
+      const thinkContent = thinkMatch ? thinkMatch[1].trim() : '';
+
+      if (cleanGroq && cleanGemini) {
+        fullReply = cleanGemini.length >= cleanGroq.length ? cleanGemini : cleanGroq;
+        console.log(`[Luna RO-1] Picked: ${cleanGemini.length >= cleanGroq.length ? 'Gemini' : 'DeepSeek R1'}`);
       } else {
-        fullReply = groqReply || geminiReply || '';
+        fullReply = cleanGroq || cleanGemini || '';
       }
+
+      // Send think signal first so frontend can show the collapsible
+      if (thinkContent && onChunk) onChunk('\x00THINK\x00' + thinkContent + '\x00ENDTHINK\x00');
 
       // Stream the winner word by word
       if (fullReply && onChunk) {
@@ -545,11 +554,54 @@ async function respond(ctx) {
 
   // Groq execution (primary or fallback)
   if (!fullReply) {
-    fullReply = await executeGroq(systemPrompt, history, routeDecision.models, true, onChunk);
+    // For DeepSeek R1 (RO-1), we need to intercept chunks to separate <think> from reply
+    let thinkBuffer = '';
+    let replyBuffer = '';
+    let inThinkBlock = false;
+    let thinkDone = false;
+
+    const isDeepSeek = routeDecision.models.primary === 'deepseek-r1-distill-llama-70b';
+
+    if (isDeepSeek) {
+      // Custom chunking — intercept to strip <think> tags before sending to user
+      fullReply = await executeGroq(systemPrompt, history, routeDecision.models, true, (delta) => {
+        replyBuffer += delta;
+
+        // Detect opening think tag
+        if (!thinkDone && replyBuffer.includes('<think>')) {
+          inThinkBlock = true;
+        }
+
+        // Detect closing think tag
+        if (inThinkBlock && replyBuffer.includes('</think>')) {
+          // Extract think content
+          const thinkMatch = replyBuffer.match(/<think>([\s\S]*?)<\/think>/);
+          if (thinkMatch) {
+            thinkBuffer = thinkMatch[1].trim();
+            // Everything after </think> is the real reply
+            replyBuffer = replyBuffer.slice(replyBuffer.indexOf('</think>') + '</think>'.length).trimStart();
+            inThinkBlock = false;
+            thinkDone = true;
+            // Signal frontend that thinking is done, send thought content
+            if (onChunk) onChunk('\x00THINK\x00' + thinkBuffer + '\x00ENDTHINK\x00');
+          }
+        }
+
+        // Only stream to user once think block is done
+        if (thinkDone && !inThinkBlock && delta && !delta.includes('<think>')) {
+          if (onChunk) onChunk(delta);
+        }
+      });
+
+      // Strip any remaining think tags from fullReply
+      fullReply = fullReply.replace(/<think>[\s\S]*?<\/think>/g, '').trimStart();
+
+    } else {
+      fullReply = await executeGroq(systemPrompt, history, routeDecision.models, true, onChunk);
+    }
   }
 
   // ── Step 8: Detect if fullReply is an image JSON signal ───────
-  // (In case the response model itself signalled image generation)
   try {
     const trimmed = fullReply.trim();
     if (trimmed.startsWith('{') && trimmed.includes('"generateImage"')) {
