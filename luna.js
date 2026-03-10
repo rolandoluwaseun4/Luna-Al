@@ -56,51 +56,50 @@ const LUNA_MODELS = {
   // Luna's brain — Groq only, needs to be instant, never changes
   BRAIN: 'llama-3.1-8b-instant',
 
-  // Luna Flash — fast general chat via OpenRouter
-  // Falls through the list until one responds — 5,400 req/day pool
+  // Luna Flash — Groq primary (fast), OpenRouter fallback pool
   FLASH: {
-    primary: 'meta-llama/llama-3.3-70b-instruct:free',
-    fallbacks: [
+    primary: 'llama-3.3-70b-versatile',        // Groq — fastest
+    groqFallback: 'llama3-70b-8192',            // Groq — backup
+    orFallbacks: [                              // OpenRouter when Groq rate limits
+      'meta-llama/llama-3.3-70b-instruct:free',
       'mistralai/mistral-small-3.1-24b-instruct:free',
       'google/gemma-3-27b-it:free',
       'nvidia/nemotron-3-nano-30b-a3b:free',
-      'nousresearch/hermes-3-llama-3.1-405b:free',  // 405B free 👀
+      'nousresearch/hermes-3-llama-3.1-405b:free',
       'openai/gpt-oss-20b:free',
       'arcee-ai/trinity-mini:free',
       'z-ai/glm-4.5-air:free',
-    ],
-    provider: 'openrouter'
+    ]
   },
 
-  // Luna Pro — powerful models, reasoning capable
+  // Luna Pro — qwen3-32b on Groq WITH thinking enabled, OpenRouter fallback
   PRO: {
-    primary: 'qwen/qwen3-next-80b-a3b-instruct:free',
-    fallbacks: [
-      'openai/gpt-oss-120b:free',                    // OpenAI 120B free
-      'arcee-ai/trinity-large-preview:free',          // reasoning
-      'nousresearch/hermes-3-llama-3.1-405b:free',   // 405B
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'mistralai/mistral-small-3.1-24b-instruct:free',
-    ],
-    provider: 'openrouter',
-    geminiAllowed: true
-  },
-
-  // RO-1 — deep reasoning models
-  RO1: {
-    primary: 'arcee-ai/trinity-large-preview:free',   // reasoning
-    fallbacks: [
-      'liquid/lfm-2.5-1.2b-thinking:free',            // thinking model
+    primary: 'qwen/qwen3-32b',                 // Groq — thinking enabled
+    groqFallback: 'llama-3.3-70b-versatile',   // Groq — no thinking but fast
+    orFallbacks: [                              // OpenRouter fallbacks
+      'qwen/qwen3-next-80b-a3b-instruct:free',
       'openai/gpt-oss-120b:free',
+      'arcee-ai/trinity-large-preview:free',
       'nousresearch/hermes-3-llama-3.1-405b:free',
       'meta-llama/llama-3.3-70b-instruct:free',
     ],
-    provider: 'openrouter',
-    geminiAllowed: true,
+    thinking: true                              // enable qwen3 thinking mode
+  },
+
+  // RO-1 — DeepSeek R1 on Groq (thinking tags), OpenRouter + Gemini race
+  RO1: {
+    primary: 'deepseek-r1-distill-llama-70b',  // Groq — real thinking tags
+    groqFallback: 'llama-3.3-70b-versatile',
+    orFallbacks: [
+      'arcee-ai/trinity-large-preview:free',
+      'liquid/lfm-2.5-1.2b-thinking:free',
+      'openai/gpt-oss-120b:free',
+      'nousresearch/hermes-3-llama-3.1-405b:free',
+    ],
     raceGemini: true
   },
 
-  // Absolute last resort — OpenRouter picks any available free model
+  // Absolute last resort
   FALLBACK: 'openrouter/auto'
 };
 
@@ -220,31 +219,25 @@ function route(plan, clientModel, isOwner) {
     case 'luna-flash':
     default:
       return {
-        provider: 'openrouter',
         models: LUNA_MODELS.FLASH,
-        useGemini: false,
         raceGemini: false,
-        label: 'Luna Flash → OpenRouter'
+        label: 'Luna Flash → Groq + OpenRouter fallback'
       };
 
     case 'luna-pro':
       return {
-        provider: 'openrouter',
         models: LUNA_MODELS.PRO,
-        useGemini: false,
         raceGemini: false,
-        label: 'Luna Pro → OpenRouter (Qwen3-80b)'
+        label: 'Luna Pro → Groq qwen3 (thinking) + OpenRouter fallback'
       };
 
     case 'ro1':
       const isComplex = ['analysis', 'code', 'creative', 'agent_task'].includes(plan.intent) ||
                         ['long', 'full_document'].includes(plan.response_length);
       return {
-        provider: 'openrouter',
         models: LUNA_MODELS.RO1,
-        useGemini: isComplex && geminiKeys.length > 0,
         raceGemini: isComplex && geminiKeys.length > 0,
-        label: isComplex ? 'RO-1 → OpenRouter + Gemini race' : 'RO-1 → OpenRouter'
+        label: isComplex ? 'RO-1 → DeepSeek R1 + Gemini race' : 'RO-1 → DeepSeek R1'
       };
   }
 }
@@ -340,50 +333,49 @@ ${lengthTag}${formatTag ? ' ' + formatTag : ''}`;
   return constrained;
 }
 
-// ── Execute on Groq ──────────────────────────────────────────────
-async function executeGroq(systemPrompt, history, modelConfig, stream = true, onChunk = null, plan = null) {
-  const allModels = [modelConfig.primary, ...modelConfig.fallbacks];
-  let response = null;
-  let usedModel = null;
+// ── Try a single Groq model, returns reply or throws ────────────
+async function tryGroqModel(model, systemPrompt, history, plan, enableThinking = false) {
+  const needsConstraint = model.includes('qwen') || model.includes('deepseek');
+  const finalHistory = (plan && needsConstraint) ? injectLengthConstraint(history, plan) : history;
 
-  // Models that need extra fighting — inject constraint into user message
-  const needsConstraintInjection = (m) => m.includes('qwen') || m.includes('deepseek');
+  const params = {
+    model,
+    max_tokens: enableThinking ? 8000 : 4096,
+    messages: [{ role: 'system', content: systemPrompt }, ...finalHistory],
+  };
 
-  for (const model of allModels) {
+  // qwen3 thinking mode — Groq supports this via extra_body
+  if (enableThinking && model.includes('qwen')) {
+    params.extra_body = { thinking: { type: 'enabled', budget_tokens: 2048 } };
+  }
+
+  const res = await groq.chat.completions.create(params);
+  const reply = res.choices[0]?.message?.content || '';
+  console.log(`[Luna] Groq responded: ${model}${enableThinking ? ' (thinking)' : ''}`);
+  return reply;
+}
+
+// ── Execute on Groq — tries primary then groqFallback ────────────
+async function executeGroq(systemPrompt, history, modelConfig, plan = null) {
+  const models = [modelConfig.primary, modelConfig.groqFallback].filter(Boolean);
+  const enableThinking = !!modelConfig.thinking;
+
+  for (const model of models) {
     let currentHistory = [...history];
     let attempts = 0;
 
     while (attempts < 3) {
       try {
-        // For stubborn models, inject length constraint directly into last user message
-        const finalHistory = (plan && needsConstraintInjection(model))
-          ? injectLengthConstraint(currentHistory, plan)
-          : currentHistory;
-
-        const res = await groq.chat.completions.create({
-          model,
-          max_tokens: 4096,
-          messages: [{ role: 'system', content: systemPrompt }, ...finalHistory],
-          stream
-        });
-
-        usedModel = model;
-        response = res;
-        console.log(`[Luna] Groq responded: ${model}`);
-        break;
-
+        return await tryGroqModel(model, systemPrompt, currentHistory, plan, enableThinking);
       } catch (err) {
         const status = err?.status || err?.error?.status;
-        const msg = err?.message || '';
+        const msg = (err?.message || '').toLowerCase();
 
         if (status === 413 || msg.includes('too large') || msg.includes('context')) {
           currentHistory = currentHistory.slice(Math.ceil(currentHistory.length / 2));
           attempts++;
-          console.warn(`[Luna] ${model} context too large — trimming history (attempt ${attempts})`);
-          if (attempts >= 3) {
-            console.warn(`[Luna] ${model} still too large after trimming — trying next model`);
-            break; // try next model
-          }
+          console.warn(`[Luna] ${model} context too large — trimming (attempt ${attempts})`);
+          if (attempts >= 3) { break; }
         } else if (status === 429 || msg.includes('rate_limit')) {
           console.warn(`[Luna] ${model} rate limited — trying next`);
           break;
@@ -391,31 +383,13 @@ async function executeGroq(systemPrompt, history, modelConfig, stream = true, on
           console.warn(`[Luna] ${model} unavailable — trying next`);
           break;
         } else {
-          throw err;
+          console.warn(`[Luna] ${model} error: ${err.message} — trying next`);
+          break;
         }
       }
     }
-    if (usedModel) break;
   }
-
-  if (!response) throw new Error('All Groq models unavailable');
-
-  // Stream mode — collect chunks and call onChunk for SSE
-  if (stream && onChunk) {
-    let fullText = '';
-    for await (const chunk of response) {
-      const delta = chunk.choices[0]?.delta?.content || '';
-      if (delta) {
-        fullText += delta;
-        onChunk(delta);
-        await new Promise(r => setTimeout(r, 15));
-      }
-    }
-    return fullText;
-  }
-
-  // Non-stream mode
-  return response.choices[0]?.message?.content || '';
+  throw new Error('Groq unavailable');
 }
 
 // ── Execute on OpenRouter ───────────────────────────────────────
@@ -423,7 +397,7 @@ async function executeGroq(systemPrompt, history, modelConfig, stream = true, on
 async function executeOpenRouter(systemPrompt, history, modelConfig, plan = null) {
   if (!process.env.OPENROUTER_API_KEY) throw new Error('OpenRouter not configured');
 
-  const allModels = [modelConfig.primary, ...modelConfig.fallbacks, LUNA_MODELS.FALLBACK];
+  const allModels = [...(modelConfig.orFallbacks || []), LUNA_MODELS.FALLBACK];
   
   for (const model of allModels) {
     let currentHistory = [...history];
@@ -634,62 +608,66 @@ async function respond(ctx) {
 
   let rawReply = '';
 
-  // ── Step 7: Execute — always collect full reply first ────────
-  // OpenRouter is primary for all responses.
-  // Gemini races with RO-1 on complex tasks for best quality.
+  // ── Step 7: Execute ─────────────────────────────────────────────
+  // Priority: Groq (fast) → OpenRouter (wide fallback) → Gemini → error message
+  // RO-1 races Groq DeepSeek R1 vs Gemini for best quality answer.
+
   if (routeDecision.raceGemini) {
-    // RO-1: race OpenRouter vs Gemini, pick the longer/better reply
+    // RO-1: race Groq DeepSeek R1 vs Gemini simultaneously
     try {
-      const [orResult, geminiResult] = await Promise.allSettled([
-        executeOpenRouter(systemPrompt, history, routeDecision.models, plan),
+      const [groqResult, geminiResult] = await Promise.allSettled([
+        executeGroq(systemPrompt, history, routeDecision.models, plan),
         executeGemini(systemPrompt, history, image, video, file)
       ]);
-      const orRaw = orResult.status === 'fulfilled' ? orResult.value : null;
+      const groqRaw = groqResult.status === 'fulfilled' ? groqResult.value : null;
       const geminiRaw = geminiResult.status === 'fulfilled' ? geminiResult.value : null;
 
-      // Strip think tags before comparing lengths
-      const { cleanReply: orClean } = extractThinkTags(orRaw || '');
+      const { cleanReply: groqClean } = extractThinkTags(groqRaw || '');
       const { cleanReply: geminiClean } = extractThinkTags(geminiRaw || '');
 
-      if (orClean && geminiClean) {
-        rawReply = geminiClean.length >= orClean.length ? (geminiRaw || '') : (orRaw || '');
-        console.log(`[Luna RO-1] Picked: ${geminiClean.length >= orClean.length ? 'Gemini' : 'OpenRouter'}`);
+      if (groqClean && geminiClean) {
+        rawReply = geminiClean.length >= groqClean.length ? (geminiRaw || '') : (groqRaw || '');
+        console.log(`[Luna RO-1] Picked: ${geminiClean.length >= groqClean.length ? 'Gemini' : 'DeepSeek R1'}`);
       } else {
-        rawReply = orRaw || geminiRaw || '';
+        rawReply = groqRaw || geminiRaw || '';
       }
     } catch (e) {
       console.warn('[Luna RO-1] Race failed:', e.message);
     }
   }
 
-  // OpenRouter primary (all tiers)
+  // Step 1: Try Groq (fast, primary for all tiers)
+  if (!rawReply) {
+    try {
+      rawReply = await executeGroq(systemPrompt, history, routeDecision.models, plan);
+    } catch (e) {
+      console.warn('[Luna] Groq failed — trying OpenRouter:', e.message);
+    }
+  }
+
+  // Step 2: OpenRouter fallback (wide model pool)
   if (!rawReply) {
     try {
       rawReply = await executeOpenRouter(systemPrompt, history, routeDecision.models, plan);
     } catch (e) {
-      console.warn('[Luna] OpenRouter failed, falling back to Gemini:', e.message);
+      console.warn('[Luna] OpenRouter failed — trying Gemini:', e.message);
     }
   }
 
-  // Gemini final fallback if OpenRouter fails entirely
+  // Step 3: Gemini fallback
   if (!rawReply && geminiKeys.length > 0) {
     try {
       rawReply = await executeGemini(systemPrompt, history, image, video, file);
       console.log('[Luna] Gemini fallback used');
     } catch (e) {
-      console.warn('[Luna] Gemini fallback also failed:', e.message);
+      console.warn('[Luna] Gemini also failed:', e.message);
     }
   }
 
-  // Absolute last resort — Groq
+  // Step 4: Give up gracefully
   if (!rawReply) {
-    try {
-      rawReply = await executeGroq(systemPrompt, history, LUNA_MODELS.FLASH, false, null, plan);
-      console.log('[Luna] Groq last resort used');
-    } catch (e) {
-      console.warn('[Luna] All providers failed:', e.message);
-      rawReply = "I'm having trouble connecting right now. Please try again in a moment.";
-    }
+    rawReply = "I'm having trouble connecting right now. Please try again in a moment.";
+    console.warn('[Luna] All providers failed');
   }
 
   // ── Step 8: Extract think tags from raw reply ─────────────────
