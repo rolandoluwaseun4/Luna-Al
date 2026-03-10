@@ -983,16 +983,14 @@ if (process.env.TELEGRAM_BOT_TOKEN) {
 // ── Standalone Groq caller (used by RO-1 and fallback) ───────
 async function callGroq(systemPrompt, safeHistory, image = null) {
   const textModels = [
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
     "llama-3.3-70b-versatile",
-    "llama-3.1-70b-versatile",
     "llama3-70b-8192",
+    "llama-3.1-70b-versatile",
     "llama-3.1-8b-instant"
   ];
   const imageModels = [
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
-    "meta-llama/llama-4-scout-17b-16e-instruct"
+    "llama-3.3-70b-versatile",
+    "llama3-70b-8192"
   ];
   const models = image ? imageModels : textModels;
   let msgPayload = [...safeHistory];
@@ -1344,16 +1342,14 @@ Reply with only YES or NO.`
     if (!fullReply) {
       // ── Groq (fast tasks or Gemini fallback) ─────────────────
       const textModels = [
-        "meta-llama/llama-4-maverick-17b-128e-instruct",
-        "meta-llama/llama-4-scout-17b-16e-instruct",
         "llama-3.3-70b-versatile",
-        "llama-3.1-70b-versatile",
         "llama3-70b-8192",
+        "llama-3.1-70b-versatile",
         "llama-3.1-8b-instant"
       ];
       const imageModels = [
-        "meta-llama/llama-4-maverick-17b-128e-instruct",
-        "meta-llama/llama-4-scout-17b-16e-instruct"
+        "llama-3.3-70b-versatile",
+        "llama3-70b-8192"
       ];
       const models = image ? imageModels : textModels;
       let msgPayload = image
