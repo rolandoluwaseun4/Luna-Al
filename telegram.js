@@ -1113,16 +1113,23 @@ app.post("/chat", requireAuth, async (req, res) => {
   thread.messages.push(userMessage);
   if (thread.messages.length > 50) thread.messages = thread.messages.slice(-50);
 
+  // safeHistory: every content field MUST be a plain string for Groq/API compatibility
+  function toStringContent(content) {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return content.find(c => c.type === 'text')?.text || 'shared an image';
+    if (content == null) return '';
+    return String(content);
+  }
+
   const safeHistory = thread.messages.map(m => ({
     role: m.role,
-    content: typeof m.content === 'string' ? m.content
-      : Array.isArray(m.content) ? (m.content.find(c => c.type === 'text')?.text || 'shared an image')
-      : String(m.content)
+    content: toStringContent(m.content)
   }));
 
   try {
     // ── Manus Agent execution ─────────────────────────────────
-    if (!image && message && (chatMode === 'manus' || isManusTask(message))) {
+    // Only runs when the frontend explicitly sends chatMode === 'agent' — never auto-triggered by keywords
+    if (!image && message && chatMode === 'agent') {
       try {
         console.log('🤖 Manus:', message.substring(0, 80));
         const result = await runManusTask(message);
@@ -1352,9 +1359,8 @@ Reply with only YES or NO.`
         "llama3-70b-8192"
       ];
       const models = image ? imageModels : textModels;
-      let msgPayload = image
-        ? thread.messages.map(m => ({ role: m.role, content: m.content }))
-        : safeHistory;
+      // Always use safeHistory (string content) — raw thread messages may contain array content that breaks the API
+      let msgPayload = safeHistory;
 
       let response = null;
       let usedModel = null;
