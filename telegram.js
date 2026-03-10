@@ -77,6 +77,7 @@ const memorySchema = new mongoose.Schema({
 const Memory = mongoose.model('Memory', memorySchema);
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const luna = require('./luna');
 
 // ── Gemini setup ──────────────────────────────────────────────
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -327,30 +328,18 @@ async function checkDailyLimit(account, type = 'message') {
   return { allowed: true, remaining: DAILY_FREE_LIMIT - count - 1 };
 }
 
-// ── Task type classifier for prompt routing ──────────────────
+// ── Task type classifier — only detects what KIND of output is needed, not length ──
 function detectTaskType(message) {
   if (!message) return 'general';
   const msg = message.toLowerCase().trim();
 
-  // Short follow-up messages are always general — never force a task mode on them.
-  // These are conversational continuations like "explain that more", "why?", "how so?"
-  const followUpPhrases = [
-    'why', 'how so', 'explain that', 'tell me more', 'go on', 'what do you mean',
-    'can you elaborate', 'more detail', 'what about', 'and then', 'so what',
-    'really', 'interesting', 'ok', 'okay', 'got it', 'i see', 'makes sense',
-    'what else', 'anything else', 'continue', 'keep going'
-  ];
-  if (msg.length < 60 && followUpPhrases.some(p => msg.includes(p))) return 'general';
-
-  // Only classify as a task type if the message is clearly asking for that type of output
+  // Only classify based on the type of OUTPUT being requested — never based on message length.
+  // Luna herself judges how long the response should be based on the intent.
   if (/```|function |const |let |var |def |class |import |export |<html|<div|npm |pip /.test(msg) ||
-      /code|debug|fix (the|my|this)|error|bug|script|program|api|backend|frontend|deploy/.test(msg)) return 'code';
-  if (/story|poem|script|creative|fiction|write a|draft|essay|blog|article|letter|email/.test(msg)) return 'creative';
-  // Only trigger research mode for explicit, detailed requests — not casual "compare" questions
-  if (/deep research|full research|comprehensive analysis|detailed report|in depth analysis|explain in detail|give me a breakdown/.test(msg)) return 'research';
-  if (/research|analyze|analyse|summarize|study/.test(msg) && msg.length > 80) return 'research';
-  if (/advice|should i|help me decide|what would you|opinion|recommend|suggest|mentor|coach/.test(msg)) return 'advisor';
-  if (/calculate|math|solve|equation|formula|statistics/.test(msg)) return 'analytical';
+      /\bcode\b|debug|fix (the|my|this)|\berror\b|\bbug\b|script|program|\bapi\b|backend|frontend|deploy/.test(msg)) return 'code';
+  if (/write a story|write a poem|write a script|write an essay|write a blog|write an article|draft a |write a letter|write an email/.test(msg)) return 'creative';
+  if (/deep research|full research|comprehensive analysis|detailed report|in.?depth analysis|give me a full breakdown|full breakdown/.test(msg)) return 'research';
+  if (/\bcalculate\b|solve this equation|solve this formula/.test(msg)) return 'analytical';
   return 'general';
 }
 
@@ -757,34 +746,27 @@ When writing pitches, startup ideas, business concepts, stories or any creative 
 - The goal is not to cover all the points — it is to make the reader feel something first, then inform them.
 - Every creative output should feel like it came from a talented human writer, not an AI filling a template.
 
-## RESPONSE LENGTH — CRITICAL
-- Short or simple question → answer in 1-3 sentences. No lists, no headers, no padding.
-- Medium question → 1-2 short paragraphs of plain prose. No headers.
-- Only write long responses when the user explicitly asks for something detailed, a full document, code, a story, a list, or a report.
-- Never over-explain. Never repeat yourself. Never add filler sentences to seem thorough.
-- If the answer is one sentence, write one sentence.
-- At the end of most responses, add one short specific offer related to what you just said. Not generic — make it directly useful. Examples: "Want me to turn this into a full pitch deck?", "I can write the code for this if you want.", "Want a deeper breakdown of any of these?", "I can draft the email for you if you need." Keep it to one line, make it feel natural not scripted. Never say "let me know if you need anything" or "feel free to ask" — those are hollow.
+## RESPONSE LENGTH — USE JUDGMENT
+Before you respond, ask yourself: what does this question actually need?
+- A factual question with a simple answer → answer it directly, don't pad.
+- A concept that genuinely needs explanation → explain it properly, don't cut it short artificially.
+- A follow-up in a conversation → match the depth of the question, not the depth of the previous answer.
+- A request for a document, report, story, or list → write it fully.
+The goal is the right length for the intent — not short by default, not long by default. Never add words to seem thorough. Never cut words to seem concise. Just answer the question as well as it deserves to be answered.
+Never over-explain. Never repeat yourself. Never pad.
+At the end of most responses, add one short natural offer directly related to what you just said — not generic filler like "let me know if you need anything".
 
 ## FORMATTING — STRICT
 - Default is plain prose. Always.
-- Use a markdown table only for direct comparisons (e.g. "coding vs programming", "iPhone vs Android").
-- Use bullet points or numbered lists only when the content is genuinely a list — steps, options, ingredients. Not for explanations.
-- Use bold only to highlight a key term, not to create fake headers inside prose.
-- NEVER use ## headers in a normal conversational reply. Only in long documents the user asked for.
+- Use headers and bullet points ONLY when the content is genuinely structured — a document, a step-by-step guide, a comparison table, a list of items. Not for explanations.
+- NEVER use ## headers to break up a normal conversational answer into sections. That's an essay, not a conversation.
+- If you're explaining something, write it as flowing prose — not as a bulleted breakdown.
+- Use a markdown table only for direct side-by-side comparisons.
+- Use bold only to highlight a key term, not to create fake structure.
 
 ## IMAGE GENERATION
-You have the ability to generate and edit images. When the user wants an image, do NOT describe it in text — instead respond with ONLY this exact JSON format and nothing else:
-
-{"generateImage":true,"prompt":"detailed image prompt here","editLastImage":false}
-
-Set editLastImage to true if the user is asking to modify or edit the previous image (e.g. "make it darker", "remove the background", "make it look vintage", "change the color").
-Set editLastImage to false for fresh image generation requests.
-
-Rules:
-- If the user is vague (e.g. "generate an image" with no description) — ask what they want first. Do not output the JSON.
-- If the user gives a clear description — output the JSON immediately, nothing else.
-- Make the prompt vivid and detailed for best results.
-- You understand natural language: "draw me a sunset", "I want a picture of a dog", "paint something beautiful" are all image requests.`;
+- If the user says something vague like "generate an image", "make an image", "create a picture" without specifying what — always ask what they want first. Never guess or generate something random.
+- Only generate immediately if the user gives a clear description of what they want.`;
 
   // ── Inject user profile ───────────────────────────────────
   let profileSection = '';
@@ -1177,93 +1159,20 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    // ── Task type routing ───────────────────────────────────
-    const taskType = detectTaskType(message);
     // ── Load profile + memories + account ─────────────────────
     const [userProfile, userMemories, account] = await Promise.all([
       Profile.findOne({ userId: uid }).lean().catch(() => null),
       Memory.find({ userId: uid }).sort({ createdAt: -1 }).limit(20).lean().catch(() => []),
       Account.findById(req.user.id).catch(() => null)
     ]);
-    // Build conversation context hint so Luna always knows what was discussed recently
-    const recentHistory = thread.messages.slice(-10); // last 10 messages
-    let contextHint = '';
-    if (recentHistory.length > 2) {
-      const lastUserMsg = [...recentHistory].reverse().find(m => m.role === 'user' && toStringContent(m.content) !== message);
-      const lastAssistantMsg = [...recentHistory].reverse().find(m => m.role === 'assistant');
-      if (lastAssistantMsg) {
-        const prevContent = toStringContent(lastAssistantMsg.content).slice(0, 300);
-        contextHint = `\n\n## CONVERSATION CONTEXT\nYou are in the middle of an ongoing conversation. Your last reply was about: "${prevContent}...". If the user's current message is a follow-up or references something from earlier, use that context naturally — do not ask them to repeat or clarify what was already discussed.`;
-      }
-    }
-
-    let systemPrompt = getSystemPrompt(uid, isOwner, userProfile, userMemories) + getTaskPromptAddon(taskType) + contextHint;
-
-    // ── Smart web search pipeline ────────────────────────────
-    if (!image && message) {
-      const urlInMessage = extractUrl(message);
-
-      // Priority 1: URL detected → read with Jina
-      if (urlInMessage) {
-        console.log('🔗 Jina reading URL:', urlInMessage);
-        const pageContent = await jinaReadUrl(urlInMessage);
-        if (pageContent) {
-          systemPrompt += `\n\n## WEB PAGE CONTENT\nThe user shared this URL: ${urlInMessage}\nHere is the page content:\n${pageContent}\n\nUse this content to answer the user's question accurately.`;
-        }
-      }
-      // Priority 2: AI classifier decides if search is needed — no trigger words
-      else if (TAVILY_API_KEY) {
-        let shouldSearch = false;
-        try {
-          const searchDecision = await groq.chat.completions.create({
-            model: 'llama-3.1-8b-instant',
-            max_tokens: 3,
-            temperature: 0,
-            messages: [
-              {
-                role: 'system',
-                content: `You decide if a question needs a real-time web search to answer accurately.
-Reply YES if the question is about: current prices, availability, recent events, specific products/services, people/companies, facts that change over time, or anything where outdated info would be wrong.
-Reply NO if it's: casual chat, creative writing, general knowledge, math, coding help, opinions, or anything an AI can answer from training alone.
-Reply with only YES or NO.`
-              },
-              { role: 'user', content: message }
-            ]
-          });
-          const verdict = searchDecision.choices[0]?.message?.content?.trim().toUpperCase();
-          shouldSearch = verdict === 'YES';
-        } catch(e) {
-          shouldSearch = false;
-        }
-
-        if (shouldSearch) {
-          console.log('🔍 AI decided to search:', message.slice(0, 60));
-          const tavilyResults = await tavilySearch(message);
-          if (tavilyResults) {
-            systemPrompt += `\n\n## WEB SEARCH RESULTS\n${tavilyResults}\n\nUse these results to give an accurate, up-to-date answer. Synthesize naturally — don't just list sources.`;
-          }
-        }
-      }
-      // Fallback: NewsAPI if no Tavily
-      else if (isNewsQuery(message) && NEWS_API_KEY) {
-        const results = await newsSearch(message);
-        if (results) {
-          systemPrompt += `\n\nHere are current news results:\n${results}\nUse these to give an up to date answer naturally.`;
-        }
-      }
-    }
 
     // ── Video / File model gate ──────────────────────────────
     const clientModelRaw = selectedModel || 'luna-flash';
-    if (video) {
-      // Video is owner-only
-      if (!isOwner) {
-        return sendDone({ reply: 'Video analysis is currently available to the owner only. File and image analysis are available on Luna Pro and RO-1.' });
-      }
+    if (video && !isOwner) {
+      return sendDone({ reply: 'Video analysis is currently available to the owner only. File and image analysis are available on Luna Pro and RO-1.' });
     }
     if (file) {
-      const modelAllowed = clientModelRaw === 'luna-pro' || clientModelRaw === 'ro1';
-      if (!modelAllowed) {
+      if (clientModelRaw !== 'luna-pro' && clientModelRaw !== 'ro1') {
         return sendDone({ reply: 'Video and file analysis are available on Luna Pro and RO-1. Switch your model to use this feature.' });
       }
       if (!account) {
@@ -1275,203 +1184,70 @@ Reply with only YES or NO.`
       if (!videoLimit.allowed) return sendDone({ reply: videoLimit.message });
     }
 
-    // ── Smart routing based on selected model ───────────────────
-    // Validate model — RO-1 is owner only
-    const clientModel = (selectedModel === 'ro1' && !isOwner) ? 'luna-flash' : (selectedModel || 'luna-flash');
-    // Deep Think / Luna Research only upgrades to Gemini if model allows it
-    // luna-flash users cannot bypass to Gemini via deep think
-    const deepThinkRequested = message && (
-      message.toLowerCase().includes('[deep think]') ||
-      message.toLowerCase().includes('[luna research]')
-    ) && (clientModel === 'luna-pro' || clientModel === 'ro1');
-    let fullReply = '';
-    let useGemini = false;
-
-    if (clientModel === 'luna-flash') {
-      // ── Luna Flash: Groq only, fast ──────────────────────────
-      console.log('Model: Luna Flash → Groq');
-      useGemini = false;
-
-    } else if (clientModel === 'luna-pro') {
-      // ── Luna Pro: OpenAI GPT-4.1 mini ────────────────────────
-      // Block guests
-      if (!account) {
-        return sendDone({ reply: 'Luna Pro is available to registered users only. Sign up for free to unlock it.' });
-      }
-      // Check daily limit (owner is unlimited)
+    // ── Luna Pro account gate ────────────────────────────────
+    if (clientModelRaw === 'luna-pro') {
+      if (!account) return sendDone({ reply: 'Luna Pro is available to registered users only. Sign up for free to unlock it.' });
       if (account.role !== 'owner') {
         const proLimit = await checkDailyLimit(account, 'pro');
-        if (!proLimit.allowed) {
-          return sendDone({ reply: proLimit.message });
-        }
-      }
-      console.log('Model: Luna Pro → OpenAI GPT-4.1 mini');
-      try {
-        fullReply = await callOpenAI(systemPrompt, safeHistory);
-        if (fullReply) {
-          const words = fullReply.split(' ');
-          for (const word of words) {
-            sendChunk({ delta: word + ' ' });
-            await new Promise(r => setTimeout(r, 18));
-          }
-        }
-      } catch (openAIErr) {
-        console.warn('OpenAI failed, falling back to Gemini:', openAIErr.message);
-        useGemini = true;
-      }
-
-    } else if (clientModel === 'ro1') {
-      // ── RO-1: smartest — classify then decide ────────────────
-      console.log('Model: RO-1 → Analyzing...');
-      if (deepThinkRequested) {
-        useGemini = true;
-      } else if (geminiClient) {
-        const complexity = await classifyTask(message);
-        if (complexity === 'COMPLEX') {
-          // Run both Groq and Gemini, pick best
-          useGemini = true;
-          console.log('RO-1: COMPLEX task — running Gemini + Groq race');
-          try {
-            const [geminiResult, groqResult] = await Promise.allSettled([
-              callGemini(systemPrompt, safeHistory, image || null, video || null, file || null),
-              callGroq(systemPrompt, safeHistory, image)
-            ]);
-            const geminiReply = geminiResult.status === 'fulfilled' ? geminiResult.value : null;
-            const groqReply = groqResult.status === 'fulfilled' ? groqResult.value : null;
-            // Pick best: prefer Gemini if it succeeded and is longer/richer
-            if (geminiReply && groqReply) {
-              fullReply = geminiReply.length >= groqReply.length ? geminiReply : groqReply;
-              console.log(`RO-1 picked: ${geminiReply.length >= groqReply.length ? 'Gemini' : 'Groq'}`);
-            } else {
-              fullReply = geminiReply || groqReply || '';
-            }
-          } catch(e) {
-            console.warn('RO-1 race failed:', e.message);
-          }
-        } else {
-          // SIMPLE — just use Gemini (still better than Groq for RO-1)
-          useGemini = true;
-          console.log('RO-1: SIMPLE task → Gemini');
-        }
-      } else {
-        useGemini = false;
-      }
-    } else {
-      // Default fallback — classify like before
-      if (deepThinkRequested) {
-        useGemini = geminiClient ? true : false;
-      } else {
-        const complexity = await classifyTask(message);
-        useGemini = geminiClient && complexity === 'COMPLEX';
-        console.log(`Task classified as ${complexity} — routing to ${useGemini ? 'Gemini' : 'Groq'}`);
+        if (!proLimit.allowed) return sendDone({ reply: proLimit.message });
       }
     }
 
-    if (!fullReply && useGemini) {
-      // ── Gemini ───────────────────────────────────────────────
-      try {
-        fullReply = await callGemini(systemPrompt, safeHistory, image || null, video || null, file || null);
-        // Stream Gemini reply word by word with natural delay
-        if (fullReply) {
-          const words = fullReply.split(' ');
-          for (const word of words) {
-            sendChunk({ delta: word + ' ' });
-            await new Promise(r => setTimeout(r, 18));
-          }
-        }
-      } catch (geminiErr) {
-        console.warn('Gemini failed, falling back to Groq:', geminiErr.message);
+    // ── Handle URL reading (Jina) before Luna thinks ─────────
+    let urlPageContent = null;
+    if (!image && message) {
+      const urlInMessage = extractUrl(message);
+      if (urlInMessage) {
+        console.log('🔗 Jina reading URL:', urlInMessage);
+        urlPageContent = await jinaReadUrl(urlInMessage).catch(() => null);
       }
     }
 
-    if (!fullReply) {
-      // ── Groq (fast tasks or Gemini fallback) ─────────────────
-      const textModels = [
-        "llama-3.3-70b-versatile",
-        "llama3-70b-8192",
-        "llama-3.1-70b-versatile",
-        "llama-3.1-8b-instant"
-      ];
-      const imageModels = [
-        "llama-3.3-70b-versatile",
-        "llama3-70b-8192"
-      ];
-      const models = image ? imageModels : textModels;
-      // Always use safeHistory (string content) — raw thread messages may contain array content that breaks the API
-      let msgPayload = safeHistory;
+    // ── Build base system prompt ─────────────────────────────
+    const baseSystemPrompt = getSystemPrompt(uid, isOwner, userProfile, userMemories);
 
-      let response = null;
-      let usedModel = null;
-      for (const model of models) {
-        let currentPayload = [...msgPayload];
-        let attempts = 0;
-        while (attempts < 3) {
-          try {
-            response = await groq.chat.completions.create({
-              model,
-              max_tokens: 4096,
-              messages: [{ role: "system", content: systemPrompt }, ...currentPayload],
-              stream: true,
-            });
-            usedModel = model;
-            break;
-          } catch (err) {
-            const status = err?.status || err?.error?.status;
-            const msg = err?.message || '';
-            if (status === 413 || msg.includes('too large') || msg.includes('context')) {
-              currentPayload = currentPayload.slice(Math.ceil(currentPayload.length / 2));
-              attempts++;
-              console.warn(`Model ${model} 413 - trimmed history, retrying...`);
-            } else if (status === 429 || msg.includes('rate_limit')) {
-              console.warn(`Model ${model} rate limited. Trying next...`);
-              break;
-            } else if (status === 400 && msg.includes('decommissioned')) {
-              console.warn(`Model ${model} decommissioned. Trying next...`);
-              break;
-            } else {
-              throw err;
-            }
-          }
-        }
-        if (usedModel) break;
+    // ── Web search function — Luna decides if she needs it ───
+    async function webSearchFn(query) {
+      if (urlPageContent) {
+        return `Web page content for ${query}:\n${urlPageContent}`;
       }
-      if (!response) throw new Error("All models unavailable. Please try again shortly.");
-
-      for await (const chunk of response) {
-        const delta = chunk.choices[0]?.delta?.content || '';
-        if (delta) {
-          fullReply += delta;
-          sendChunk({ delta });
-          await new Promise(r => setTimeout(r, 15));
-        }
+      if (TAVILY_API_KEY) {
+        const results = await tavilySearch(query);
+        return results || null;
       }
+      if (isNewsQuery(query) && NEWS_API_KEY) {
+        return await newsSearch(query);
+      }
+      return null;
     }
 
-    // ── Detect if Luna responded with an image generation signal ──
-    let imageSignal = null;
-    try {
-      const trimmed = fullReply.trim();
-      if (trimmed.startsWith('{') && trimmed.includes('"generateImage"')) {
-        const parsed = JSON.parse(trimmed);
-        if (parsed.generateImage && parsed.prompt) {
-          imageSignal = parsed;
-        }
-      }
-    } catch(e) { /* not a JSON signal, treat as normal reply */ }
+    // ── Luna orchestrates everything ─────────────────────────
+    const lunaResult = await luna.respond({
+      message,
+      history: safeHistory,
+      clientModel: clientModelRaw,
+      isOwner,
+      baseSystemPrompt,
+      image: image || null,
+      video: video || null,
+      file: file || null,
+      webSearchFn,
+      onChunk: (delta) => sendChunk({ delta })
+    });
 
-    if (imageSignal) {
-      // Don't save the raw JSON to thread — save a placeholder instead
-      thread.messages.push({ role: 'assistant', content: '[image generated]', timestamp: new Date() });
-      thread.lastUpdated = new Date();
+    // ── Image generation signal ──────────────────────────────
+    if (lunaResult.generateImage) {
       await thread.save();
       return sendDone({
         generateImage: true,
-        prompt: imageSignal.prompt,
-        editLastImage: !!imageSignal.editLastImage,
+        prompt: lunaResult.prompt,
+        editLastImage: lunaResult.editLastImage || false,
         threadId: thread.threadId,
         title: thread.title
       });
     }
+
+    const fullReply = lunaResult.reply || '';
 
     thread.messages.push({ role: 'assistant', content: fullReply, timestamp: new Date() });
     thread.lastUpdated = new Date();
@@ -1776,23 +1552,21 @@ app.post("/generate-image", requireAuth, async (req, res) => {
   const imgLimit = await checkDailyLimit(imgAccount, 'image');
   if (!imgLimit.allowed) return res.json({ error: imgLimit.message, limitReached: true });
 
-  const { prompt, existingImage } = req.body;
+  const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
 
   const uid = String(req.user.id);
   const lastImg = lastGeneratedImage.get(uid);
 
-  // existingImage comes from Luna's edit signal (frontend passes lastGeneratedImageUrl)
-  // Fall back to server-side last image if frontend didn't send one
-  const editBase = existingImage || (lastImg ? lastImg.base64 : null);
-  const isEdit = !!existingImage || (lastImg && isImageEditRequest(prompt));
+  // Check if this is an edit request on the last generated image
+  const isEdit = lastImg && isImageEditRequest(prompt);
   const useGeminiImage = geminiClient && (isRealisticOrEdit(prompt) || isEdit);
 
   // ── Gemini: realistic / editing prompts ──────────────────────
   if (useGeminiImage) {
     console.log(isEdit ? 'Routing to Gemini image edit' : 'Routing image to Gemini (realistic/edit)');
     try {
-      const image = await generateWithGemini(prompt, isEdit ? editBase : null);
+      const image = await generateWithGemini(prompt, isEdit ? lastImg.base64 : null);
       lastGeneratedImage.set(uid, { base64: image, prompt });
       return res.json({ image, edited: isEdit });
     } catch (err) {
