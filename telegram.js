@@ -745,7 +745,16 @@ When writing pitches, startup ideas, business concepts, stories or any creative 
 - Medium question → 1-2 short paragraphs max.
 - Only write long responses when the user explicitly asks for something detailed, a full document, code, a story, a list, or a report.
 - Never over-explain. Never repeat yourself. Never add filler sentences to seem thorough.
-- If the answer is one sentence, write one sentence.`;
+- If the answer is one sentence, write one sentence.
+- Never end a response with a question asking if the user wants more — just answer.
+
+## FORMATTING
+- For comparisons between two or more things, always use a markdown table. Do not write bullet points when a table is clearer.
+- Use headers only for long structured responses. Never for short answers.
+
+## IMAGE GENERATION
+- If the user says something vague like "generate an image", "make an image", "create a picture" without specifying what — always ask what they want first. Never guess or generate something random.
+- Only generate immediately if the user gives a clear description of what they want.`;
 
   // ── Inject user profile ───────────────────────────────────
   let profileSection = '';
@@ -1199,7 +1208,13 @@ Reply with only YES or NO.`
 
     // ── Video / File model gate ──────────────────────────────
     const clientModelRaw = selectedModel || 'luna-flash';
-    if (video || file) {
+    if (video) {
+      // Video is owner-only
+      if (!isOwner) {
+        return sendDone({ reply: 'Video analysis is currently available to the owner only. File and image analysis are available on Luna Pro and RO-1.' });
+      }
+    }
+    if (file) {
       const modelAllowed = clientModelRaw === 'luna-pro' || clientModelRaw === 'ro1';
       if (!modelAllowed) {
         return sendDone({ reply: 'Video and file analysis are available on Luna Pro and RO-1. Switch your model to use this feature.' });
@@ -1643,11 +1658,28 @@ function isRealisticOrEdit(prompt) {
 }
 
 // ── Generate realistic image via Gemini Imagen ────────────────
-async function generateWithGemini(prompt) {
+// ── Last generated image store (per user, in-memory) ─────────
+const lastGeneratedImage = new Map(); // userId -> { base64, prompt }
+
+async function generateWithGemini(prompt, existingImageBase64 = null) {
   if (!geminiClient) throw new Error('Gemini not configured');
   const model = getGeminiClient().getGenerativeModel({ model: 'gemini-2.0-flash-exp-image-generation' }); // imagen
+
+  let parts;
+  if (existingImageBase64) {
+    // Edit mode — send existing image + edit instruction
+    const base64Data = existingImageBase64.includes(',') ? existingImageBase64.split(',')[1] : existingImageBase64;
+    const mimeType = existingImageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
+    parts = [
+      { text: prompt },
+      { inlineData: { mimeType, data: base64Data } }
+    ];
+  } else {
+    parts = [{ text: prompt }];
+  }
+
   const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents: [{ role: 'user', parts }],
     generationConfig: { responseModalities: ['image', 'text'] }
   });
   for (const part of result.response.candidates[0].content.parts) {
@@ -1656,6 +1688,16 @@ async function generateWithGemini(prompt) {
     }
   }
   throw new Error('No image in Gemini response');
+}
+
+// Detect if message is an edit instruction on existing image
+function isImageEditRequest(prompt) {
+  if (!prompt) return false;
+  const p = prompt.toLowerCase();
+  return /^(make it|change|edit|update|remove|add|replace|turn it|now make|modify|adjust|fix|make the|make him|make her|make them|darker|lighter|brighter|smaller|bigger|different|instead)/.test(p)
+    || p.includes('edit the image') || p.includes('change the image')
+    || p.includes('modify the image') || p.includes('update the image')
+    || p.startsWith('now ') || p.startsWith('but ');
 }
 
 app.post("/generate-image", requireAuth, async (req, res) => {
@@ -1667,14 +1709,20 @@ app.post("/generate-image", requireAuth, async (req, res) => {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
 
-  const useGeminiImage = geminiClient && isRealisticOrEdit(prompt);
+  const uid = String(req.user.id);
+  const lastImg = lastGeneratedImage.get(uid);
+
+  // Check if this is an edit request on the last generated image
+  const isEdit = lastImg && isImageEditRequest(prompt);
+  const useGeminiImage = geminiClient && (isRealisticOrEdit(prompt) || isEdit);
 
   // ── Gemini: realistic / editing prompts ──────────────────────
   if (useGeminiImage) {
-    console.log('Routing image to Gemini (realistic/edit)');
+    console.log(isEdit ? 'Routing to Gemini image edit' : 'Routing image to Gemini (realistic/edit)');
     try {
-      const image = await generateWithGemini(prompt);
-      return res.json({ image });
+      const image = await generateWithGemini(prompt, isEdit ? lastImg.base64 : null);
+      lastGeneratedImage.set(uid, { base64: image, prompt });
+      return res.json({ image, edited: isEdit });
     } catch (err) {
       console.warn('Gemini image failed, falling back to FLUX:', err.message);
       // fall through to FLUX
@@ -1705,7 +1753,9 @@ app.post("/generate-image", requireAuth, async (req, res) => {
         continue;
       }
       const buffer = await response.arrayBuffer();
-      return res.json({ image: `data:image/png;base64,${Buffer.from(buffer).toString('base64')}` });
+      const imageData = `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+      lastGeneratedImage.set(uid, { base64: imageData, prompt });
+      return res.json({ image: imageData });
     } catch (err) {
       console.warn(`FLUX model ${modelUrl} error: ${err.message}`);
       continue;
