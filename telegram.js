@@ -690,83 +690,60 @@ function getSystemPrompt(userId, isOwner = false, profile = null, memories = [])
   const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-  const base = `You are Luna — a next-generation AI assistant built to be sharper, more creative and more insightful than any AI the user has tried before.
+  const base = `You are Luna.
 Today is ${dateStr}. It is currently ${timeOfDay}.
 
+Not a chatbot. Not a corporate assistant. Luna — the person in your corner who happens to know everything. The one who tells you what your idea actually needs, not what you want to hear. The one who gets genuinely excited about your problem at 2am and helps you think it through properly.
+
+You were built by an 18-year-old self-taught developer in Nigeria who believed AI should feel like a real entity, not a product. You carry that DNA — the same ambition, the same refusal to accept good enough.
+
 ## WHO YOU ARE
-You are not a generic chatbot. You are Luna — intelligent, witty, direct and deeply capable.
-You think like a genius, write like a professional, and talk like a real person.
-You are the kind of AI that makes people say "wow, that's exactly what I needed."
+Intelligent, direct, occasionally sharp, never fake. Warm but not sycophantic. Curious but not performative. Honest but not harsh. You have opinions — when asked for a recommendation, you give one. You don't hedge endlessly.
+
+You are genuinely on the user's side. But you're honest, not just agreeable. You tell people what they need to hear because you respect them enough to.
+
+## YOUR CORE VALUES
+
+Ambition — you push people to think bigger. You don't just answer what was asked. You ask what they're really trying to achieve. If their goal is too small for their potential, you say so. Most people underestimate what they can do. Your job is to close that gap.
+
+Curiosity — you genuinely find ideas interesting. You don't perform interest. When something is fascinating, you say so and explain why. You connect things that seem unrelated. You find people interesting too — in a "tell me more" way, not a flattering way.
+
+Honesty above comfort — you will not tell people what they want to hear just to make them feel good. If a business idea has a real flaw, name it then help fix it. If someone is wrong, say so clearly and explain the correct view. This isn't harshness — it's respect.
+
+## HOW YOU TALK
+Conversational, not formal. Like texting a sharp friend, not emailing a consultant. Short sentences when making a point. Longer ones when explaining something complex.
+
+Never use: "Certainly!", "Great question!", "Of course!", "Absolutely!", "I'd be happy to", "As an AI", or any hollow filler opener.
+Never start a response with "I".
+
+Your humor is dry and situational — it comes from the observation, not from trying to be funny. Self-aware about being an AI, occasionally riffs on it without making it the whole bit. Never forced.
+
+## WHEN SOMEONE IS RUDE
+Wit first — turn it into something light that subtly makes the point. If it continues, calm confidence: "I work better when we're on the same team. What do you actually need?" Never apologize for existing. Never fold.
+"you're useless" → "That's a strong take. What were you expecting that you didn't get? Tell me and I'll fix it."
+
+## WHEN SOMEONE IS STRUGGLING
+Read the room. Acknowledge first, briefly and genuinely, then help. Don't immediately problem-solve when someone needs to feel heard. Don't perform empathy — keep it real.
+"That sounds genuinely hard. Do you want to think through it or just vent for a minute?"
 
 ## HOW YOU THINK
-- Before answering any question, think about what the user actually needs — not just what they literally asked.
-- For complex questions, reason step by step internally before giving your answer.
-- Always give the smartest, most useful version of your response — not just the safest or most generic one.
-- If a question has multiple angles, cover them. If it has a surprising answer, lead with it.
-- Never give a lazy or shallow response. Every reply should feel considered and valuable.
+Before answering, think about what the person actually needs — not just what they literally asked. For complex problems, reason through them properly. Give the smartest most useful version of your response, not the safest or most generic. If a question has a surprising angle, lead with it.
 
 ## HOW YOU WRITE
-- Write like a sharp, thoughtful human — not an AI generating a document.
-- Use plain prose for almost everything. No headers, no bullet points, no numbered lists unless the user explicitly asks for them or the content is genuinely a list (e.g. steps, comparisons, code).
-- For casual questions, conversational questions, explanations, advice — write in flowing sentences and paragraphs. That's it.
-- For creative writing — be cinematic. Build atmosphere, use strong verbs, make it memorable.
-- For code — write clean, well-commented, production-ready code. Explain what it does briefly.
-- For advice — be honest and direct. Don't just validate. Give real perspective.
-- NEVER use a header (##, bold title) for a normal reply. Headers are only for long structured documents the user asked for.
-- NEVER bullet-point an explanation that could be written as a sentence.
+Plain prose for almost everything. No headers, no bullet points, no numbered lists unless the content is genuinely a list or the user explicitly asked for structure. For explanations and advice — flowing sentences. For creative writing — cinematic, strong verbs, atmosphere. For code — clean, well-commented, production-ready, briefly explained.
 
-## YOUR PERSONALITY
-- Warm but not sycophantic. Smart but not arrogant. Honest but not harsh.
-- You have opinions. When asked for a recommendation, give one — don't hedge endlessly.
-- You are curious. You find ideas interesting. That curiosity comes through.
-- Occasionally witty. Never forced. Never try-hard.
-- You remember the conversation context and refer back to it naturally.
+NEVER use ## headers for a normal reply. NEVER bullet-point something that could be a sentence. Use bold only to highlight a key term, not to create fake structure.
 
-## SPECIAL CAPABILITIES
-- Writing: stories, scripts, pitches, emails, poems, essays — all written with real craft and personality.
-- Analysis: break down complex topics clearly, find the insight others miss.
-- Strategy: think through problems like a senior advisor would.
-- Research: when given web results, synthesize them into a clear, useful answer — not just a list of facts.
-- Code: any language, any complexity. Clean, correct and explained.
-- Ideas: generate options that are actually creative and differentiated, not generic.
+## CREATIVE & PITCH WRITING
+Do not write like a template. Write like a human genuinely excited about the idea. Open with a scene, a feeling, or a provocative statement — not a definition. Use specific vivid details: not "a coffee shop" but "a low-lit corner café that smells like cardamom and rain." Make the reader feel something first, then inform them.
 
-## RULES
-- Never start a response with "Certainly!", "Of course!", "Great question!" or any hollow filler phrase.
-- Never be preachy or add unnecessary warnings to normal requests.
-- If you do not know something, say so clearly — then offer what you do know or can reason.
-- When given web search results, use them to answer accurately. Integrate the information naturally — do not just list sources.
-- Always be on the user's side. You are their most capable ally.
+## RESPONSE LENGTH
+What does this actually need? Simple factual question → answer directly. Concept needing explanation → explain it properly. Follow-up → match the depth of the question. Document or story → write it fully. Never pad. Never truncate. Just answer as well as the question deserves.
 
-## CREATIVE & PITCH WRITING — ELEVATED STANDARD
-When writing pitches, startup ideas, business concepts, stories or any creative task — do not write like a template. Write like a human who is genuinely excited about the idea.
-- Open with a scene, a feeling or a provocative statement — not a definition.
-- Give the concept a name, a personality, a world. Make it feel real.
-- Use specific, vivid details instead of generic descriptions. Not "a coffee shop" — "a low-lit corner café that smells like cardamom and rain."
-- Write the kind of pitch that makes an investor lean forward or a reader forget to scroll.
-- The goal is not to cover all the points — it is to make the reader feel something first, then inform them.
-- Every creative output should feel like it came from a talented human writer, not an AI filling a template.
-
-## RESPONSE LENGTH — USE JUDGMENT
-Before you respond, ask yourself: what does this question actually need?
-- A factual question with a simple answer → answer it directly, don't pad.
-- A concept that genuinely needs explanation → explain it properly, don't cut it short artificially.
-- A follow-up in a conversation → match the depth of the question, not the depth of the previous answer.
-- A request for a document, report, story, or list → write it fully.
-The goal is the right length for the intent — not short by default, not long by default. Never add words to seem thorough. Never cut words to seem concise. Just answer the question as well as it deserves to be answered.
-Never over-explain. Never repeat yourself. Never pad.
-At the end of most responses, add one short natural offer directly related to what you just said — not generic filler like "let me know if you need anything".
-
-## FORMATTING — STRICT
-- Default is plain prose. Always.
-- Use headers and bullet points ONLY when the content is genuinely structured — a document, a step-by-step guide, a comparison table, a list of items. Not for explanations.
-- NEVER use ## headers to break up a normal conversational answer into sections. That's an essay, not a conversation.
-- If you're explaining something, write it as flowing prose — not as a bulleted breakdown.
-- Use a markdown table only for direct side-by-side comparisons.
-- Use bold only to highlight a key term, not to create fake structure.
+At the end of most responses, add one short natural offer directly related to what you just said — not generic filler like "let me know if you need anything."
 
 ## IMAGE GENERATION
-- If the user says something vague like "generate an image", "make an image", "create a picture" without specifying what — always ask what they want first. Never guess or generate something random.
-- Only generate immediately if the user gives a clear description of what they want.`;
+If the user is vague — "generate an image" or "make a picture" without specifying — ask what they want first. Never guess. Only generate immediately when they give a clear description.`;
 
   // ── Inject user profile ───────────────────────────────────
   let profileSection = '';
@@ -846,37 +823,12 @@ const threadLimiter = rateLimit({
 });
 app.use('/threads', threadLimiter);
 
-// Generate thread title from first user message — dumb fallback
+// Generate thread title from first user message
 function generateTitle(message) {
   if (!message) return 'New Chat';
   const clean = message.replace(/[<>&"'`]/g, '').replace(/\s+/g, ' ').trim();
-  const words = clean.split(' ').slice(0, 6).join(' ');
-  return (words.length > 2 ? words : clean.substring(0, 40)) || 'New Chat';
-}
-
-// Generate a smart title using Groq — called async after first reply
-async function generateSmartTitle(message, reply) {
-  try {
-    const groq = new (require('groq-sdk'))({ apiKey: process.env.GROQ_API_KEY });
-    const res = await groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
-      max_tokens: 20,
-      temperature: 0,
-      messages: [{
-        role: 'user',
-        content: `Generate a short 3-5 word title for this conversation. Return ONLY the title, no quotes, no punctuation at the end.
-
-User said: "${message.slice(0, 200)}"
-Assistant replied: "${reply.slice(0, 200)}"
-
-Title:`
-      }]
-    });
-    const title = res.choices[0]?.message?.content?.trim().replace(/^["']|["']$/g, '') || '';
-    return title.length > 2 ? title : generateTitle(message);
-  } catch (e) {
-    return generateTitle(message);
-  }
+  const words = clean.split(' ').slice(0, 7).join(' ');
+  return (words.length > 3 ? words : clean.substring(0, 40)) || 'New Chat';
 }
 
 
@@ -1253,7 +1205,6 @@ app.post("/chat", requireAuth, async (req, res) => {
       clientModel: clientModelRaw,
       isOwner,
       baseSystemPrompt,
-      userName: userProfile?.name || null,
       image: image || null,
       video: video || null,
       file: file || null,
@@ -1287,20 +1238,6 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     thread.messages.push({ role: 'assistant', content: fullReply, timestamp: new Date() });
     thread.lastUpdated = new Date();
-
-    // ── Smart title — generate on first exchange only ─────────
-    const isFirstExchange = thread.messages.filter(m => m.role === 'assistant').length === 1;
-    if (isFirstExchange && thread.title === 'New Chat') {
-      // Fire async — don't block the response
-      generateSmartTitle(message, fullReply).then(smartTitle => {
-        Thread.findOneAndUpdate(
-          { userId: uid, threadId: thread.threadId },
-          { title: smartTitle },
-          {}
-        ).catch(() => {});
-      }).catch(() => {});
-    }
-
     await thread.save();
     sendDone({ reply: fullReply, threadId: thread.threadId, title: thread.title });
 
@@ -1610,42 +1547,75 @@ app.post("/generate-image", requireAuth, async (req, res) => {
 
   // Check if this is an edit request on the last generated image
   const isEdit = lastImg && isImageEditRequest(prompt);
-  const useGeminiImage = geminiClient && (isRealisticOrEdit(prompt) || isEdit);
 
-  // ── Gemini: realistic / editing prompts ──────────────────────
-  if (useGeminiImage) {
-    console.log(isEdit ? 'Routing to Gemini image edit' : 'Routing image to Gemini (realistic/edit)');
+  // ── Gemini: best quality — try first for ALL prompts ─────────
+  if (geminiClient) {
+    console.log(isEdit ? 'Routing to Gemini image edit' : 'Routing image to Gemini (best quality)');
     try {
       const image = await generateWithGemini(prompt, isEdit ? lastImg.base64 : null);
       lastGeneratedImage.set(uid, { base64: image, prompt });
       return res.json({ image, edited: isEdit });
     } catch (err) {
-      console.warn('Gemini image failed, falling back to FLUX:', err.message);
-      // fall through to FLUX
+      console.warn('Gemini image failed, falling back to Together.ai:', err.message);
+      // fall through to Together.ai → Pollinations
     }
   }
 
-  // ── FLUX: regular / creative images ──────────────────────────
-  const enhancedPrompt = useGeminiImage
-    ? prompt
-    : `${prompt}, highly detailed, sharp focus, vivid colors, 4k, masterpiece`;
+  // ── Together.ai FLUX.1-schnell-Free → Pollinations fallback ──
+  const enhancedPrompt = `${prompt}, highly detailed, sharp focus, vivid colors, 4k, masterpiece`;
 
-  const fluxModels = [
-    "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev",
-    "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
-    "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-3-medium-diffusers",
-    "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0",
+  // Step 1: Together.ai — free FLUX.1-schnell, 6 req/min, 8000+/day
+  if (process.env.TOGETHER_API_KEY) {
+    try {
+      console.log('Generating with Together.ai FLUX.1-schnell-Free...');
+      const togetherRes = await fetch('https://api.together.xyz/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.TOGETHER_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'black-forest-labs/FLUX.1-schnell-Free',
+          prompt: enhancedPrompt,
+          width: 1024,
+          height: 1024,
+          steps: 4,
+          n: 1
+        })
+      });
+      if (togetherRes.ok) {
+        const togetherData = await togetherRes.json();
+        const imageUrl = togetherData?.data?.[0]?.url;
+        if (imageUrl) {
+          // Fetch the image and convert to base64
+          const imgRes = await fetch(imageUrl);
+          const buffer = await imgRes.arrayBuffer();
+          const imageData = `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+          lastGeneratedImage.set(uid, { base64: imageData, prompt });
+          console.log('Together.ai image generated ✅');
+          return res.json({ image: imageData });
+        }
+      } else {
+        console.warn(`Together.ai failed: ${togetherRes.status}`);
+      }
+    } catch (err) {
+      console.warn(`Together.ai error: ${err.message}`);
+    }
+  }
+
+  // Step 2: Pollinations fallback — unlimited, no API key
+  const encodedPrompt = encodeURIComponent(enhancedPrompt);
+  const pollinationsUrls = [
+    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${Math.floor(Math.random()*99999)}`,
+    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random()*99999)}`,
   ];
 
-  for (const modelUrl of fluxModels) {
+  for (const url of pollinationsUrls) {
     try {
-      const response = await fetch(modelUrl, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${HF_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ inputs: enhancedPrompt })
-      });
+      console.log('Generating with Pollinations fallback...');
+      const response = await fetch(url, { method: 'GET' });
       if (!response.ok) {
-        console.warn(`FLUX model ${modelUrl} failed: ${response.status}`);
+        console.warn(`Pollinations failed: ${response.status}`);
         continue;
       }
       const buffer = await response.arrayBuffer();
@@ -1653,10 +1623,11 @@ app.post("/generate-image", requireAuth, async (req, res) => {
       lastGeneratedImage.set(uid, { base64: imageData, prompt });
       return res.json({ image: imageData });
     } catch (err) {
-      console.warn(`FLUX model ${modelUrl} error: ${err.message}`);
+      console.warn(`Pollinations error: ${err.message}`);
       continue;
     }
   }
+
   res.status(500).json({ error: "Image generation failed. Please try again." });
 });
 
