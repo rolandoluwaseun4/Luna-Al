@@ -6,7 +6,7 @@
  * Handles ALL image work: generation, editing, and vision understanding.
  *
  * ── GENERATION STACK ────────────────────────────────────────────────────
- *   1. gemini-2.5-flash-image  (primary — 500 req/day × 3 keys = 1,500/day)
+ *   1. gemini-2.0-flash-exp    (primary — 500 req/day × 3 keys = 1,500/day)
  *      └─ Key rotation: if one key rate-limits, switch to next
  *   2. Pollinations FLUX       (fallback — unlimited, lower quality)
  *
@@ -73,7 +73,7 @@ function isImageEditRequest(prompt) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-//  GENERATION — PROVIDER 1: Gemini 2.5 Flash Image
+//  GENERATION — PROVIDER 1: Gemini 2.0 Flash Exp (image gen)
 //  Best quality: edits, text-in-image, multi-image fusion,
 //  character consistency. 500 req/day per key, 3 keys = ~1,500/day
 // ════════════════════════════════════════════════════════════════════════
@@ -84,8 +84,9 @@ async function generateWithGemini(prompt, existingImageBase64 = null) {
   while (keysAttempted < geminiKeys.length) {
     try {
       const client = getGeminiClient();
-      // gemini-2.5-flash-image is the stable successor to deprecated gemini-2.0-flash-exp
-      const model = client.getGenerativeModel({ model: 'gemini-2.5-flash-image' });
+      // gemini-2.0-flash-exp — confirmed working on free API for image gen
+      // migrate to gemini-2.5-flash-image when it becomes available on free tier
+      const model = client.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 
       let parts;
       if (existingImageBase64) {
@@ -124,39 +125,6 @@ async function generateWithGemini(prompt, existingImageBase64 = null) {
         continue;
       }
 
-      // If new model not available yet, try old one
-      if (err.message?.includes('not found') || err.message?.includes('404')) {
-        console.warn('[Image] gemini-2.5-flash-image not found, trying gemini-2.0-flash-exp...');
-        try {
-          const client = getGeminiClient();
-          const fallbackModel = client.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-          const parts = existingImageBase64
-            ? [
-                { text: prompt },
-                {
-                  inlineData: {
-                    mimeType: existingImageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg',
-                    data: existingImageBase64.includes(',') ? existingImageBase64.split(',')[1] : existingImageBase64
-                  }
-                }
-              ]
-            : [{ text: prompt }];
-
-          const result = await fallbackModel.generateContent({
-            contents: [{ role: 'user', parts }],
-            generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
-          });
-          for (const part of result.response.candidates[0].content.parts) {
-            if (part.inlineData) {
-              console.log('[Image] Gemini 2.0 Flash fallback ✅');
-              return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-            }
-          }
-        } catch (e2) {
-          throw e2;
-        }
-      }
-
       throw err;
     }
   }
@@ -173,8 +141,8 @@ async function generateWithPollinations(prompt) {
   const seed = Math.floor(Math.random() * 99999);
 
   const urls = [
-    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`,
-    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${seed}`,
+    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}&enhance=false`,
+    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=768&nologo=true&seed=${seed}`,
   ];
 
   for (const url of urls) {
@@ -182,7 +150,7 @@ async function generateWithPollinations(prompt) {
       try {
         console.log(`[Image] Pollinations attempt ${attempt}...`);
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000);
+        const timeout = setTimeout(() => controller.abort(), 60000); // 60s — Pollinations is slow
         const response = await fetch(url, { method: 'GET', signal: controller.signal });
         clearTimeout(timeout);
 
