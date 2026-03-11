@@ -3,28 +3,33 @@
 /**
  * image.js — Luna's Image Intelligence Module
  *
- * Handles ALL image work: generation, editing, and vision understanding.
+ * ── GENERATION STACK ─────────────────────────────────────────────────────
+ *   1. Gemini 2.5 Flash Image (gemini-2.5-flash-image)
+ *      - Called via REST API directly (not SDK — old SDK doesn't support it)
+ *      - Free: 500 req/day PER Google Cloud project
+ *      - 3 keys from 3 different accounts = up to 1,500/day
+ *      - Handles: generation, editing, character consistency, text-in-image
  *
- * ── GENERATION STACK ────────────────────────────────────────────────────
- *   1. gemini-3.1-flash-image-preview  (Nano Banana 2, free API, ~500/day × 3 keys)
- *      └─ Key rotation: if one key rate-limits, switch to next
- *   2. Pollinations FLUX       (fallback — unlimited, lower quality)
+ *   2. Pollinations FLUX
+ *      - No API key, unlimited
+ *      - What originally worked before Gemini attempts
+ *      - Lower quality, last resort
  *
- * ── VISION STACK (reading/understanding images) ─────────────────────────
- *   1. Gemini Flash            (primary — in luna.js executeGemini)
- *   2. qwen3-vl-30b-thinking   (OpenRouter fallback — OCR, screenshots, docs)
- *   3. llama-3.2-11b-vision    (OpenRouter light fallback)
+ * ── VISION STACK (reading/understanding images in chat) ──────────────────
+ *   1. Gemini Flash via executeGemini() in luna.js (primary)
+ *   2. qwen3-vl-30b-thinking via OpenRouter (fallback)
+ *   3. llama-3.2-11b-vision via OpenRouter (light fallback)
  *
- * ── DAILY LIMITS (free, no top-up) ──────────────────────────────────────
- *   Generation:  ~1,500/day (Gemini) + unlimited (Pollinations)
- *   Vision:      ~1,500/day (Gemini) + ~50/day OpenRouter (shared with chat)
- * ────────────────────────────────────────────────────────────────────────
+ * ── DAILY LIMITS ─────────────────────────────────────────────────────────
+ *   Gemini gen:  500/day × 3 keys = ~1,500 high quality images
+ *   Pollinations: unlimited (lower quality)
+ * ─────────────────────────────────────────────────────────────────────────
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
 
-// ── Gemini key pool ──────────────────────────────────────────────────────
+// ── Gemini key pool ───────────────────────────────────────────────────────
+// Each key should be from a DIFFERENT Google Cloud project for separate quotas
 const geminiKeys = [
   process.env.GEMINI_API_KEY,
   process.env.GEMINI_API_KEY_2,
@@ -33,8 +38,8 @@ const geminiKeys = [
 
 let geminiKeyIndex = 0;
 
-function getGeminiClient() {
-  return new GoogleGenerativeAI(geminiKeys[geminiKeyIndex]);
+function currentGeminiKey() {
+  return geminiKeys[geminiKeyIndex];
 }
 
 function rotateGeminiKey() {
@@ -44,7 +49,7 @@ function rotateGeminiKey() {
   return true;
 }
 
-// ── OpenRouter client (for vision fallback only) ─────────────────────────
+// ── OpenRouter client (vision fallback only) ──────────────────────────────
 const openrouter = process.env.OPENROUTER_API_KEY
   ? new OpenAI({
       baseURL: 'https://openrouter.ai/api/v1',
@@ -56,12 +61,12 @@ const openrouter = process.env.OPENROUTER_API_KEY
     })
   : null;
 
-// ── Last generated image store (per user, in-memory) ────────────────────
+// ── Last generated image store (per user, in-memory) ─────────────────────
 const lastGeneratedImage = new Map(); // userId -> { base64, prompt }
 
-// ════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 //  DETECTION HELPERS
-// ════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 
 function isImageEditRequest(prompt) {
   if (!prompt) return false;
@@ -72,77 +77,105 @@ function isImageEditRequest(prompt) {
     || p.startsWith('now ') || p.startsWith('but ');
 }
 
-// ════════════════════════════════════════════════════════════════════════
-//  GENERATION — PROVIDER 1: Gemini 3.1 Flash Image Preview (Nano Banana 2)
-//  Best quality: edits, text-in-image, multi-image fusion,
-//  character consistency. 500 req/day per key, 3 keys = ~1,500/day
-// ════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
+//  GENERATION — PROVIDER 1: Gemini 2.5 Flash Image
+//
+//  Uses REST API directly (not @google/generative-ai SDK)
+//  because the old SDK doesn't support gemini-2.5-flash-image.
+//
+//  Model: gemini-2.5-flash-image (stable, free, 500 req/day per project)
+//  Endpoint: v1beta/models/gemini-2.5-flash-image:generateContent
+// ═════════════════════════════════════════════════════════════════════════
 async function generateWithGemini(prompt, existingImageBase64 = null) {
   if (geminiKeys.length === 0) throw new Error('No Gemini keys configured');
 
   let keysAttempted = 0;
   while (keysAttempted < geminiKeys.length) {
     try {
-      const client = getGeminiClient();
-      // gemini-3.1-flash-image-preview — Nano Banana 2, the current free API image gen model
-      // gemini-2.0-flash-exp is 404 dead, gemini-2.5-flash-image is Vertex AI (paid) only
-      const model = client.getGenerativeModel({ model: 'gemini-3.1-flash-image-preview' });
+      const apiKey = currentGeminiKey();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent`;
 
-      let parts;
+      // Build parts — text + optional existing image for edit mode
+      const parts = [{ text: prompt }];
       if (existingImageBase64) {
         const base64Data = existingImageBase64.includes(',')
           ? existingImageBase64.split(',')[1]
           : existingImageBase64;
         const mimeType = existingImageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
-        parts = [
-          { text: prompt },
-          { inlineData: { mimeType, data: base64Data } }
-        ];
-      } else {
-        parts = [{ text: prompt }];
+        parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
       }
 
-      const result = await model.generateContent({
+      const body = {
         contents: [{ role: 'user', parts }],
         generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
-      });
+      };
 
-      for (const part of result.response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          console.log(`[Image] Gemini 3.1 Flash Image ✅ (key ${geminiKeyIndex + 1})`);
-          return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45000); // 45s timeout
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (res.status === 429 || res.status === 503) {
+        // Rate limited — try next key
+        const errText = await res.text().catch(() => '');
+        console.warn(`[Image] Gemini key ${geminiKeyIndex + 1} rate limited (${res.status})`);
+        if (rotateGeminiKey()) { keysAttempted++; continue; }
+        throw new Error(`Gemini rate limited: ${errText.slice(0, 100)}`);
+      }
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Gemini ${res.status}: ${errText.slice(0, 200)}`);
+      }
+
+      const data = await res.json();
+      const parts_out = data?.candidates?.[0]?.content?.parts || [];
+
+      for (const part of parts_out) {
+        if (part.inlineData || part.inline_data) {
+          const inlineData = part.inlineData || part.inline_data;
+          console.log(`[Image] Gemini 2.5 Flash Image ✅ (key ${geminiKeyIndex + 1})`);
+          return `data:${inlineData.mimeType || inlineData.mime_type};base64,${inlineData.data}`;
         }
       }
-      throw new Error('No image in Gemini response');
+
+      throw new Error('No image in Gemini response — model may have returned text only');
 
     } catch (err) {
-      const isRateLimit = err.message?.includes('429')
-        || err.message?.includes('quota')
-        || err.message?.includes('RESOURCE_EXHAUSTED');
-
-      if (isRateLimit && rotateGeminiKey()) {
-        keysAttempted++;
-        continue;
+      if (err.name === 'AbortError') {
+        console.warn(`[Image] Gemini key ${geminiKeyIndex + 1} timed out`);
+        if (rotateGeminiKey()) { keysAttempted++; continue; }
       }
-
       throw err;
     }
   }
   throw new Error('All Gemini keys exhausted');
 }
 
-// ════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 //  GENERATION — PROVIDER 2: Pollinations FLUX
-//  No API key. Unlimited. Lower quality. Last resort only.
-// ════════════════════════════════════════════════════════════════════════
+//
+//  No API key required. Unlimited requests. Lower quality.
+//  This is what originally worked — keeping as a solid fallback.
+// ═════════════════════════════════════════════════════════════════════════
 async function generateWithPollinations(prompt) {
-  const enhancedPrompt = `${prompt}, highly detailed, sharp focus, vivid colors, 4k, masterpiece`;
+  const enhancedPrompt = `${prompt}, highly detailed, sharp focus, vivid colors, 4k`;
   const encodedPrompt = encodeURIComponent(enhancedPrompt);
   const seed = Math.floor(Math.random() * 99999);
 
+  // Try flux model first, then default
   const urls = [
-    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}&enhance=false`,
-    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=768&nologo=true&seed=${seed}`,
+    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`,
+    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${seed}`,
   ];
 
   for (const url of urls) {
@@ -156,31 +189,32 @@ async function generateWithPollinations(prompt) {
 
         if (!response.ok) {
           console.warn(`[Image] Pollinations ${response.status}`);
-          break;
+          break; // Try next URL
         }
 
         const buffer = await response.arrayBuffer();
         console.log('[Image] Pollinations ✅');
         return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
       } catch (err) {
-        console.warn(`[Image] Pollinations error (${attempt}): ${err.message}`);
-        if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
+        console.warn(`[Image] Pollinations error (attempt ${attempt}): ${err.message}`);
+        if (attempt < 2) await new Promise(r => setTimeout(r, 3000)); // 3s pause before retry
       }
     }
   }
+
   throw new Error('Pollinations failed');
 }
 
-// ════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 //  MAIN GENERATE FUNCTION
 //  Gemini (key rotation) → Pollinations
-//  Returns { image, edited, provider }
-// ════════════════════════════════════════════════════════════════════════
+//  Returns { image: base64String, edited: boolean, provider: string }
+// ═════════════════════════════════════════════════════════════════════════
 async function generateImage(prompt, uid) {
   const lastImg = lastGeneratedImage.get(uid);
   const isEdit = !!(lastImg && isImageEditRequest(prompt));
 
-  // Step 1: Gemini — best quality, key rotation built in
+  // Step 1: Gemini 2.5 Flash Image — best quality, key rotation built in
   try {
     console.log(isEdit ? '[Image] Gemini → edit mode' : '[Image] Gemini → generate');
     const image = await generateWithGemini(prompt, isEdit ? lastImg.base64 : null);
@@ -190,8 +224,9 @@ async function generateImage(prompt, uid) {
     console.warn('[Image] Gemini failed:', err.message);
   }
 
-  // Step 2: Pollinations — unlimited fallback
+  // Step 2: Pollinations — unlimited, no key, what originally worked
   try {
+    console.log('[Image] Falling back to Pollinations...');
     const image = await generateWithPollinations(prompt);
     lastGeneratedImage.set(uid, { base64: image, prompt });
     return { image, edited: false, provider: 'pollinations' };
@@ -202,14 +237,14 @@ async function generateImage(prompt, uid) {
   throw new Error('All image providers failed');
 }
 
-// ════════════════════════════════════════════════════════════════════════
-//  VISION FALLBACK — for when Gemini Vision fails in luna.js
+// ═════════════════════════════════════════════════════════════════════════
+//  VISION FALLBACK — when Gemini Vision fails in luna.js
 //
+//  Only called when the primary Gemini vision (executeGemini) fails.
 //  Models tried in order:
-//  1. qwen3-vl-30b-a3b-thinking:free — best free vision, has thinking,
-//     excellent at OCR, screenshots, logs, charts, documents
+//  1. qwen3-vl-30b-a3b-thinking:free — best free vision, OCR, screenshots, docs
 //  2. llama-3.2-11b-vision-instruct:free — lighter, faster fallback
-// ════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 const VISION_FALLBACK_MODELS = [
   'qwen/qwen3-vl-30b-a3b-thinking:free',
   'meta-llama/llama-3.2-11b-vision-instruct:free',
@@ -222,7 +257,7 @@ async function analyzeImageWithOpenRouter(systemPrompt, history, imageBase64) {
   const mimeType = imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
   const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
-  // Build message array — inject image into the last user message
+  // Build messages — inject image into the last user message
   const safeHistory = history.slice(-10);
   const messages = [{ role: 'system', content: systemPrompt }];
 
