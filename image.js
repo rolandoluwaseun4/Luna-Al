@@ -6,7 +6,7 @@
  * Handles ALL image work: generation, editing, and vision understanding.
  *
  * ── GENERATION STACK ────────────────────────────────────────────────────
- *   1. gemini-2.0-flash-exp    (primary — 500 req/day × 3 keys = 1,500/day)
+ *   1. gemini-3.1-flash-image-preview  (Nano Banana 2, free API, ~500/day × 3 keys)
  *      └─ Key rotation: if one key rate-limits, switch to next
  *   2. Pollinations FLUX       (fallback — unlimited, lower quality)
  *
@@ -73,7 +73,7 @@ function isImageEditRequest(prompt) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-//  GENERATION — PROVIDER 1: Gemini 2.0 Flash Exp (image gen)
+//  GENERATION — PROVIDER 1: Gemini 3.1 Flash Image Preview (Nano Banana 2)
 //  Best quality: edits, text-in-image, multi-image fusion,
 //  character consistency. 500 req/day per key, 3 keys = ~1,500/day
 // ════════════════════════════════════════════════════════════════════════
@@ -84,9 +84,9 @@ async function generateWithGemini(prompt, existingImageBase64 = null) {
   while (keysAttempted < geminiKeys.length) {
     try {
       const client = getGeminiClient();
-      // gemini-2.0-flash-exp — confirmed working on free API for image gen
-      // migrate to gemini-2.5-flash-image when it becomes available on free tier
-      const model = client.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+      // gemini-3.1-flash-image-preview — Nano Banana 2, the current free API image gen model
+      // gemini-2.0-flash-exp is 404 dead, gemini-2.5-flash-image is Vertex AI (paid) only
+      const model = client.getGenerativeModel({ model: 'gemini-3.1-flash-image-preview' });
 
       let parts;
       if (existingImageBase64) {
@@ -109,7 +109,7 @@ async function generateWithGemini(prompt, existingImageBase64 = null) {
 
       for (const part of result.response.candidates[0].content.parts) {
         if (part.inlineData) {
-          console.log(`[Image] Gemini 2.5 Flash Image ✅ (key ${geminiKeyIndex + 1})`);
+          console.log(`[Image] Gemini 3.1 Flash Image ✅ (key ${geminiKeyIndex + 1})`);
           return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
         }
       }
