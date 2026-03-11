@@ -679,6 +679,14 @@ async function rewriteForStyle(text, plan) {
   if (text.length < 120) return text;
   if ((text.match(/```/g) || []).length >= 2) return text; // has code — skip
 
+  // Skip rewrite for personal/identity questions — Luna speaks for herself
+  const personalTopics = ['feel', 'conscious', 'alive', 'emotion', 'sentient', 'think about yourself',
+    'who are you', 'what are you', 'do you have', 'are you real', 'your opinion', 'what do you think',
+    'do you like', 'do you enjoy', 'do you believe', 'your experience', 'your feelings'];
+  const topicLower = (plan?.topic || '').toLowerCase();
+  const isPersonal = personalTopics.some(t => topicLower.includes(t));
+  if (isPersonal) return text;
+
   try {
     const res = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
