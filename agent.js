@@ -42,8 +42,8 @@ const STEP_TIMEOUT = 30000; // 30s per tool call
 
 // ── Model config ─────────────────────────────────────────────────────────
 const AGENT_MODELS = {
-  owner: 'deepseek-r1-distill-llama-70b', // RO-1
-  user:  'deepseek-r1-distill-llama-70b', // Pro (same, different framing)
+  owner: 'qwen/qwen3-32b',           // best available on Groq for reasoning
+  user:  'llama-3.3-70b-versatile',  // reliable, no daily cap
 };
 
 // ═════════════════════════════════════════════════════════════════════════
