@@ -78,6 +78,7 @@ const Memory = mongoose.model('Memory', memorySchema);
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const luna = require('./luna');
+const { runAgent } = require('./agent');
 const {
   getSystemPrompt,
   generateTitle, generateSmartTitle,
@@ -919,26 +920,26 @@ app.post("/chat", requireAuth, async (req, res) => {
   }));
 
   try {
-    // ── Manus Agent execution ─────────────────────────────────
-    // Only runs when the frontend explicitly sends chatMode === 'agent' — never auto-triggered by keywords
-    if (!image && message && chatMode === 'agent') {
+    // ── Agent mode — Luna handles it directly ────────────────
+    // chatMode === 'agent' forces Luna's agent system (replaces Manus)
+    if (!image && message && (chatMode === 'agent' || chatMode === 'manus')) {
+      console.log('[Luna] Agent mode — running task:', message.substring(0, 80));
       try {
-        console.log('🤖 Manus:', message.substring(0, 80));
-        const result = await runManusTask(message);
-        const reply = `🤖 **Agent Result**\n\n${result}`;
-
-        // Save to thread
-        let thread = await Thread.findOne({ threadId: tid });
-        if (!thread) thread = new Thread({ userId: uid, threadId: tid, title: generateTitle(message), messages: [] });
-        thread.messages.push(
-          { role: 'user', content: message, timestamp: new Date() },
-          { role: 'assistant', content: reply, timestamp: new Date() }
+        const agentResult = await runAgent(
+          message,
+          safeHistory,
+          isOwner,
+          (step) => sendChunk({ agentStep: step })
         );
+        const reply = agentResult.reply || '';
+        thread.messages.push({ role: 'assistant', content: reply, timestamp: new Date() });
         if (thread.messages.length > 50) thread.messages = thread.messages.slice(-50);
         await thread.save();
-        return sendDone({ reply, threadId: tid, manusUsed: true });
+        const donePayload = { reply, threadId: tid, title: thread.title };
+        if (agentResult.document) donePayload.document = agentResult.document;
+        return sendDone(donePayload);
       } catch (err) {
-        console.error('Manus failed, falling back to Luna:', err.message);
+        console.error('[Luna] Agent mode failed:', err.message);
         // Fall through to normal Luna
       }
     }
@@ -1017,14 +1018,16 @@ app.post("/chat", requireAuth, async (req, res) => {
       file: file || null,
       webSearchFn,
       onChunk: (data) => {
-        // luna.js sends either { delta: '...' } for reply text
-        // or { think: '...' } for DeepSeek R1 thinking content
         if (typeof data === 'string') {
           sendChunk({ delta: data });
-        } else if (data && data.think) {
+        } else if (data?.think) {
           sendChunk({ think: data.think });
-        } else if (data && data.delta) {
+        } else if (data?.delta) {
           sendChunk({ delta: data.delta });
+        } else if (data?.type === 'agent_start') {
+          sendChunk({ agentStart: true, text: data.text });
+        } else if (data?.type === 'agent_step') {
+          sendChunk({ agentStep: data.step });
         }
       }
     });
@@ -1046,7 +1049,13 @@ app.post("/chat", requireAuth, async (req, res) => {
     thread.messages.push({ role: 'assistant', content: fullReply, timestamp: new Date() });
     thread.lastUpdated = new Date();
     await thread.save();
-    sendDone({ reply: fullReply, threadId: thread.threadId, title: thread.title });
+
+    // If agent created a document, include it in the done payload
+    const donePayload = { reply: fullReply, threadId: thread.threadId, title: thread.title };
+    if (lunaResult.document) {
+      donePayload.document = lunaResult.document; // { filename, base64, mimeType, size }
+    }
+    sendDone(donePayload);
 
     User.findOneAndUpdate(
       { userId: uid, platform: 'web' },

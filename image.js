@@ -168,37 +168,41 @@ async function generateWithGemini(prompt, existingImageBase64 = null) {
 //  This is what originally worked — keeping as a solid fallback.
 // ═════════════════════════════════════════════════════════════════════════
 async function generateWithPollinations(prompt) {
-  const enhancedPrompt = `${prompt}, highly detailed, sharp focus, vivid colors, 4k`;
-  const encodedPrompt = encodeURIComponent(enhancedPrompt);
+  // Pollinations anonymous tier: 1 request every 15s — respect this or get 500s
+  const encodedPrompt = encodeURIComponent(prompt);
   const seed = Math.floor(Math.random() * 99999);
 
-  // Try flux model first, then default
+  // Two URL variants to try — flux model first, default as backup
   const urls = [
     `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`,
     `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${seed}`,
   ];
 
-  for (const url of urls) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        console.log(`[Image] Pollinations attempt ${attempt}...`);
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 60000); // 60s — Pollinations is slow
-        const response = await fetch(url, { method: 'GET', signal: controller.signal });
-        clearTimeout(timeout);
-
-        if (!response.ok) {
-          console.warn(`[Image] Pollinations ${response.status}`);
-          break; // Try next URL
-        }
-
-        const buffer = await response.arrayBuffer();
-        console.log('[Image] Pollinations ✅');
-        return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
-      } catch (err) {
-        console.warn(`[Image] Pollinations error (attempt ${attempt}): ${err.message}`);
-        if (attempt < 2) await new Promise(r => setTimeout(r, 3000)); // 3s pause before retry
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    try {
+      if (i > 0) {
+        // Wait 16s before second URL attempt — respect 1 req/15s anonymous limit
+        console.log('[Image] Pollinations waiting 16s (rate limit)...');
+        await new Promise(r => setTimeout(r, 16000));
       }
+
+      console.log(`[Image] Pollinations attempt ${i + 1}...`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000); // 90s — their servers are slow
+      const response = await fetch(url, { method: 'GET', signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        console.warn(`[Image] Pollinations ${response.status} — ${i < urls.length - 1 ? 'trying next' : 'giving up'}`);
+        continue;
+      }
+
+      const buffer = await response.arrayBuffer();
+      console.log('[Image] Pollinations ✅');
+      return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+    } catch (err) {
+      console.warn(`[Image] Pollinations error (attempt ${i + 1}): ${err.message}`);
     }
   }
 

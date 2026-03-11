@@ -17,6 +17,7 @@ const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
 const { analyzeImageWithOpenRouter } = require('./image');
+const { runAgent } = require('./agent');
 
 
 
@@ -168,6 +169,7 @@ GUIDANCE:
 - full_document: report, essay, story, or guide the user explicitly asked for
 - needs_web_search: only true for current events, prices, news, real-time data
 - For image_edit: only if user is clearly modifying a previous image in context
+- For agent_task: multi-step tasks that need research + synthesis, running code, creating files, or doing several things in sequence. Examples: "research X and make a report", "find Y and compare them", "write and run a script that does Z", "create a document about X", "look up X then summarize it into a file"
 - NEVER choose full_document or long unless the user explicitly asked for it
 - ui_build: use this when user asks to build a website, landing page, dashboard, UI, app interface, or any visual HTML/CSS output. Always set response_format: code and response_length: full_document for ui_build.
 - code: use for scripts, functions, algorithms, backend code, non-UI programming tasks`;
@@ -632,7 +634,46 @@ async function respond(ctx) {
     return { reply: "What would you like me to draw? Give me a description and I'll generate it." };
   }
 
-  // ── Step 3: Web search if needed ──────────────────────────────
+  // ── Step 3: Handle agent tasks ───────────────────────────────
+  // Agent tasks bypass the normal single-shot flow entirely.
+  // Luna loops with tools until the task is complete.
+  if (plan.intent === 'agent_task') {
+    console.log('[Luna] Agent task detected — handing off to agent runner');
+    if (onChunk) onChunk({ type: 'agent_start', text: 'Starting agent task...' });
+
+    try {
+      const agentResult = await runAgent(
+        message,
+        history,
+        isOwner,
+        (step) => {
+          // Forward agent steps to the client via SSE
+          if (onChunk) onChunk({ type: 'agent_step', step });
+        }
+      );
+
+      // Stream the final reply word by word
+      const finalReply = agentResult.reply || '';
+      if (finalReply && onChunk) {
+        for (const word of finalReply.split(' ')) {
+          onChunk({ delta: word + ' ' });
+          await new Promise(r => setTimeout(r, 15));
+        }
+      }
+
+      return {
+        reply: finalReply,
+        document: agentResult.document || null,
+      };
+    } catch (err) {
+      console.error('[Luna] Agent failed:', err.message);
+      const errReply = "I ran into a problem completing that task. Try breaking it into smaller steps.";
+      if (onChunk) for (const w of errReply.split(' ')) { onChunk({ delta: w + ' ' }); await new Promise(r => setTimeout(r, 15)); }
+      return { reply: errReply };
+    }
+  }
+
+  // ── Step 4: Web search if needed ──────────────────────────────
   let webResults = null;
   if (plan.needs_web_search && webSearchFn) {
     try {

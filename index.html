@@ -284,7 +284,11 @@
     #avatar-upload { display: none; }
 
     /* ─── LAYOUT ─────────────────────────────────────── */
+    #app { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
     .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+    /* Desktop: main-content becomes a row (navbar stays above) */
+    #main-content { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+    .app-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
     /* ─── SCREENS ────────────────────────────────────── */
     .screen { display: none; flex: 1; overflow: hidden; flex-direction: column; }
@@ -871,6 +875,154 @@
     .manus-btn.active { color: #22d3ee; transform: rotate(45deg); }
     .manus-btn.active svg { filter: drop-shadow(0 0 5px rgba(34,211,238,0.6)); }
 
+    /* ── Agent download button ──────────────────────────────── */
+    .agent-dl-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-top: 12px; padding: 8px 14px; border-radius: 8px;
+      background: rgba(34,211,238,0.1); border: 1px solid rgba(34,211,238,0.25);
+      color: #22d3ee; font-size: 13px; font-weight: 500;
+      text-decoration: none; cursor: pointer;
+      transition: background .2s, border-color .2s;
+    }
+    .agent-dl-btn:hover { background: rgba(34,211,238,0.18); border-color: rgba(34,211,238,0.45); }
+
+
+    /* ─── DESKTOP RESPONSIVE (768px+) ───────────────── */
+    @media (min-width: 768px) {
+
+      /* App becomes a side-by-side layout */
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+      .app-body {
+        flex: 1;
+        display: flex;
+        flex-direction: row;
+        overflow: hidden;
+        height: 0; /* prevent overflow */
+      }
+
+      /* Hide hamburger — sidebar is always visible */
+      .hamburger { display: none !important; }
+
+      /* Navbar: taller, more padding, centered brand */
+      .navbar {
+        padding: 16px 28px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      /* Desktop layout wrapper — navbar + body row */
+      #main-content {
+        display: flex !important;
+        flex-direction: row !important;
+        flex: 1;
+        overflow: hidden;
+        height: 0; /* flex child needs this to not overflow */
+      }
+
+      /* Sidebar always visible on desktop */
+      .drawer {
+        position: relative !important;
+        pointer-events: all !important;
+        width: 260px;
+        flex-shrink: 0;
+        height: 100%;
+        z-index: 1 !important;
+      }
+      .drawer-overlay { display: none !important; }
+      .drawer-panel {
+        position: relative !important;
+        transform: none !important;
+        width: 100% !important;
+        height: 100% !important;
+        border-right: 1px solid var(--border) !important;
+        background: var(--sidebar-bg) !important;
+      }
+
+      /* Chat area takes remaining space */
+      .screen {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+
+      /* Center chat content with max-width */
+      .messages {
+        padding: 24px 0 16px;
+        max-width: 720px;
+        width: 100%;
+        margin: 0 auto;
+        align-self: center;
+      }
+
+      /* Wider message bubbles on desktop */
+      .mrow.user { padding: 8px 0; }
+      .mrow.luna { padding: 18px 0 6px 0; }
+      .mrow.user .mbody { max-width: 68%; }
+
+      /* Chat bar centered */
+      .chat-bar {
+        padding: 12px 0 28px;
+        max-width: 720px;
+        width: 100%;
+        margin: 0 auto;
+        align-self: center;
+      }
+
+      /* Home screen centered nicely */
+      #home-screen {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        overflow-y: auto;
+      }
+      .home-body {
+        max-width: 560px;
+        padding: 40px 32px;
+      }
+      .starter-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .home-input-pill {
+        max-width: 560px;
+      }
+
+      /* Auth box stays centered */
+      #auth-screen {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+      }
+      .auth-box {
+        max-width: 400px;
+        width: 100%;
+      }
+
+      /* Larger Luna orb on desktop home */
+      .luna-orb {
+        width: 100px;
+        height: 100px;
+      }
+
+      /* Bigger title on desktop */
+      .home-title { font-size: 32px; }
+      .home-sub { font-size: 15px; }
+    }
+
+    /* ─── LARGE DESKTOP (1100px+) ────────────────────── */
+    @media (min-width: 1100px) {
+      .drawer { width: 280px; }
+      .messages { max-width: 800px; }
+      .chat-bar { max-width: 800px; }
+      .home-body { max-width: 620px; }
+    }
+
 </style>
 </head>
 <body>
@@ -945,6 +1097,8 @@
   </nav>
 
   <!-- ── DRAWER / SIDEBAR ───────────────────────────── -->
+  <!-- Desktop: sidebar + content sit side by side -->
+  <div class="app-body" id="app-body" style="display:none;">
   <div class="drawer" id="drawer">
     <div class="drawer-overlay" onclick="closeDrawer()"></div>
     <div class="drawer-panel">
@@ -1270,6 +1424,7 @@
     </div>
 
   </main>
+  </div><!-- end app-body -->
 </div>
 
 <!-- MODEL SELECTOR -->
@@ -1666,6 +1821,7 @@
     // Hide auth, show app
     document.getElementById('auth-screen').style.display='none';
     document.getElementById('main-navbar').style.display='flex';
+    document.getElementById('app-body').style.display='flex';
     document.getElementById('main-content').style.display='flex';
     // Owner dot
     if(owner){const dot=document.getElementById('owner-dot');if(dot)dot.style.display='block';}
@@ -1834,8 +1990,17 @@
     }catch(e){ currentThreadId=null; } // Backend will create thread on first message
     goHome();
   }
-  function toggleDrawer(){document.getElementById('drawer').classList.toggle('open');document.getElementById('hamburger').classList.toggle('open');}
-  function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('hamburger').classList.remove('open');}
+  function isDesktop(){ return window.innerWidth >= 768; }
+  function toggleDrawer(){
+    if(isDesktop()) return; // sidebar always visible on desktop
+    document.getElementById('drawer').classList.toggle('open');
+    document.getElementById('hamburger').classList.toggle('open');
+  }
+  function closeDrawer(){
+    if(isDesktop()) return; // never close on desktop
+    document.getElementById('drawer').classList.remove('open');
+    document.getElementById('hamburger').classList.remove('open');
+  }
   function applyTheme(dark){ /* dark mode only */ }
   document.documentElement.setAttribute('data-theme','dark');
   function previewImage(event){
@@ -2022,11 +2187,12 @@
       chatSend.innerHTML='<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" fill="#fff" stroke="none"/></svg>';
       chatSend.onclick=function(){ streamStopped=true; finalizeMessage(fullText); };
 
-      function finalizeMessage(text){
+      function finalizeMessage(text, doc){
         chatSend.classList.remove('stop-mode');
         chatSend.innerHTML='<svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
         chatSend.onclick=null;
         chatSend.disabled=!chatInput.value.trim()&&!selectedImageBase64&&!selectedVideoBase64;
+        stopManusStatusAnimation();
         lastLunaText=text;
         const artifactInfo=detectArtifact(text);
         // Rebuild bubble cleanly — think block stays collapsed at top, reply below
@@ -2057,6 +2223,15 @@
           replyDiv.innerHTML=renderMarkdown(text);
         }
         bubbleEl.appendChild(replyDiv);
+        // ── Document download button (agent created a file) ───
+        if(doc && doc.base64 && doc.filename){
+          const dlBtn=document.createElement('a');
+          dlBtn.className='agent-dl-btn';
+          dlBtn.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download '+doc.filename;
+          dlBtn.href='data:'+doc.mimeType+';base64,'+doc.base64;
+          dlBtn.download=doc.filename;
+          bubbleEl.appendChild(dlBtn);
+        }
         const mbody=row.querySelector('.mbody');
         const enc=encodeURIComponent(text);
         const actions=document.createElement('div');
@@ -2122,12 +2297,34 @@
                 bubbleEl.innerHTML=renderMarkdown(fullText)+'<span class="typing-cursor"></span>';
               }
             }
+            // ── Agent step indicator ─────────────────────────────
+            if(json.agentStep && !streamStopped){
+              const step = json.agentStep;
+              const toolLabels = {
+                web_search: '🔍 Searching the web',
+                read_url: '🌐 Reading page',
+                run_code: '⚙️ Running code',
+                create_document: '📄 Creating document',
+              };
+              if(step.type === 'tool'){
+                const label = toolLabels[step.tool] || ('🔧 Using ' + step.tool);
+                setManusStatus(label.replace(/^[^ ]+ /, ''));
+                bubbleEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">' + label + '...</span>';
+              } else if(step.type === 'result'){
+                const label = toolLabels[step.tool] || step.tool;
+                setManusStatus('processing result');
+                bubbleEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">✓ ' + label + ' — processing...</span>';
+              } else if(step.type === 'thinking'){
+                setManusStatus('thinking');
+                bubbleEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">💭 Thinking...</span>';
+              }
+              messagesEl.scrollTop = messagesEl.scrollHeight;
+            }
             if(json.done){
               if(json.threadId){ currentThreadId=json.threadId; loadSidebarThreads(); }
               // ── Luna signalled image generation ──────────────────
               if(json.generateImage && json.prompt){
                 typingRow.style.display='none';
-                // Show a brief "generating..." message while we fetch the image
                 const genRow = document.createElement('div'); genRow.className='mrow luna';
                 genRow.innerHTML='<div class="msg-avatar luna-av"><img src="icon-192.png" alt="L"/></div><div class="mbody"><div class="bubble" style="color:var(--text-dim);font-size:14px;">Generating image...</div></div>';
                 messagesEl.insertBefore(genRow, typingRow);
@@ -2139,7 +2336,7 @@
                     body: JSON.stringify({ prompt: json.prompt, existingImage: baseImg })
                   });
                   const imgData = await imgRes.json();
-                  genRow.remove(); // remove "Generating..." placeholder
+                  genRow.remove();
                   if(imgData.image){
                     lastGeneratedImageUrl = imgData.image;
                     addMsg('luna', json.editLastImage ? 'Here is the edited image:' : '', imgData.image);
@@ -2154,7 +2351,11 @@
                 }
                 return;
               }
-              if(!streamStopped) finalizeMessage(fullText);
+              // ── Agent created a downloadable document ─────────────
+              if(json.document){
+                pendingDocument = json.document;
+              }
+              if(!streamStopped) finalizeMessage(fullText, json.document);
             }
           }catch(e){}
         }
