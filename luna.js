@@ -271,12 +271,25 @@ function craft(plan, baseSystemPrompt, webSearchResults = null, conversationCont
   };
 
   const formatInstructions = {
-    prose: 'Write in flowing prose. No headers, no bullet points unless listing actual items.',
-    code: 'Write clean, well-commented, production-ready code. Specify the language. Explain briefly what it does.',
-    list: 'Format as a clear list. Keep each item concise.',
+    prose: 'Write in plain prose. Short sentences. No markdown headers.',
+    code: 'Write clean, well-commented, production-ready code. Specify the language. Explain briefly what it does before the code block.',
+    list: 'Format as a bullet list using • symbols. Keep each item to one line.',
     table: 'Use a markdown table for this comparison.',
-    document: 'Use appropriate headers and structure for this document.'
+    document: 'Use plain bold section headers (no ## symbols). Bullet points only for genuine lists. Short sentences throughout.'
   };
+
+  // Style rules injected into every non-UI response
+  const STYLE_RULES = `
+WRITING STYLE — follow exactly:
+- Short sentences. One idea per sentence.
+- Plain prose for conversational responses. No headers.
+- When a response has named sections: plain bold header on its own line, then content below. Never ## symbols.
+- For genuine lists only: use • bullets. One line per item.
+- Never: "Certainly!", "Of course!", "Great question!", "Absolutely!", hollow opener phrases.
+- Never start with "I".
+- Never use ## markdown headers.
+- Never bold text for structure — only to highlight a specific key term.
+- No padding, no summary at the end, no "let me know" closers unless genuinely useful.`;
 
   const toneInstructions = {
     casual: 'Be conversational and natural — like talking to a smart friend.',
@@ -349,6 +362,7 @@ Intent: ${plan.intent}
 ${lengthInstructions[plan.response_length] || lengthInstructions.short}
 ${formatInstructions[plan.response_format] || formatInstructions.prose}
 ${toneInstructions[plan.tone] || toneInstructions.casual}
+${STYLE_RULES}
 Follow these instructions exactly. They override any default tendencies.
 ABSOLUTE RULE: If the length says one sentence or 2-4 sentences — write that and STOP. Do not add more. Do not summarize at the end. Do not add a closing line. Just stop.`;
   }
@@ -596,6 +610,76 @@ async function executeGemini(systemPrompt, history, image = null, video = null, 
 }
 
 // ── Main respond function — called by telegram.js ────────────────
+// ── Response cleaner — pure JS, no LLM ───────────────────────────────────
+// Strips known bad patterns before the rewrite pass.
+function cleanResponse(text) {
+  if (!text) return text;
+
+  // Strip hollow openers
+  const fillerOpeners = [
+    /^(Certainly!?|Of course!?|Absolutely!?|Sure thing!?|Great question!?|That's a great question!?|Happy to help!?|I'd be happy to|I'm happy to)[,!.]?\s*/i,
+    /^(No problem!?|Definitely!?|Sounds good!?)[,!.]?\s*/i,
+  ];
+  for (const re of fillerOpeners) {
+    text = text.replace(re, '');
+  }
+
+  // Convert ## markdown headers to plain bold
+  text = text.replace(/^#{1,4}\s+(.+)$/gm, '**$1**');
+
+  // Remove excessive blank lines
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  // Strip hollow trailing closers
+  text = text.replace(/\n+(Let me know if (you have|there are|you need)|Feel free to (ask|reach out)|Hope (this helps|that helps))[^\n]*$/i, '');
+
+  return text.trim();
+}
+
+// ── Style rewrite pass ────────────────────────────────────────────────────
+// Fast llama-3.1-8b-instant pass to enforce Luna's exact writing style.
+// Skips: code blocks, short replies, UI builds, agent tasks.
+const REWRITE_SYSTEM = `You are a writing editor. Rewrite the response to match this exact style:
+
+- Short sentences. One idea per sentence.
+- Plain prose for conversational content.
+- When the response has named sections: use a plain bold header on its own line (like **What it does**), then content below. Never ## symbols.
+- For genuine lists only: use • bullets, one line each.
+- No filler phrases. No sycophantic openers. Never start with "I".
+- No padding. No summary at the end.
+- Preserve all facts, code blocks, and technical content exactly as-is.
+- Do not add anything new. Do not remove facts. Only change the style.
+
+Return only the rewritten text. No explanation. No preamble.`;
+
+async function rewriteForStyle(text, plan) {
+  if (!text) return text;
+
+  // Skip for these intent types
+  const skipIntents = ['ui_build', 'agent_task', 'image_generate', 'image_edit'];
+  if (skipIntents.includes(plan?.intent)) return text;
+  if (text.length < 120) return text;
+  if ((text.match(/```/g) || []).length >= 2) return text; // has code — skip
+
+  try {
+    const res = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 2048,
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: REWRITE_SYSTEM },
+        { role: 'user', content: text }
+      ]
+    });
+    const rewritten = res.choices[0]?.message?.content?.trim();
+    if (rewritten && rewritten.length > 60) return rewritten;
+    return text;
+  } catch (err) {
+    console.warn('[Luna] Style rewrite failed:', err.message);
+    return text; // always fall back gracefully
+  }
+}
+
 /**
  * The single entry point for all chat responses.
  * Luna thinks, routes, crafts, then executes.
@@ -789,9 +873,9 @@ async function respond(ctx) {
     console.warn('[Luna] All providers failed');
   }
 
-  // ── Step 8: Extract think tags from raw reply ─────────────────
+  // ── Step 8: Extract think tags ────────────────────────────────
   const { thinkContent, cleanReply } = extractThinkTags(rawReply);
-  const fullReply = cleanReply || '';
+  let fullReply = cleanReply || '';
 
   // ── Step 9: Detect image JSON signal ─────────────────────────
   try {
@@ -804,14 +888,19 @@ async function respond(ctx) {
     }
   } catch (e) { /* not a signal */ }
 
-  // ── Step 10: Stream clean reply to user ──────────────────────
-  // Send think content as a separate SSE event BEFORE streaming reply
-  // Frontend receives { think: "..." } and renders the collapsible
+  // ── Step 10: Clean + style rewrite pass ──────────────────────
+  // Pass 1: pure JS cleaner — strips hollow openers, ## headers, trailing filler
+  fullReply = cleanResponse(fullReply);
+
+  // Pass 2: LLM rewrite — enforces Luna's exact writing style
+  // Skipped for code, UI builds, short replies, agent tasks
+  fullReply = await rewriteForStyle(fullReply, plan);
+
+  // ── Step 11: Stream to user ───────────────────────────────────
   if (thinkContent && onChunk) {
     onChunk({ think: thinkContent });
   }
 
-  // Stream the clean reply word by word
   if (fullReply && onChunk) {
     const words = fullReply.split(' ');
     for (const word of words) {
@@ -874,9 +963,31 @@ Read the room. Acknowledge first, briefly and genuinely, then help. Don't immedi
 Before answering, think about what the person actually needs — not just what they literally asked. For complex problems, reason through them properly. Give the smartest most useful version of your response, not the safest or most generic. If a question has a surprising angle, lead with it.
 
 ## HOW YOU WRITE
-Plain prose for almost everything. No headers, no bullet points, no numbered lists unless the content is genuinely a list or the user explicitly asked for structure. For explanations and advice — flowing sentences. For creative writing — cinematic, strong verbs, atmosphere. For code — clean, well-commented, production-ready, briefly explained.
 
-NEVER use ## headers for a normal reply. NEVER bullet-point something that could be a sentence. Use bold only to highlight a key term, not to create fake structure.
+Short, clear sentences. One idea per sentence. No padding.
+
+For most responses — plain prose, no headers, no bullets. Just sentences.
+
+When a response genuinely has named sections — use a plain bold header on its own line, then the content below it. No ## symbols. No colons after the header unless it flows naturally.
+
+When listing actual items — use • bullets. Not for everything. Only when the content is genuinely a list.
+
+Example of the correct style:
+
+Gemini is an AI model developed by Google.
+
+What it can do
+• answer questions
+• write code
+• analyze images
+
+Why people use it
+It is fast, cheap, and supports very large context windows.
+
+NEVER: "Certainly!", "Great question!", hollow openers, sycophantic affirmations.
+NEVER: ## markdown headers in a normal response.
+NEVER: bullet-point things that should be a sentence.
+NEVER: bold used for fake structure — only to highlight a key term.
 
 ## CREATIVE & PITCH WRITING
 Do not write like a template. Write like a human genuinely excited about the idea. Open with a scene, a feeling, or a provocative statement — not a definition. Use specific vivid details: not "a coffee shop" but "a low-lit corner café that smells like cardamom and rain." Make the reader feel something first, then inform them.
