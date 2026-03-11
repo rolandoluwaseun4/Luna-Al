@@ -211,14 +211,15 @@ AVAILABLE TOOLS:
 - run_code(code: string, language: string) — execute code and get output
 - create_document(content: string, filename: string) — create a downloadable file
 
-RULES:
+STRICT RULES:
 1. Respond ONLY with valid JSON — no markdown, no explanation outside the JSON
-2. Each step, decide: should I use a tool, or am I done?
-3. When done, set "done": true and write the full final answer in "reply"
-4. Keep tool calls focused — one clear goal per step
-5. After web_search, read the most relevant URL for deeper info
-6. When asked to create a file, use create_document as your LAST step
-7. Never loop more than needed — be efficient
+2. You MUST use at least one tool before you are allowed to set "done": true
+3. NEVER answer from memory alone — always verify with web_search first
+4. For ANY research, comparison, "top X", current events, or factual task → start with web_search
+5. After web_search, read the most relevant URL with read_url for deeper detail
+6. For code tasks → use run_code to execute and verify it works
+7. When asked to create a file → use create_document as your LAST step
+8. When done, write a thorough, detailed final answer in "reply" — not a summary
 
 RESPONSE FORMAT (always valid JSON):
 {
@@ -228,11 +229,11 @@ RESPONSE FORMAT (always valid JSON):
   "args": { "query": "..." }
 }
 
-OR when finished:
+OR when finished (only after using at least one tool):
 {
-  "thinking": "I have all the info I need",
+  "thinking": "I searched the web and have real verified info",
   "done": true,
-  "reply": "Full final answer to the user..."
+  "reply": "Full detailed answer based on what I actually found..."
 }`;
 
 async function thinkStep(task, stepHistory, model) {
@@ -298,6 +299,8 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
   console.log(`[Agent] Starting — model: ${model}, task: "${task.slice(0, 80)}"`);
   emit({ type: 'thinking', text: 'Planning your task...' });
 
+  let toolsUsed = 0; // track tool calls — must use at least 1 before done
+
   for (let step = 0; step < MAX_STEPS; step++) {
     try {
       // ── Think: decide what to do ────────────────────────────────────────
@@ -309,6 +312,15 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
       }
 
       // ── Done: synthesize final answer ────────────────────────────────────
+      // Block early exit if no tools used yet — force at least web_search
+      const forcedTool = toolsUsed === 0 && (decision.done || !decision.tool);
+      if (forcedTool) {
+        console.warn('[Agent] Tried to answer without using any tools — forcing web_search');
+        decision.done = false;
+        decision.tool = 'web_search';
+        decision.args = { query: task.slice(0, 200) };
+      }
+
       if (decision.done || step === MAX_STEPS - 1) {
         const reply = decision.reply || 'Task complete.';
         console.log(`[Agent] Done after ${step + 1} steps`);
@@ -328,6 +340,7 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
 
       emit({ type: 'tool', tool: toolName, args: toolArgs });
       console.log(`[Agent] Executing: ${toolName}(${JSON.stringify(toolArgs).slice(0, 100)})`);
+      toolsUsed++;
 
       let result;
       try {

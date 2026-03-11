@@ -2301,22 +2301,22 @@
             if(json.agentStep && !streamStopped){
               const step = json.agentStep;
               const toolLabels = {
-                web_search: '🔍 Searching the web',
-                read_url: '🌐 Reading page',
-                run_code: '⚙️ Running code',
-                create_document: '📄 Creating document',
+                web_search: 'Searching the web',
+                read_url: 'Reading page',
+                run_code: 'Running code',
+                create_document: 'Creating document',
               };
               if(step.type === 'tool'){
-                const label = toolLabels[step.tool] || ('🔧 Using ' + step.tool);
-                setManusStatus(label.replace(/^[^ ]+ /, ''));
+                const label = toolLabels[step.tool] || ('Using ' + step.tool);
+                setManusStatus(label);
                 bubbleEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">' + label + '...</span>';
               } else if(step.type === 'result'){
                 const label = toolLabels[step.tool] || step.tool;
                 setManusStatus('processing result');
-                bubbleEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">✓ ' + label + ' — processing...</span>';
+                bubbleEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">' + label + ' done, processing...</span>';
               } else if(step.type === 'thinking'){
                 setManusStatus('thinking');
-                bubbleEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">💭 Thinking...</span>';
+                bubbleEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Thinking...</span>';
               }
               messagesEl.scrollTop = messagesEl.scrollHeight;
             }
