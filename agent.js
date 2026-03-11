@@ -361,9 +361,10 @@ Write the reply in plain, simple language a student can follow:
 
 1. State what type of problem it is in one sentence.
 2. Explain the method — what approach are you using and why.
-3. Show each step clearly, numbered. Use simple words. No jargon unless necessary.
-4. State the final answer clearly on its own line.
-5. Add a one-line tip about this type of problem if helpful.
+3. Show each step clearly, numbered. Use simple words.
+4. For any math expressions, wrap them in LaTeX: inline math uses $...$ and display math uses $$...$$. For example: "Differentiate $y = 3x^3 - 5x^2 + 2x - 7$ to get $\frac{dy}{dx} = 9x^2 - 10x + 2$"
+5. State the final answer clearly on its own line.
+6. Add a one-line tip about this type of problem if helpful.
 
 RULES:
 - Never guess or estimate — always use run_code for the actual computation
@@ -477,9 +478,7 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
           decision.done = false;
           decision.tool = 'run_code';
           decision.args = {
-            code: `# Solving: ${task.slice(0, 100)}
-# Write your solution here
-print("Computing...")`,
+            code: `# Task: ${task.slice(0, 200)}\nresult = "See solution below"\nprint(result)    # Agent will compute properly in next step`,
             language: 'python'
           };
         } else {

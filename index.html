@@ -9,6 +9,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 
@@ -2062,8 +2065,8 @@
     });
 
     // Bullet lists — group consecutive items
-    t = t.replace(/^([-*] .+)(\n[-*] .+)*/gm, (match) => {
-      const items = match.split('\n').map(l => '<li>'+l.replace(/^[-*] /,'')+'</li>').join('');
+    t = t.replace(/^([-*•] .+)(\n[-*•] .+)*/gm, (match) => {
+      const items = match.split('\n').map(l => '<li>'+l.replace(/^[-*•] /,'')+'</li>').join('');
       return '<ul>'+items+'</ul>';
     });
 
@@ -2077,6 +2080,23 @@
     }).join('');
 
     return t;
+  }
+
+  // Render KaTeX math in an element after content is set
+  function renderMath(el) {
+    if (!el || typeof renderMathInElement === 'undefined') return;
+    try {
+      renderMathInElement(el, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: '$', right: '$', display: false },
+          { left: '\\[', right: '\\]', display: true },
+          { left: '\\(', right: '\\)', display: false },
+        ],
+        throwOnError: false,
+        output: 'html',
+      });
+    } catch(e) {}
   }
 
   function addMsg(role,text,imgUrl){
@@ -2221,6 +2241,7 @@
           replyDiv.innerHTML=(shortText?renderMarkdown(shortText)+'<br><br>':'')+buildArtifactCard(text,artifactInfo);
         } else {
           replyDiv.innerHTML=renderMarkdown(text);
+          renderMath(replyDiv);
         }
         bubbleEl.appendChild(replyDiv);
         // ── Document download button (agent created a file) ───
@@ -2293,6 +2314,7 @@
                   bubbleEl.appendChild(replyDiv);
                 }
                 replyDiv.innerHTML=renderMarkdown(fullText)+'<span class="typing-cursor"></span>';
+                renderMath(replyDiv);
               } else {
                 bubbleEl.innerHTML=renderMarkdown(fullText)+'<span class="typing-cursor"></span>';
               }
