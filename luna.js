@@ -398,9 +398,19 @@ async function tryGroqModel(model, systemPrompt, history, plan, enableThinking =
   }
 
   const res = await groq.chat.completions.create(params);
-  const reply = res.choices[0]?.message?.content || '';
-  console.log(`[Luna] Groq responded: ${model}${enableThinking ? ' (thinking)' : ''}`);
-  return reply;
+  const message = res.choices[0]?.message || {};
+  const reply = message.content || '';
+
+  // qwen3 returns thinking in reasoning_content field (not inline <think> tags)
+  // DeepSeek R1 returns thinking inline as <think>...</think>
+  // Normalize both into <think>...</think> so extractThinkTags() works on both
+  const reasoningContent = message.reasoning_content || '';
+  const fullReply = reasoningContent
+    ? `<think>${reasoningContent}</think>${reply}`
+    : reply;
+
+  console.log(`[Luna] Groq responded: ${model}${enableThinking ? ' (thinking)' : ''}${reasoningContent ? ' — has thoughts' : ''}`);
+  return fullReply;
 }
 
 // ── Execute on Groq — tries primary then groqFallback ────────────
