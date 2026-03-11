@@ -72,18 +72,17 @@ const LUNA_MODELS = {
     ]
   },
 
-  // Luna Pro — qwen3-32b on Groq WITH thinking enabled, OpenRouter fallback
+  // Luna Pro — DeepSeek R1 for thinking tags, qwen fallback, OpenRouter pool
   PRO: {
-    primary: 'qwen/qwen3-32b',                 // Groq — thinking enabled
-    groqFallback: 'llama-3.3-70b-versatile',   // Groq — no thinking but fast
+    primary: 'deepseek-r1-distill-llama-70b',  // Groq — real thinking tags ✅
+    groqFallback: 'qwen/qwen3-32b',            // Groq — powerful fallback
     orFallbacks: [                              // OpenRouter fallbacks
       'qwen/qwen3-next-80b-a3b-instruct:free',
       'openai/gpt-oss-120b:free',
       'arcee-ai/trinity-large-preview:free',
       'nousresearch/hermes-3-llama-3.1-405b:free',
       'meta-llama/llama-3.3-70b-instruct:free',
-    ],
-    thinking: true                              // enable qwen3 thinking mode
+    ]
   },
 
   // RO-1 — DeepSeek R1 on Groq (thinking tags), OpenRouter + Gemini race
@@ -382,41 +381,30 @@ ${lengthTag}${formatTag ? ' ' + formatTag : ''}`;
 }
 
 // ── Try a single Groq model, returns reply or throws ────────────
-async function tryGroqModel(model, systemPrompt, history, plan, enableThinking = false) {
+async function tryGroqModel(model, systemPrompt, history, plan) {
   const needsConstraint = model.includes('qwen') || model.includes('deepseek');
   const finalHistory = (plan && needsConstraint) ? injectLengthConstraint(history, plan) : history;
 
   const params = {
     model,
-    max_tokens: enableThinking ? 8000 : (plan && plan.intent === 'ui_build' ? 8192 : 4096),
+    max_tokens: (plan && plan.intent === 'ui_build') ? 8192 : 4096,
     messages: [{ role: 'system', content: systemPrompt }, ...finalHistory],
   };
-
-  // qwen3 thinking mode — Groq supports this via extra_body
-  if (enableThinking && model.includes('qwen')) {
-    params.extra_body = { thinking: { type: 'enabled', budget_tokens: 2048 } };
-  }
 
   const res = await groq.chat.completions.create(params);
   const message = res.choices[0]?.message || {};
   const reply = message.content || '';
 
-  // qwen3 returns thinking in reasoning_content field (not inline <think> tags)
   // DeepSeek R1 returns thinking inline as <think>...</think>
-  // Normalize both into <think>...</think> so extractThinkTags() works on both
-  const reasoningContent = message.reasoning_content || '';
-  const fullReply = reasoningContent
-    ? `<think>${reasoningContent}</think>${reply}`
-    : reply;
-
-  console.log(`[Luna] Groq responded: ${model}${enableThinking ? ' (thinking)' : ''}${reasoningContent ? ' — has thoughts' : ''}`);
-  return fullReply;
+  // Just return content directly — extractThinkTags() handles DeepSeek
+  console.log(`[Luna] Groq responded: ${model}`);
+  return reply;
 }
 
 // ── Execute on Groq — tries primary then groqFallback ────────────
 async function executeGroq(systemPrompt, history, modelConfig, plan = null) {
   const models = [modelConfig.primary, modelConfig.groqFallback].filter(Boolean);
-  const enableThinking = !!modelConfig.thinking;
+
 
   for (const model of models) {
     let currentHistory = [...history];
@@ -424,7 +412,7 @@ async function executeGroq(systemPrompt, history, modelConfig, plan = null) {
 
     while (attempts < 3) {
       try {
-        return await tryGroqModel(model, systemPrompt, currentHistory, plan, enableThinking);
+        return await tryGroqModel(model, systemPrompt, currentHistory, plan);
       } catch (err) {
         const status = err?.status || err?.error?.status;
         const msg = (err?.message || '').toLowerCase();
