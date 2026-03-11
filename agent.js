@@ -139,7 +139,7 @@ async function toolRunCode(code, language = 'python') {
       clearTimeout(timeout);
 
       if (!res.ok) {
-        console.warn(`[Code] Piston endpoint \${endpoint} returned \${res.status}`);
+        console.warn(`[Code] Piston endpoint ${endpoint} returned ${res.status}`);
         continue; // try next endpoint
       }
 
@@ -148,11 +148,11 @@ async function toolRunCode(code, language = 'python') {
       const stderr = data.run?.stderr || '';
       const exitCode = data.run?.code ?? 0;
 
-      if (exitCode !== 0 && stderr) return `Error:\n\${stderr.slice(0, 500)}`;
-      console.log(`[Code] Piston ✅ via \${endpoint}`);
+      if (exitCode !== 0 && stderr) return `Error:\n${stderr.slice(0, 500)}`;
+      console.log(`[Code] Piston OK via ${endpoint}`);
       return stdout.slice(0, 2000) || '(no output)';
     } catch (err) {
-      console.warn(`[Code] Piston \${endpoint} failed: \${err.message}`);
+      console.warn(`[Code] Piston ${endpoint} failed: ${err.message}`);
     }
   }
 
@@ -161,9 +161,9 @@ async function toolRunCode(code, language = 'python') {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), STEP_TIMEOUT);
-      const res = await fetch(`https://glot.io/api/run/\${lang}/latest`, {
+      const res = await fetch(`https://glot.io/api/run/${lang}/latest`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Token \${process.env.GLOT_API_KEY}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Token ${process.env.GLOT_API_KEY}` },
         body: JSON.stringify({ files: [{ name: filename, content: code }] }),
         signal: controller.signal
       });
