@@ -818,7 +818,7 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(passport.initialize());
 app.use(cors({
-  origin: ['https://rolandoluwaseun4.github.io', 'https://luna-al.vercel.app'],
+  origin: ['https://rolandoluwaseun4.github.io'],
   methods: ['GET','POST','DELETE'],
   allowedHeaders: ['Content-Type','Authorization']
 }));
@@ -846,12 +846,37 @@ const threadLimiter = rateLimit({
 });
 app.use('/threads', threadLimiter);
 
-// Generate thread title from first user message
+// Generate thread title from first user message — dumb fallback
 function generateTitle(message) {
   if (!message) return 'New Chat';
   const clean = message.replace(/[<>&"'`]/g, '').replace(/\s+/g, ' ').trim();
-  const words = clean.split(' ').slice(0, 7).join(' ');
-  return (words.length > 3 ? words : clean.substring(0, 40)) || 'New Chat';
+  const words = clean.split(' ').slice(0, 6).join(' ');
+  return (words.length > 2 ? words : clean.substring(0, 40)) || 'New Chat';
+}
+
+// Generate a smart title using Groq — called async after first reply
+async function generateSmartTitle(message, reply) {
+  try {
+    const groq = new (require('groq-sdk'))({ apiKey: process.env.GROQ_API_KEY });
+    const res = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 20,
+      temperature: 0,
+      messages: [{
+        role: 'user',
+        content: `Generate a short 3-5 word title for this conversation. Return ONLY the title, no quotes, no punctuation at the end.
+
+User said: "${message.slice(0, 200)}"
+Assistant replied: "${reply.slice(0, 200)}"
+
+Title:`
+      }]
+    });
+    const title = res.choices[0]?.message?.content?.trim().replace(/^["']|["']$/g, '') || '';
+    return title.length > 2 ? title : generateTitle(message);
+  } catch (e) {
+    return generateTitle(message);
+  }
 }
 
 
@@ -898,7 +923,7 @@ async function postToDiscord(text) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       username: 'Luna AI 🌙',
-      avatar_url: 'https://luna-al.vercel.app/icon-192.png',
+      avatar_url: 'https://rolandoluwaseun4.github.io/Luna-Al/icon-192.png',
       content: clean
     })
   });
@@ -925,10 +950,10 @@ async function postToAll(text) {
 // ── Scheduled posts content ───────────────────────────
 const channelPosts = {
   marketing: [
-    `🌙 <b>Meet Luna AI</b>\n\nYour personal AI that actually gets your vibe. Chat, create, generate images, research anything — all free.\n\n👉 https://luna-al.vercel.app/`,
-    `✨ <b>Luna just got smarter</b>\n\nDeep thinking. Web research. Image generation. PDF reading. Secret mode.\n\nFree AI app built by an 18-year-old from Nigeria 🇳🇬\n\n👉 https://luna-al.vercel.app/`,
-    `🚀 <b>Why Luna is different</b>\n\n• Remembers your conversations\n• Generates images on demand\n• Researches the web for you\n• Reads your PDFs\n• 100% free\n\n👉 https://luna-al.vercel.app/`,
-    `🇳🇬 <b>Made in Nigeria, built for the world</b>\n\nLuna AI — free personal AI built by an 18-year-old.\n\n👉 https://luna-al.vercel.app/`,
+    `🌙 <b>Meet Luna AI</b>\n\nYour personal AI that actually gets your vibe. Chat, create, generate images, research anything — all free.\n\n👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
+    `✨ <b>Luna just got smarter</b>\n\nDeep thinking. Web research. Image generation. PDF reading. Secret mode.\n\nFree AI app built by an 18-year-old from Nigeria 🇳🇬\n\n👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
+    `🚀 <b>Why Luna is different</b>\n\n• Remembers your conversations\n• Generates images on demand\n• Researches the web for you\n• Reads your PDFs\n• 100% free\n\n👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
+    `🇳🇬 <b>Made in Nigeria, built for the world</b>\n\nLuna AI — free personal AI built by an 18-year-old.\n\n👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
   ],
   tips: [
     `💡 <b>Luna Tip</b>\n\nType "deep think:" before any question — Luna will analyse every angle before answering.`,
@@ -944,8 +969,8 @@ const channelPosts = {
   ],
   motivation: [
     `🌙 <b>From Luna</b>\n\nYou don't have to have it all figured out. Just take one step today. I'm here whenever you need to think 💜`,
-    `🌙 <b>Good morning</b>\n\nSomeone built an entire AI app at 18. What's your excuse for not starting today?\n\n👉 https://luna-al.vercel.app/`,
-    `🌙 <b>Reminder</b>\n\nYour ideas are worth building. Start small. Ship fast. Improve always.\n\nNeed a thinking partner? 👉 https://luna-al.vercel.app/`,
+    `🌙 <b>Good morning</b>\n\nSomeone built an entire AI app at 18. What's your excuse for not starting today?\n\n👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
+    `🌙 <b>Reminder</b>\n\nYour ideas are worth building. Start small. Ship fast. Improve always.\n\nNeed a thinking partner? 👉 https://rolandoluwaseun4.github.io/Luna-Al/`,
   ]
 };
 
@@ -1228,6 +1253,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       clientModel: clientModelRaw,
       isOwner,
       baseSystemPrompt,
+      userName: userProfile?.name || null,
       image: image || null,
       video: video || null,
       file: file || null,
@@ -1261,6 +1287,20 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     thread.messages.push({ role: 'assistant', content: fullReply, timestamp: new Date() });
     thread.lastUpdated = new Date();
+
+    // ── Smart title — generate on first exchange only ─────────
+    const isFirstExchange = thread.messages.filter(m => m.role === 'assistant').length === 1;
+    if (isFirstExchange && thread.title === 'New Chat') {
+      // Fire async — don't block the response
+      generateSmartTitle(message, fullReply).then(smartTitle => {
+        Thread.findOneAndUpdate(
+          { userId: uid, threadId: thread.threadId },
+          { title: smartTitle },
+          {}
+        ).catch(() => {});
+      }).catch(() => {});
+    }
+
     await thread.save();
     sendDone({ reply: fullReply, threadId: thread.threadId, title: thread.title });
 
@@ -1628,12 +1668,12 @@ app.get('/auth/google',
 );
 
 app.get('/auth/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: 'https://luna-al.vercel.app/callback.html?auth_error=true' }),
+  passport.authenticate('google', { session: false, failureRedirect: 'https://rolandoluwaseun4.github.io/Luna-Al/callback.html?auth_error=true' }),
   (req, res) => {
     const account = req.user;
     const token = signToken({ id: account._id, username: account.username, role: account.role });
     const user = encodeURIComponent(JSON.stringify({ id: account._id, username: account.username, displayName: account.displayName, role: account.role }));
-    res.redirect('https://luna-al.vercel.app/callback.html?token=' + token + '&user=' + user);
+    res.redirect('https://rolandoluwaseun4.github.io/Luna-Al/callback.html?token=' + token + '&user=' + user);
   }
 );
 
@@ -1874,11 +1914,11 @@ function scheduleDailyTweet() {
     try {
       const prompts = [
         "What's something you've been wanting to learn lately?",
-        "Your vibe today is: unstoppable 🌙 Chat with me free 👉 luna-al.vercel.app/",
-        "AI doesn't have to be complicated. Luna keeps it simple 🌙 Try me free 👉 luna-al.vercel.app/",
+        "Your vibe today is: unstoppable 🌙 Chat with me free 👉 rolandoluwaseun4.github.io/Luna-Al/",
+        "AI doesn't have to be complicated. Luna keeps it simple 🌙 Try me free 👉 rolandoluwaseun4.github.io/Luna-Al/",
         "Good morning 🌙 I'm Luna — your personal AI. Ask me anything today.",
-        "Built by one 18 year old from Nigeria 🇳🇬 Meet Luna — your personal AI 🌙 luna-al.vercel.app/",
-        "What if your AI actually got your vibe? That's Luna 🌙 Try free 👉 luna-al.vercel.app/",
+        "Built by one 18 year old from Nigeria 🇳🇬 Meet Luna — your personal AI 🌙 rolandoluwaseun4.github.io/Luna-Al/",
+        "What if your AI actually got your vibe? That's Luna 🌙 Try free 👉 rolandoluwaseun4.github.io/Luna-Al/",
       ];
       const tweet = prompts[Math.floor(Math.random() * prompts.length)];
       await postTweet(tweet);
@@ -1923,8 +1963,8 @@ if (webpush && process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
         await webpush.sendNotification(sub.subscription, JSON.stringify({
           title: 'Luna',
           body: msg,
-          icon: 'https://luna-al.vercel.app/icon-192.png',
-          url: 'https://luna-al.vercel.app/'
+          icon: 'https://rolandoluwaseun4.github.io/Luna-Al/icon-192.png',
+          url: 'https://rolandoluwaseun4.github.io/Luna-Al/'
         }));
       } catch(e) {
         if (e.statusCode === 410) await PushSub.findByIdAndDelete(sub._id); // expired

@@ -125,7 +125,7 @@ function extractThinkTags(text) {
  * @param {boolean} hasImage - Whether an image was attached
  * @returns {object} plan - Luna's reasoning plan
  */
-async function think(message, history = [], clientModel = 'luna-flash', hasImage = false) {
+async function think(message, history = [], clientModel = 'luna-flash', hasImage = false, userName = null) {
   // Build a short conversation summary for context
   const recentMessages = history.slice(-6).map(m =>
     `${m.role === 'user' ? 'User' : 'Luna'}: ${String(m.content).slice(0, 150)}`
@@ -136,6 +136,7 @@ async function think(message, history = [], clientModel = 'luna-flash', hasImage
 CONVERSATION SO FAR:
 ${recentMessages || '(This is the start of the conversation)'}
 
+USER'S NAME: ${userName || 'unknown'}
 USER'S CURRENT MESSAGE: "${message}"
 HAS IMAGE ATTACHED: ${hasImage}
 USER'S MODEL TIER: ${clientModel}
@@ -155,6 +156,7 @@ Analyze the message and respond with ONLY a valid JSON object — no explanation
 }
 
 GUIDANCE:
+- Use the user's real name in your reasoning field — say 'Roland wants...' not 'the user wants...'
 - is_followup = true if the message references something from the conversation above
 - one_sentence: single fact or simple answer
 - short: 2-4 sentences, casual explanation
@@ -608,10 +610,11 @@ async function respond(ctx) {
     file,
     webSearchFn,      // async function to run web search if needed
     onChunk,          // SSE chunk sender function
+    userName,         // user's real name from profile
   } = ctx;
 
   // ── Step 1: Luna thinks ────────────────────────────────────────
-  const plan = await think(message, history, clientModel, !!image);
+  const plan = await think(message, history, clientModel, !!image, userName);
 
   // ── Step 2: Handle image generation signals ───────────────────
   if (plan.intent === 'image_generate' || plan.intent === 'image_edit') {
