@@ -370,6 +370,7 @@ RULES:
 - Show the working, not just the answer — the goal is understanding
 - Use simple language. Imagine explaining to a secondary school student.
 - If the problem has multiple parts, solve each part separately
+- ONLY use standard Python — no imports of sympy, numpy, scipy, or any external library. Do all math manually in plain Python using arithmetic, loops, and basic functions only.
 - Respond ONLY in valid JSON
 
 RESPONSE FORMAT:
