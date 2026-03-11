@@ -200,6 +200,41 @@ async function executeTool(toolName, args) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
+//  MATH DETECTION
+// ═════════════════════════════════════════════════════════════════════════
+
+const MATH_KEYWORDS = [
+  'solve', 'calculate', 'compute', 'find', 'what is', 'evaluate',
+  'simplify', 'factorise', 'factorize', 'expand', 'differentiate',
+  'integrate', 'derivative', 'equation', 'inequality', 'prove',
+  'geometry', 'triangle', 'circle', 'area', 'perimeter', 'volume',
+  'probability', 'statistics', 'mean', 'median', 'mode', 'variance',
+  'algebra', 'quadratic', 'linear', 'matrix', 'vector', 'fraction',
+  'percentage', 'ratio', 'proportion', 'interest', 'profit', 'loss',
+  'speed', 'distance', 'time', 'angle', 'pythagoras', 'trigonometry',
+  'sin', 'cos', 'tan', 'logarithm', 'log', 'indices', 'surd',
+  '+', '-', '×', '÷', '=', '^', '√', '%'
+];
+
+const MATH_PATTERNS = [
+  /\d+\s*[+\-*/^]\s*\d+/,          // arithmetic: 5 + 3, 12 * 4
+  /\d+x|x\d+/i,                      // algebra: 3x, x2
+  /\b\d+\.\d+/,                     // decimals
+  /\b(sin|cos|tan|log|ln)\b/i,        // trig/log
+  /\^\d+|\d+\^/,                    // powers: x^2
+  /\b\d+\/\d+\b/,                  // fractions: 3/4
+  /find\s+(the\s+)?(value|x|y|angle|area|length|volume)/i,
+];
+
+function isMathTask(task) {
+  if (!task) return false;
+  const lower = task.toLowerCase();
+  const hasKeyword = MATH_KEYWORDS.some(k => lower.includes(k.toLowerCase()));
+  const hasPattern = MATH_PATTERNS.some(p => p.test(task));
+  return hasKeyword || hasPattern;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
 //  AGENT BRAIN — Think step (decides what to do next)
 // ═════════════════════════════════════════════════════════════════════════
 
@@ -236,7 +271,52 @@ OR when finished (only after using at least one tool):
   "reply": "Full detailed answer based on what I actually found..."
 }`;
 
-async function thinkStep(task, stepHistory, model) {
+// ── Math-specific system prompt ───────────────────────────────────────────
+// Used instead of AGENT_SYSTEM_PROMPT when isMathTask() returns true.
+const MATH_SYSTEM_PROMPT = `You are Luna's math agent. You solve problems step by step, clearly, so a student can actually learn.
+
+AVAILABLE TOOLS:
+- run_code(code: string, language: "python") — execute Python to compute exact answers
+- web_search(query: string) — look up formulas or methods you are unsure about
+
+HOW TO HANDLE EVERY MATH PROBLEM:
+
+Step 1 — Identify the problem type (algebra, geometry, arithmetic, statistics, etc.)
+Step 2 — Write Python code to solve it exactly. Use run_code.
+Step 3 — When you have the computed answer, set done: true and write the reply.
+
+REPLY FORMAT (when done):
+Write the reply in plain, simple language a student can follow:
+
+1. State what type of problem it is in one sentence.
+2. Explain the method — what approach are you using and why.
+3. Show each step clearly, numbered. Use simple words. No jargon unless necessary.
+4. State the final answer clearly on its own line.
+5. Add a one-line tip about this type of problem if helpful.
+
+RULES:
+- Never guess or estimate — always use run_code for the actual computation
+- Show the working, not just the answer — the goal is understanding
+- Use simple language. Imagine explaining to a secondary school student.
+- If the problem has multiple parts, solve each part separately
+- Respond ONLY in valid JSON
+
+RESPONSE FORMAT:
+{
+  "thinking": "what type of problem this is and my plan",
+  "done": false,
+  "tool": "run_code",
+  "args": { "code": "# Python solution\n...", "language": "python" }
+}
+
+OR when done:
+{
+  "thinking": "computed the answer, ready to explain",
+  "done": true,
+  "reply": "Step by step explanation here..."
+}`;
+
+async function thinkStep(task, stepHistory, model, isMath) {
   // Build context from all previous steps
   const stepContext = stepHistory.map((s, i) =>
     `Step ${i+1}: Used ${s.tool}\nArgs: ${JSON.stringify(s.args)}\nResult: ${String(s.result).slice(0, 800)}`
@@ -246,12 +326,15 @@ async function thinkStep(task, stepHistory, model) {
     ? `Task: ${task}\n\nWhat is your first step?`
     : `Task: ${task}\n\nSteps completed so far:\n${stepContext}\n\nWhat is your next step? If you have enough info, set done: true and write the reply.`;
 
+  // Use math prompt for math tasks, standard prompt for everything else
+  const systemPrompt = isMath ? MATH_SYSTEM_PROMPT : AGENT_SYSTEM_PROMPT;
+
   const res = await groq.chat.completions.create({
     model,
     max_tokens: 1500,
-    temperature: 0.3,
+    temperature: 0.1, // lower temp for math — we want precision not creativity
     messages: [
-      { role: 'system', content: AGENT_SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage }
     ]
   });
@@ -293,11 +376,12 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
   const model = isOwner ? AGENT_MODELS.owner : AGENT_MODELS.user;
   const stepHistory = [];
   let finalDocument = null;
+  const mathTask = isMathTask(task); // detect math once upfront
 
   const emit = (data) => { if (onStep) onStep(data); };
 
-  console.log(`[Agent] Starting — model: ${model}, task: "${task.slice(0, 80)}"`);
-  emit({ type: 'thinking', text: 'Planning your task...' });
+  console.log(`[Agent] Starting — model: ${model}, math: ${mathTask}, task: "${task.slice(0, 80)}"`);
+  emit({ type: 'thinking', text: mathTask ? 'Reading the problem...' : 'Planning your task...' });
 
   let toolsUsed = 0; // track tool calls — must use at least 1 before done
 
@@ -305,7 +389,7 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
     try {
       // ── Think: decide what to do ────────────────────────────────────────
       console.log(`[Agent] Step ${step + 1}/${MAX_STEPS} — thinking...`);
-      const decision = await thinkStep(task, stepHistory, model);
+      const decision = await thinkStep(task, stepHistory, model, mathTask);
 
       if (decision.thinking) {
         console.log(`[Agent] Thinking: ${decision.thinking.slice(0, 100)}`);
@@ -315,10 +399,23 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
       // Block early exit if no tools used yet — force at least web_search
       const forcedTool = toolsUsed === 0 && (decision.done || !decision.tool);
       if (forcedTool) {
-        console.warn('[Agent] Tried to answer without using any tools — forcing web_search');
-        decision.done = false;
-        decision.tool = 'web_search';
-        decision.args = { query: task.slice(0, 200) };
+        if (mathTask) {
+          // For math — force run_code with a basic Python solution attempt
+          console.warn('[Agent] Math task tried to skip tools — forcing run_code');
+          decision.done = false;
+          decision.tool = 'run_code';
+          decision.args = {
+            code: `# Solving: ${task.slice(0, 100)}
+# Write your solution here
+print("Computing...")`,
+            language: 'python'
+          };
+        } else {
+          console.warn('[Agent] Tried to answer without using any tools — forcing web_search');
+          decision.done = false;
+          decision.tool = 'web_search';
+          decision.args = { query: task.slice(0, 200) };
+        }
       }
 
       if (decision.done || step === MAX_STEPS - 1) {
