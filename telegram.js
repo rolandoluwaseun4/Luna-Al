@@ -82,8 +82,11 @@ const {
   getSystemPrompt,
   generateTitle, generateSmartTitle,
   extractAndSaveMemories,
-  generateWithGemini, isRealisticOrEdit, isImageEditRequest, lastGeneratedImage
 } = require('./luna');
+const {
+  generateImage,
+  generateWithGemini, isImageEditRequest, lastGeneratedImage
+} = require('./image');
 
 // ── Gemini setup ──────────────────────────────────────────────
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -1241,7 +1244,6 @@ app.delete("/history/:userId", requireAuth, async (req, res) => {
 
 
 app.post("/generate-image", requireAuth, async (req, res) => {
-  // Daily image limit
   const imgAccount = await Account.findById(req.user.id);
   const imgLimit = await checkDailyLimit(imgAccount, 'image');
   if (!imgLimit.allowed) return res.json({ error: imgLimit.message, limitReached: true });
@@ -1250,106 +1252,13 @@ app.post("/generate-image", requireAuth, async (req, res) => {
   if (!prompt) return res.status(400).json({ error: "No prompt provided" });
 
   const uid = String(req.user.id);
-  const lastImg = lastGeneratedImage.get(uid);
-
-  // Check if this is an edit request on the last generated image
-  const isEdit = lastImg && isImageEditRequest(prompt);
-
-  // ── Gemini: best quality — try first for ALL prompts ─────────
-  if (geminiClient) {
-    console.log(isEdit ? 'Routing to Gemini image edit' : 'Routing image to Gemini (best quality)');
-    try {
-      const image = await generateWithGemini(prompt, isEdit ? lastImg.base64 : null);
-      lastGeneratedImage.set(uid, { base64: image, prompt });
-      return res.json({ image, edited: isEdit });
-    } catch (err) {
-      console.warn('Gemini image failed, falling back to Together.ai:', err.message);
-      // fall through to Together.ai → Pollinations
-    }
+  try {
+    const result = await generateImage(prompt, uid);
+    return res.json(result);
+  } catch (err) {
+    console.error('[Image] All providers failed:', err.message);
+    res.status(500).json({ error: "Image generation failed. Please try again." });
   }
-
-  // ── Together.ai FLUX.1-schnell-Free → Pollinations fallback ──
-  const enhancedPrompt = `${prompt}, highly detailed, sharp focus, vivid colors, 4k, masterpiece`;
-
-  // Step 1: Together.ai — free FLUX.1-schnell-Free
-  if (process.env.TOGETHER_API_KEY) {
-    try {
-      console.log('Generating with Together.ai FLUX.1-schnell-Free...');
-      const togetherRes = await fetch('https://api.together.ai/v1/images/generations', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.TOGETHER_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'black-forest-labs/FLUX.1-schnell-Free',
-          prompt: enhancedPrompt,
-          width: 1024,
-          height: 1024,
-          steps: 4,
-          n: 1,
-          response_format: 'b64_json'
-        })
-      });
-      if (togetherRes.ok) {
-        const togetherData = await togetherRes.json();
-        // Together returns either url or b64_json
-        const b64 = togetherData?.data?.[0]?.b64_json;
-        const imageUrl = togetherData?.data?.[0]?.url;
-        if (b64) {
-          const imageData = `data:image/png;base64,${b64}`;
-          lastGeneratedImage.set(uid, { base64: imageData, prompt });
-          console.log('Together.ai image generated ✅');
-          return res.json({ image: imageData });
-        } else if (imageUrl) {
-          const imgRes = await fetch(imageUrl);
-          const buffer = await imgRes.arrayBuffer();
-          const imageData = `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
-          lastGeneratedImage.set(uid, { base64: imageData, prompt });
-          console.log('Together.ai image generated ✅');
-          return res.json({ image: imageData });
-        }
-      } else {
-        const errText = await togetherRes.text().catch(() => '');
-        console.warn(`Together.ai failed: ${togetherRes.status} — ${errText.slice(0, 200)}`);
-      }
-    } catch (err) {
-      console.warn(`Together.ai error: ${err.message}`);
-    }
-  }
-
-  // Step 2: Pollinations fallback — unlimited, no API key
-  const encodedPrompt = encodeURIComponent(enhancedPrompt);
-  const pollinationsUrls = [
-    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${Math.floor(Math.random()*99999)}`,
-    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random()*99999)}`,
-  ];
-
-  for (const url of pollinationsUrls) {
-    // Try each Pollinations URL twice before moving on
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        console.log(`Generating with Pollinations (attempt ${attempt})...`);
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
-        const response = await fetch(url, { method: 'GET', signal: controller.signal });
-        clearTimeout(timeout);
-        if (!response.ok) {
-          console.warn(`Pollinations failed: ${response.status}`);
-          break;
-        }
-        const buffer = await response.arrayBuffer();
-        const imageData = `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
-        lastGeneratedImage.set(uid, { base64: imageData, prompt });
-        return res.json({ image: imageData });
-      } catch (err) {
-        console.warn(`Pollinations error (attempt ${attempt}): ${err.message}`);
-        if (attempt < 2) await new Promise(r => setTimeout(r, 2000)); // wait 2s before retry
-      }
-    }
-  }
-
-  res.status(500).json({ error: "Image generation failed. Please try again." });
 });
 
 

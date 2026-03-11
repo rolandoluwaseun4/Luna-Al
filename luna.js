@@ -16,6 +16,7 @@
 const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
+const { analyzeImageWithOpenRouter } = require('./image');
 
 
 
@@ -660,10 +661,36 @@ async function respond(ctx) {
   let rawReply = '';
 
   // ── Step 7: Execute ─────────────────────────────────────────────
-  // Priority: Groq (fast) → OpenRouter (wide fallback) → Gemini → error message
-  // RO-1 races Groq DeepSeek R1 vs Gemini for best quality answer.
+  // If image/video/file attached → Gemini Vision ONLY (Groq/OpenRouter can't see)
+  // Otherwise: Groq (fast) → OpenRouter (fallback) → Gemini → error
+  // RO-1 races Groq DeepSeek R1 vs Gemini for best quality.
 
-  if (routeDecision.raceGemini) {
+  if (image || video || file) {
+    // Gemini Vision primary — best multimodal understanding
+    console.log('[Luna] Media attached — Gemini Vision');
+    try {
+      rawReply = await executeGemini(systemPrompt, history, image, video, file);
+    } catch (e) {
+      console.warn('[Luna] Gemini Vision failed:', e.message);
+    }
+
+    // OpenRouter vision fallback (image only — qwen3-vl → llama-3.2-vision)
+    if (!rawReply && image) {
+      console.log('[Luna] Falling back to OpenRouter vision models');
+      try {
+        rawReply = await analyzeImageWithOpenRouter(systemPrompt, history, image);
+      } catch (e) {
+        console.warn('[Luna] OpenRouter vision also failed:', e.message);
+        rawReply = "I had trouble reading that image. Could you describe what you're seeing?";
+      }
+    }
+
+    if (!rawReply && (video || file)) {
+      rawReply = "I had trouble processing that file. Could you describe what's in it?";
+    }
+  }
+
+  if (!rawReply && routeDecision.raceGemini) {
     // RO-1: race Groq DeepSeek R1 vs Gemini simultaneously
     try {
       const [groqResult, geminiResult] = await Promise.allSettled([
@@ -943,61 +970,7 @@ async function extractAndSaveMemories(userId, userMessage, lunaReply) {
   }
 }
 
-// ── Detect if prompt needs realistic/editing (Gemini) or regular (FLUX) ──
-function isRealisticOrEdit(prompt) {
-  const p = prompt.toLowerCase();
-  const triggers = [
-    'realistic', 'real life', 'photorealistic', 'photo realistic',
-    'like a photo', 'like a real', 'hyperrealistic', 'hyper realistic',
-    'edit', 'editing', 'make it look', 'change the', 'remove the',
-    'add to', 'modify', 'enhance', 'retouch', 'portrait photo',
-    'professional photo', 'real person', 'photograph of'
-  ];
-  return triggers.some(t => p.includes(t));
-}
-
-// ── Generate realistic image via Gemini Imagen ────────────────
-// ── Last generated image store (per user, in-memory) ─────────
-const lastGeneratedImage = new Map(); // userId -> { base64, prompt }
-
-async function generateWithGemini(prompt, existingImageBase64 = null) {
-  if (!geminiClient) throw new Error('Gemini not configured');
-  const model = getGeminiClient().getGenerativeModel({ model: 'gemini-2.0-flash-exp' }); // image gen model
-
-  let parts;
-  if (existingImageBase64) {
-    // Edit mode — send existing image + edit instruction
-    const base64Data = existingImageBase64.includes(',') ? existingImageBase64.split(',')[1] : existingImageBase64;
-    const mimeType = existingImageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
-    parts = [
-      { text: prompt },
-      { inlineData: { mimeType, data: base64Data } }
-    ];
-  } else {
-    parts = [{ text: prompt }];
-  }
-
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts }],
-    generationConfig: { responseModalities: ['image', 'text'] }
-  });
-  for (const part of result.response.candidates[0].content.parts) {
-    if (part.inlineData) {
-      return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-    }
-  }
-  throw new Error('No image in Gemini response');
-}
-
-// Detect if message is an edit instruction on existing image
-function isImageEditRequest(prompt) {
-  if (!prompt) return false;
-  const p = prompt.toLowerCase();
-  return /^(make it|change|edit|update|remove|add|replace|turn it|now make|modify|adjust|fix|make the|make him|make her|make them|darker|lighter|brighter|smaller|bigger|different|instead)/.test(p)
-    || p.includes('edit the image') || p.includes('change the image')
-    || p.includes('modify the image') || p.includes('update the image')
-    || p.startsWith('now ') || p.startsWith('but ');
-}
+// ── Image generation moved to image.js ─────────────────────────
 
 
 module.exports = {
@@ -1005,5 +978,4 @@ module.exports = {
   getSystemPrompt,
   generateTitle, generateSmartTitle,
   extractAndSaveMemories,
-  generateWithGemini, isRealisticOrEdit, isImageEditRequest, lastGeneratedImage
 };
