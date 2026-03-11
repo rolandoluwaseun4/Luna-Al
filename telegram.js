@@ -609,7 +609,11 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(passport.initialize());
 app.use(cors({
-  origin: ['https://rolandoluwaseun4.github.io'],
+  origin: [
+    'https://luna-al.vercel.app',
+    'https://rolandoluwaseun4.github.io',
+    /\.vercel\.app$/,
+  ],
   methods: ['GET','POST','DELETE'],
   allowedHeaders: ['Content-Type','Authorization']
 }));
