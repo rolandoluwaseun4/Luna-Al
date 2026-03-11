@@ -2355,6 +2355,8 @@
               if(json.document){
                 pendingDocument = json.document;
               }
+              // Agent mode sends reply in done payload (no delta chunks) — use it directly
+              if(!fullText && json.reply) fullText = json.reply;
               if(!streamStopped) finalizeMessage(fullText, json.document);
             }
           }catch(e){}

@@ -96,61 +96,89 @@ async function toolReadUrl(url) {
 
 // ── Tool: Run Code (Piston API — free, no key needed) ────────────────────
 // Supports: python, javascript, typescript, bash, c, cpp, java, rust, go...
-const PISTON_LANG_MAP = {
-  python: { language: 'python', version: '3.10.0' },
-  python3: { language: 'python', version: '3.10.0' },
-  javascript: { language: 'javascript', version: '18.15.0' },
-  js: { language: 'javascript', version: '18.15.0' },
-  typescript: { language: 'typescript', version: '5.0.3' },
-  ts: { language: 'typescript', version: '5.0.3' },
-  bash: { language: 'bash', version: '5.2.0' },
-  sh: { language: 'bash', version: '5.2.0' },
-  c: { language: 'c', version: '10.2.0' },
-  cpp: { language: 'c++', version: '10.2.0' },
-  java: { language: 'java', version: '15.0.2' },
-  rust: { language: 'rust', version: '1.50.0' },
-  go: { language: 'go', version: '1.16.2' },
+// Language map for Glot.io
+const GLOT_LANG_MAP = {
+  python: 'python', python3: 'python',
+  javascript: 'javascript', js: 'javascript',
+  typescript: 'typescript', ts: 'typescript',
+  bash: 'bash', sh: 'bash',
+  c: 'c', cpp: 'cpp',
+  java: 'java', rust: 'rust', go: 'go',
 };
 
 async function toolRunCode(code, language = 'python') {
-  const lang = PISTON_LANG_MAP[language.toLowerCase()];
-  if (!lang) throw new Error(`Unsupported language: ${language}. Supported: ${Object.keys(PISTON_LANG_MAP).join(', ')}`);
+  const lang = GLOT_LANG_MAP[language.toLowerCase()];
+  if (!lang) throw new Error(`Unsupported language: ${language}. Supported: ${Object.keys(GLOT_LANG_MAP).join(', ')}`);
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), STEP_TIMEOUT);
+  const ext = { python: 'py', javascript: 'js', typescript: 'ts', bash: 'sh', c: 'c', cpp: 'cpp', java: 'java', rust: 'rs', go: 'go' };
+  const filename = `main.${ext[lang] || lang}`;
 
-  try {
-    const res = await fetch('https://emkc.org/api/v2/piston/execute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        language: lang.language,
-        version: lang.version,
-        files: [{ content: code }],
-        stdin: '',
-        args: [],
-        compile_timeout: 10000,
-        run_timeout: 10000,
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
+  // Try Piston first (best, no auth), fall back to Glot (needs key)
+  const pistonEndpoints = [
+    'https://emkc.org/api/v2/piston/execute',
+  ];
 
-    if (!res.ok) throw new Error(`Piston ${res.status}`);
-    const data = await res.json();
+  const pistonVersions = { python: '3.10.0', javascript: '18.15.0', typescript: '5.0.3', bash: '5.2.0', c: '10.2.0', cpp: '10.2.0', java: '15.0.2', rust: '1.50.0', go: '1.16.2' };
 
-    const stdout = data.run?.stdout || '';
-    const stderr = data.run?.stderr || '';
-    const exitCode = data.run?.code ?? 0;
+  for (const endpoint of pistonEndpoints) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), STEP_TIMEOUT);
 
-    if (exitCode !== 0 && stderr) {
-      return `Error (exit ${exitCode}):\n${stderr.slice(0, 1000)}`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          language: lang,
+          version: pistonVersions[lang] || '*',
+          files: [{ name: filename, content: code }],
+          stdin: '', args: [],
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        console.warn(`[Code] Piston endpoint \${endpoint} returned \${res.status}`);
+        continue; // try next endpoint
+      }
+
+      const data = await res.json();
+      const stdout = data.run?.stdout || '';
+      const stderr = data.run?.stderr || '';
+      const exitCode = data.run?.code ?? 0;
+
+      if (exitCode !== 0 && stderr) return `Error:\n\${stderr.slice(0, 500)}`;
+      console.log(`[Code] Piston ✅ via \${endpoint}`);
+      return stdout.slice(0, 2000) || '(no output)';
+    } catch (err) {
+      console.warn(`[Code] Piston \${endpoint} failed: \${err.message}`);
     }
-    return stdout.slice(0, 2000) || '(no output)';
-  } catch (err) {
-    clearTimeout(timeout);
-    throw err;
   }
+
+  // Glot fallback (requires GLOT_API_KEY env var)
+  if (process.env.GLOT_API_KEY) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), STEP_TIMEOUT);
+      const res = await fetch(`https://glot.io/api/run/\${lang}/latest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Token \${process.env.GLOT_API_KEY}` },
+        body: JSON.stringify({ files: [{ name: filename, content: code }] }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data = await res.json();
+        console.log('[Code] Glot ✅');
+        return (data.stdout || data.stderr || data.error || '(no output)').slice(0, 2000);
+      }
+    } catch (err) {
+      console.warn('[Code] Glot failed:', err.message);
+    }
+  }
+
+  throw new Error('All code execution providers failed');
 }
 
 // ── Tool: Create Document ─────────────────────────────────────────────────
