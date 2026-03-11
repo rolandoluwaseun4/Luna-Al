@@ -130,7 +130,7 @@ async function toolRunCode(code, language = 'python') {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           language: lang,
-          version: pistonVersions[lang] || '*',
+          version: '*',
           files: [{ name: filename, content: code }],
           stdin: '', args: [],
         }),
@@ -156,6 +156,49 @@ async function toolRunCode(code, language = 'python') {
     }
   }
 
+  // Judge0 fallback (free public instance, no key needed)
+  try {
+    const judge0LangMap = {
+      python: 92,  // Python 3.11.2
+      javascript: 93, typescript: 74,
+      c: 50, cpp: 54, java: 62, rust: 73, go: 60, bash: 46
+    };
+    const langId = judge0LangMap[lang];
+    if (langId) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), STEP_TIMEOUT);
+
+      // Submit the code
+      const submitRes = await fetch('https://ce.judge0.com/submissions?base64_encoded=false&wait=true', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          language_id: langId,
+          source_code: code,
+          stdin: ''
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (submitRes.ok) {
+        const result = await submitRes.json();
+        const stdout = result.stdout || '';
+        const stderr = result.stderr || '';
+        const compileErr = result.compile_output || '';
+        console.log('[Code] Judge0 OK');
+        if (compileErr) return `Compile error:\n${compileErr.slice(0, 500)}`;
+        if (stderr) return `Error:\n${stderr.slice(0, 500)}`;
+        return stdout.slice(0, 2000) || '(no output)';
+      }
+      console.warn('[Code] Judge0 failed:', submitRes.status);
+    }
+  } catch (err) {
+    console.warn('[Code] Judge0 failed:', err.message);
+  }
+
   // Glot fallback (requires GLOT_API_KEY env var)
   if (process.env.GLOT_API_KEY) {
     try {
@@ -170,7 +213,7 @@ async function toolRunCode(code, language = 'python') {
       clearTimeout(timeout);
       if (res.ok) {
         const data = await res.json();
-        console.log('[Code] Glot ✅');
+        console.log('[Code] Glot OK');
         return (data.stdout || data.stderr || data.error || '(no output)').slice(0, 2000);
       }
     } catch (err) {
