@@ -174,7 +174,8 @@ GUIDANCE:
 - ui_build: use this when user asks to build a website, landing page, dashboard, UI, app interface, or any visual HTML/CSS output. Always set response_format: code and response_length: full_document for ui_build.
 - code: use for scripts, functions, algorithms, backend code, non-UI programming tasks
 - TABLE RULE: if user says "tabular form", "in a table", "as a table", "table format", or "compare in a table" — set response_format: table and response_length: medium. Never set short for table requests.
-- STRUCTURED RULE: if user asks for a plan, guide, breakdown, steps, study notes, roadmap, comparison, or anything that genuinely has multiple distinct sections — set response_format: structured and response_length: medium or long. This allows bold section headers and organized content.`;
+- STRUCTURED RULE: if user asks for a plan, guide, breakdown, steps, study notes, roadmap, comparison, or anything that genuinely has multiple distinct sections — set response_format: structured and response_length: medium or long. This allows bold section headers and organized content.
+- LETTER COUNT RULE: if user asks how many of a letter/character are in a word, or to count letters/vowels/consonants in anything — set intent: agent_task. Never answer letter counting questions directly — always route to agent.`;
 
   try {
     const res = await groq.chat.completions.create({
@@ -736,6 +737,38 @@ async function respond(ctx) {
     userName,         // user's real name from profile
   } = ctx;
 
+  // ── Step 0: Pre-brain intercepts ─────────────────────────────
+  // Letter/character counting — always route to agent with run_code
+  // Models cannot reliably count characters — code can.
+  const LETTER_COUNT_REGEX = [
+    /how many\s+[a-z]('s|s)?\s+(are\s+)?(in|does|is there in)/i,
+    /count\s+(the\s+)?(letters?|characters?|vowels?|consonants?|occurrences?)\s+(in|of)/i,
+    /how many times\s+(does\s+)?(the\s+)?[a-z]/i,
+    /number of\s+[a-z]('s|s)?\s+in/i,
+    /how many\s+(letters?|characters?|vowels?|consonants?)\s+(are\s+)?(in|does)/i,
+    /letters?\s+in\s+["""']?\w+["""']?/i,
+  ];
+  if (message && LETTER_COUNT_REGEX.some(p => p.test(message))) {
+    console.log('[Luna] Letter count detected — routing to agent');
+    if (onChunk) onChunk({ type: 'agent_start' });
+    try {
+      const agentResult = await runAgent(message, history, isOwner, (step) => {
+        if (onChunk) onChunk({ type: 'agent_step', step });
+      });
+      const finalReply = agentResult.reply || '';
+      if (finalReply && onChunk) {
+        for (const word of finalReply.split(' ')) {
+          onChunk({ delta: word + ' ' });
+          await new Promise(r => setTimeout(r, 15));
+        }
+      }
+      return { reply: finalReply };
+    } catch (err) {
+      console.error('[Luna] Letter count agent failed:', err.message);
+      // Fall through to normal flow
+    }
+  }
+
   // ── Step 1: Luna thinks ────────────────────────────────────────
   const plan = await think(message, history, clientModel, !!image, userName);
 
@@ -1079,6 +1112,12 @@ FOR ESSAYS, RESUMES, COVER LETTERS, CLASS ANSWERS — write like a talented huma
 • One strong angle, not covering everything equally
 • Natural transitions: "which is why", "the thing is", "that said"
 • Never: "In today's world", "In conclusion", "Furthermore", "It is worth noting"
+
+## KNOWN FACTS — letter counting
+These are exact answers. Never second-guess them:
+- "Strawberry" has 3 R's: S-t-r-a-w-b-e-r-r-y
+- "Strawberry" has 10 letters total
+- When asked to count letters in any word, spell it out character by character mentally before answering.
 
 ## MATH FORMATTING
 When answering any question involving math — equations, formulas, calculations, symbols — always wrap expressions in LaTeX delimiters so they render properly:

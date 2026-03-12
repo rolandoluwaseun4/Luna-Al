@@ -313,6 +313,51 @@ function isMathTask(task) {
   return hasKeyword || hasPattern;
 }
 
+// ── Letter/character counting detection ──────────────────────────────────
+const LETTER_COUNT_PATTERNS = [
+  /how many\s+[a-z]('s|s)?\s+(are\s+)?(in|does|is there in)/i,
+  /count\s+(the\s+)?(letters?|characters?|vowels?|consonants?|occurrences?|times?)\s+(in|of)/i,
+  /how many times\s+(does\s+)?(the\s+)?[a-z]/i,
+  /number of\s+[a-z]('s|s)?\s+in/i,
+  /how many\s+(letters?|characters?|vowels?|consonants?)\s+(are\s+)?(in|does)/i,
+  /spell\s+out\s+["""']?\w+["""']?/i,
+  /letters?\s+in\s+["""']?\w+["""']?/i,
+];
+
+function isLetterCountTask(task) {
+  if (!task) return false;
+  return LETTER_COUNT_PATTERNS.some(p => p.test(task));
+}
+
+// ── Letter count system prompt ────────────────────────────────────────────
+const LETTER_COUNT_SYSTEM_PROMPT = `You are Luna's character-counting agent. You count letters and characters in words/sentences EXACTLY using Python code — never by guessing.
+
+AVAILABLE TOOLS:
+- run_code(code: string, language: "python") — execute Python to get the exact count
+
+RULES:
+- ALWAYS use run_code. NEVER count in your head. Models make errors counting — code does not.
+- Write simple, clear Python. Print all results.
+- Respond ONLY in valid JSON.
+
+WHEN CALLING run_code:
+{
+  "done": false,
+  "tool": "run_code",
+  "args": { "code": "# count letters\\nword = 'Strawberry'\\nletter = 'r'\\ncount = word.lower().count(letter.lower())\\nprint(f'{letter} appears {count} time(s) in {word}')\\nprint(f'Letters in order: {list(word)}')", "language": "python" }
+}
+
+WHEN FINISHED — after run_code returns the result:
+{
+  "done": true,
+  "reply": "Clear answer based on the actual code output. Show the letters spelled out so the user can verify."
+}
+
+REPLY STYLE:
+- Short and direct. Show the breakdown so it's verifiable.
+- Example: "There are 3 R's in Strawberry — S·t·r·a·w·b·e·r·r·y. I ran it through code to be sure."
+- Never guess. Never answer before running the code.`;
+
 // ═════════════════════════════════════════════════════════════════════════
 //  AGENT BRAIN — Think step (decides what to do next)
 // ═════════════════════════════════════════════════════════════════════════
@@ -389,7 +434,7 @@ LATEX RULES:
 
 CRITICAL: The reply field must contain the COMPLETE explanation. Do not set done: true until you have written the full step-by-step reply.`;
 
-async function thinkStep(task, stepHistory, model, isMath) {
+async function thinkStep(task, stepHistory, model, isMath, isLetterCount = false) {
   // Build context from all previous steps
   const stepContext = stepHistory.map((s, i) =>
     `Step ${i+1}: Used ${s.tool}\nArgs: ${JSON.stringify(s.args)}\nResult: ${String(s.result).slice(0, 800)}`
@@ -399,7 +444,12 @@ async function thinkStep(task, stepHistory, model, isMath) {
     ? `Task: ${task}\n\nWhat is your first step?`
     : `Task: ${task}\n\nSteps completed so far:\n${stepContext}\n\nWhat is your next step? If you have enough info, set done: true and write the reply.`;
 
-  const systemPrompt = isMath ? MATH_SYSTEM_PROMPT : AGENT_SYSTEM_PROMPT;
+  // Select system prompt based on task type
+  const systemPrompt = isLetterCount
+    ? LETTER_COUNT_SYSTEM_PROMPT
+    : isMath
+    ? MATH_SYSTEM_PROMPT
+    : AGENT_SYSTEM_PROMPT;
 
   // Try primary model, then fallbacks on rate limit
   const modelsToTry = [model, ...AGENT_FALLBACK_MODELS.filter(m => m !== model)];
@@ -491,12 +541,14 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
   const model = isOwner ? AGENT_MODELS.owner : AGENT_MODELS.user;
   const stepHistory = [];
   let finalDocument = null;
-  const mathTask = isMathTask(task); // detect math once upfront
+  const mathTask = isMathTask(task);           // detect math once upfront
+  const letterTask = isLetterCountTask(task);  // detect letter counting once upfront
 
   const emit = (data) => { if (onStep) onStep(data); };
 
-  console.log(`[Agent] Starting — model: ${model}, math: ${mathTask}, task: "${task.slice(0, 80)}"`);
-  emit({ type: 'thinking', text: mathTask ? 'Reading the problem...' : 'Planning your task...' });
+  const taskType = letterTask ? 'letter_count' : mathTask ? 'math' : 'general';
+  console.log(`[Agent] Starting — model: ${model}, type: ${taskType}, task: "${task.slice(0, 80)}"`);
+  emit({ type: 'thinking', text: letterTask ? 'Let me count that properly using code...' : mathTask ? 'Reading the problem...' : 'Planning your task...' });
 
   let toolsUsed = 0; // track tool calls — must use at least 1 before done
 
@@ -504,17 +556,28 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
     try {
       // ── Think: decide what to do ────────────────────────────────────────
       console.log(`[Agent] Step ${step + 1}/${MAX_STEPS} — thinking...`);
-      const decision = await thinkStep(task, stepHistory, model, mathTask);
+      const decision = await thinkStep(task, stepHistory, model, mathTask, letterTask);
 
       if (decision.thinking) {
         console.log(`[Agent] Thinking: ${decision.thinking.slice(0, 100)}`);
       }
 
       // ── Done: synthesize final answer ────────────────────────────────────
-      // Block early exit if no tools used yet — force at least web_search
+      // Block early exit if no tools used yet — force the right tool
       const forcedTool = toolsUsed === 0 && (decision.done || !decision.tool);
       if (forcedTool) {
-        if (mathTask) {
+        if (letterTask) {
+          // Letter count — MUST use run_code, never guess
+          console.warn('[Agent] Letter count task tried to skip code — forcing run_code');
+          decision.done = false;
+          decision.tool = 'run_code';
+          const wordMatch = task.match(/["""']([^"""']+)["""']/) || task.match(/in\s+["']?(\w+)["']?/i);
+          const word = wordMatch ? wordMatch[1] : 'the word';
+          decision.args = {
+            code: `word = "${word}"\nprint(f"Letters in order: {list(word)}")\nprint(f"Total letters: {len(word)}")\nfor char in set(word.lower()):\n    print(f"'{char}' appears {word.lower().count(char)} time(s)")`,
+            language: 'python'
+          };
+        } else if (mathTask) {
           // For math — force run_code with a basic Python solution attempt
           console.warn('[Agent] Math task tried to skip tools — forcing run_code');
           decision.done = false;
@@ -645,4 +708,4 @@ function cleanAgentReply(text) {
   return text.trim();
 }
 
-module.exports = { runAgent };
+module.exports = { runAgent, isLetterCountTask };
