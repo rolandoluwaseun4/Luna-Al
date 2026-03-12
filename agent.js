@@ -43,8 +43,16 @@ const STEP_TIMEOUT = 30000; // 30s per tool call
 // ── Model config ─────────────────────────────────────────────────────────
 const AGENT_MODELS = {
   owner: 'qwen/qwen3-32b',           // best available on Groq for reasoning
-  user:  'llama-3.3-70b-versatile',  // reliable, no daily cap
+  user:  'llama-3.3-70b-versatile',  // reliable, fast
 };
+
+// Fallback chain when primary model hits rate limit
+const AGENT_FALLBACK_MODELS = [
+  'llama-3.1-70b-versatile',
+  'llama3-70b-8192',
+  'qwen/qwen3-32b',
+  'gemma2-9b-it',
+];
 
 // ═════════════════════════════════════════════════════════════════════════
 //  TOOLS
@@ -391,62 +399,79 @@ async function thinkStep(task, stepHistory, model, isMath) {
     ? `Task: ${task}\n\nWhat is your first step?`
     : `Task: ${task}\n\nSteps completed so far:\n${stepContext}\n\nWhat is your next step? If you have enough info, set done: true and write the reply.`;
 
-  // Use math prompt for math tasks, standard prompt for everything else
   const systemPrompt = isMath ? MATH_SYSTEM_PROMPT : AGENT_SYSTEM_PROMPT;
 
-  const res = await groq.chat.completions.create({
-    model,
-    max_tokens: 1500,
-    temperature: 0.1, // lower temp for math — we want precision not creativity
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage }
-    ]
-  });
+  // Try primary model, then fallbacks on rate limit
+  const modelsToTry = [model, ...AGENT_FALLBACK_MODELS.filter(m => m !== model)];
 
-  let raw = res.choices[0]?.message?.content?.trim() || '{}';
-
-  // Strip <think> blocks — handles both closed and unclosed tags (qwen3-32b, DeepSeek)
-  raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim(); // closed tags
-  raw = raw.replace(/<think>[\s\S]*/gi, '').trim();           // unclosed — strip everything after <think>
-
-  // Strip markdown code fences if present
-  raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
-
-  // Try parsing as-is first
-  try {
-    const parsed = JSON.parse(raw);
-    // Strip internal "thinking" key — model sometimes adds it inside JSON
-    delete parsed.thinking;
-    return parsed;
-  } catch (e) {}
-
-  // Try to extract the outermost JSON object
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
+  for (const tryModel of modelsToTry) {
     try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      delete parsed.thinking;
-      return parsed;
-    } catch {}
+      const res = await groq.chat.completions.create({
+        model: tryModel,
+        max_tokens: 1500,
+        temperature: 0.1,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage }
+        ]
+      });
+
+      if (tryModel !== model) console.log(`[Agent] Rate limited on ${model}, using ${tryModel}`);
+
+      let raw = res.choices[0]?.message?.content?.trim() || '{}';
+
+      // Strip <think> blocks — handles both closed and unclosed tags (qwen3-32b, DeepSeek)
+      raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      raw = raw.replace(/<think>[\s\S]*/gi, '').trim();
+
+      // Strip markdown code fences
+      raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
+
+      // Try parsing as-is first
+      try {
+        const parsed = JSON.parse(raw);
+        delete parsed.thinking;
+        return parsed;
+      } catch (e) {}
+
+      // Try to extract the outermost JSON object
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          delete parsed.thinking;
+          return parsed;
+        } catch {}
+      }
+
+      // Last resort — salvage done/reply/tool fields manually
+      const done = /\"done\"\s*:\s*true/i.test(raw);
+      const replyMatch = raw.match(/"reply"\s*:\s*"([\s\S]*?)"\s*[,}]/);
+      const toolMatch = raw.match(/"tool"\s*:\s*"([^"]+)"/);
+      const argsMatch = raw.match(/"args"\s*:\s*(\{[^}]+\})/);
+
+      if (done || replyMatch || toolMatch) {
+        return {
+          done,
+          reply: replyMatch ? replyMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') : '',
+          tool: toolMatch ? toolMatch[1] : null,
+          args: argsMatch ? JSON.parse(argsMatch[1]) : {},
+        };
+      }
+
+      throw new Error(`Agent returned invalid JSON: ${raw.slice(0, 200)}`);
+
+    } catch (err) {
+      const isRateLimit = err.status === 429 || err.message?.includes('rate_limit') || err.message?.includes('Rate limit');
+      if (isRateLimit && modelsToTry.indexOf(tryModel) < modelsToTry.length - 1) {
+        console.warn(`[Agent] Rate limit on ${tryModel}, trying next model...`);
+        continue;
+      }
+      throw err;
+    }
   }
 
-  // Last resort — try to salvage done/reply/tool fields manually
-  const done = /\"done\"\s*:\s*true/i.test(raw);
-  const replyMatch = raw.match(/"reply"\s*:\s*"([\s\S]*?)"\s*[,}]/);
-  const toolMatch = raw.match(/"tool"\s*:\s*"([^"]+)"/);
-  const argsMatch = raw.match(/"args"\s*:\s*(\{[^}]+\})/);
-
-  if (done || replyMatch || toolMatch) {
-    return {
-      done,
-      reply: replyMatch ? replyMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') : '',
-      tool: toolMatch ? toolMatch[1] : null,
-      args: argsMatch ? JSON.parse(argsMatch[1]) : {},
-    };
-  }
-
-  throw new Error(`Agent returned invalid JSON: ${raw.slice(0, 200)}`);
+  throw new Error('All agent models rate limited');
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -555,13 +580,26 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
       console.error(`[Agent] Step ${step + 1} error:`, err.message);
       emit({ type: 'error', message: err.message });
 
-      // Give Luna one more chance to wrap up with what it has
+      // Clean user-facing error — never show raw API errors
+      const isRateLimit = err.status === 429 || err.message?.includes('rate_limit') || err.message?.includes('Rate limit');
+      const isTimeout = err.message?.includes('abort') || err.message?.includes('timeout');
+
       if (stepHistory.length > 0) {
-        const fallbackReply = `I ran into an issue at step ${step + 1}: ${err.message}. Here's what I found so far:\n\n${
-          stepHistory.map(s => `**${s.tool}:** ${String(s.result).slice(0, 400)}`).join('\n\n')
-        }`;
-        return { reply: fallbackReply, document: finalDocument };
+        // Synthesize what was found so far
+        const found = stepHistory
+          .filter(s => s.result && String(s.result).length > 10)
+          .map(s => String(s.result).slice(0, 400))
+          .join('\n\n');
+        const fallbackReply = found
+          ? `Here's what I found before hitting an issue:\n\n${found}`
+          : isRateLimit
+            ? "Hit a rate limit mid-task. Try again in a moment."
+            : "Something went wrong mid-task. Try asking again.";
+        return { reply: cleanAgentReply(fallbackReply), document: finalDocument };
       }
+
+      if (isRateLimit) return { reply: "Hit a rate limit — try again in a moment.", document: finalDocument };
+      if (isTimeout) return { reply: "That took too long to process. Try a simpler version of the question.", document: finalDocument };
 
       throw err;
     }
@@ -569,10 +607,12 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
 
   // Exceeded max steps — synthesize what we have
   console.warn('[Agent] Max steps reached — synthesizing');
-  const fallbackReply = `I've completed ${MAX_STEPS} research steps. Here's what I found:\n\n${
-    stepHistory.map(s => `**${s.tool}:** ${String(s.result).slice(0, 400)}`).join('\n\n')
-  }`;
-  return { reply: fallbackReply, document: finalDocument };
+  const found = stepHistory
+    .filter(s => s.result && String(s.result).length > 10)
+    .map(s => String(s.result).slice(0, 400))
+    .join('\n\n');
+  const fallbackReply = found || "Ran out of steps before finishing. Try breaking the question into smaller parts.";
+  return { reply: cleanAgentReply(fallbackReply), document: finalDocument };
 }
 
 // ── Clean agent reply formatting ─────────────────────────────────────────
