@@ -183,7 +183,7 @@ async function generateWithHuggingFace(prompt) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 60000); // 60s — cold starts are slow
 
-      const res = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
+      const res = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${HF_API_KEY}`,
