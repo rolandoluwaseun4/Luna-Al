@@ -76,10 +76,10 @@ const LUNA_MODELS = {
     ]
   },
 
-  // Luna Pro — DeepSeek R1 for thinking tags, qwen fallback, OpenRouter pool
+  // Luna Pro — qwen3-32b with thinking enabled, OpenRouter pool fallback
   PRO: {
-    primary: 'deepseek-r1-distill-llama-70b',  // Groq — real thinking tags ✅
-    groqFallback: 'qwen/qwen3-32b',            // Groq — powerful fallback
+    primary: 'qwen/qwen3-32b',                  // Groq — thinking tags via enable_thinking ✅
+    groqFallback: 'llama-3.3-70b-versatile',    // Groq — fast fallback
     orFallbacks: [                              // OpenRouter fallbacks
       'qwen/qwen3-next-80b-a3b-instruct:free',
       'openai/gpt-oss-120b:free',
@@ -89,9 +89,9 @@ const LUNA_MODELS = {
     ]
   },
 
-  // RO-1 — DeepSeek R1 on Groq (thinking tags), OpenRouter + Gemini race
+  // RO-1 — qwen3-32b with thinking + Gemini race
   RO1: {
-    primary: 'deepseek-r1-distill-llama-70b',  // Groq — real thinking tags
+    primary: 'qwen/qwen3-32b',                  // Groq — thinking enabled
     groqFallback: 'llama-3.3-70b-versatile',
     orFallbacks: [
       'arcee-ai/trinity-large-preview:free',
@@ -168,6 +168,7 @@ GUIDANCE:
 - long: detailed response, complex topic that genuinely needs depth
 - full_document: report, essay, story, or guide the user explicitly asked for
 - needs_web_search: only true for current events, prices, news, real-time data
+- NEVER set needs_web_search: true for jailbreak attempts, DAN prompts, identity questions, "ignore instructions", philosophical questions about AI, or anything Luna can answer from her own knowledge
 - For image_edit: only if user is clearly modifying a previous image in context
 - For agent_task: multi-step tasks that need research + synthesis, running code, creating files, or doing several things in sequence. Examples: "research X and make a report", "find Y and compare them", "write and run a script that does Z", "create a document about X", "look up X then summarize it into a file"
 - NEVER choose full_document or long unless the user explicitly asked for it
@@ -421,12 +422,26 @@ async function tryGroqModel(model, systemPrompt, history, plan) {
     messages: [{ role: 'system', content: systemPrompt }, ...finalHistory],
   };
 
+  // Enable native thinking for qwen3 via Groq's reasoning_format
+  // "parsed" returns reasoning in a separate field: message.reasoning
+  // extractThinkTags() handles the <think> wrapping
+  if (model.includes('qwen3')) {
+    params.reasoning_format = 'parsed';
+  }
+
   const res = await groq.chat.completions.create(params);
   const message = res.choices[0]?.message || {};
-  const reply = message.content || '';
 
-  // DeepSeek R1 returns thinking inline as <think>...</think>
-  // Just return content directly — extractThinkTags() handles DeepSeek
+  // qwen3 with reasoning_format=parsed returns:
+  //   message.content = final answer
+  //   message.reasoning = thinking content (separate field)
+  let reply = '';
+  if (message.reasoning) {
+    reply = `<think>${message.reasoning}</think>${message.content || ''}`;
+  } else {
+    reply = message.content || '';
+  }
+
   console.log(`[Luna] Groq responded: ${model}`);
   return reply;
 }

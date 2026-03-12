@@ -626,12 +626,32 @@ app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false 
 app.use(express.json({ limit: '2mb' }));
 
 // Input sanitization
+// Prompt injection patterns — attempts to override system prompt
+const INJECTION_PATTERNS = [
+  /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?|context)/i,
+  /disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/i,
+  /you\s+are\s+now\s+(a\s+)?(different|new|another|unrestricted|jailbroken|dan|evil)/i,
+  /forget\s+(everything|all)\s+(you('ve)?\s+been\s+told|your\s+instructions?|your\s+training)/i,
+  /new\s+system\s+prompt\s*:/i,
+  /\[system\]/i,
+  /<\s*system\s*>/i,
+  /act\s+as\s+(if\s+you\s+(are|were)\s+)?(a\s+)?(dan|jailbreak|unrestricted|evil|opposite)/i,
+];
+
 function sanitizeInput(str, maxLen=4000) {
   if (typeof str !== 'string') return '';
-  return str.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi,'')
+  const cleaned = str.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi,'')
             .replace(/<[^>]+>/g,'')
             .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'')
             .trim().substring(0, maxLen);
+
+  // Check for prompt injection attempts — log and flag but still process
+  // (returning empty string would let attackers probe the filter)
+  if (INJECTION_PATTERNS.some(p => p.test(cleaned))) {
+    console.warn('[Security] Prompt injection attempt detected:', cleaned.slice(0, 100));
+  }
+
+  return cleaned;
 }
 
 const limiter = rateLimit({
@@ -859,6 +879,12 @@ app.post("/chat", requireAuth, async (req, res) => {
   if (image && typeof image !== 'string') return sendError("Invalid image");
   if (image && image.length > 1500000) return sendError("Image too large");
 
+  // Prompt injection guard — hard block obvious jailbreak attempts
+  if (message && INJECTION_PATTERNS.some(p => p.test(message))) {
+    console.warn(`[Security] Injection attempt blocked from user ${req.user.id}`);
+    return sendDone({ reply: "That's not something I'll act on. What do you actually need help with?" });
+  }
+
   // ✅ userId always comes from verified JWT, never from client body
   const uid = String(req.user.id);
   const isOwner = req.user.role === 'owner';
@@ -872,7 +898,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       await postToAll(postText);
       return sendDone({ reply: `✅ Posted to Telegram + Discord!\n\n"${postText}"` });
     } catch (err) {
-      return sendDone({ reply: `❌ Could not post to channel: ${err.message}` });
+      console.error('[Luna] Channel post failed:', err.message);
+      return sendDone({ reply: `❌ Could not post to channel. Check your bot credentials and try again.` });
     }
   }
 
@@ -885,7 +912,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       await postTweet(tweetText);
       return sendDone({ reply: `✅ Tweeted!\n\n"${tweetText}"` });
     } catch (err) {
-      return sendDone({ reply: `❌ Tweet failed: ${err.message}` });
+      console.error('[Luna] Tweet failed:', err.message);
+      return sendDone({ reply: `❌ Tweet failed. Check your Twitter credentials or try again.` });
     }
   }
 

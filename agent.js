@@ -641,11 +641,12 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
 
     } catch (err) {
       console.error(`[Agent] Step ${step + 1} error:`, err.message);
-      emit({ type: 'error', message: err.message });
-
-      // Clean user-facing error — never show raw API errors
       const isRateLimit = err.status === 429 || err.message?.includes('rate_limit') || err.message?.includes('Rate limit');
       const isTimeout = err.message?.includes('abort') || err.message?.includes('timeout');
+
+      // Never emit raw error details to frontend
+      const safeMsg = isRateLimit ? 'Rate limit hit' : 'Step failed';
+      emit({ type: 'error', message: safeMsg });
 
       if (stepHistory.length > 0) {
         // Synthesize what was found so far
