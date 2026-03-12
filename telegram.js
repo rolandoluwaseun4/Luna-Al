@@ -281,6 +281,11 @@ const DAILY_IMAGE_LIMIT = 5;
 const DAILY_PRO_LIMIT = 10;
 const DAILY_VIDEO_LIMIT = 1;
 
+// VIP users — unlimited access, no daily limits, full agent mode
+const VIP_EMAILS = [
+  'oluwapelumip821@gmail.com',
+];
+
 async function checkDailyLimit(account, type = 'message') {
   if (!account || account.role === 'owner') return { allowed: true };
 
@@ -332,7 +337,7 @@ async function checkDailyLimit(account, type = 'message') {
 
   const count = account.dailyMessages || 0;
   if (count >= DAILY_FREE_LIMIT) {
-    return { allowed: false, message: `🌙 You've used your ${DAILY_FREE_LIMIT} free messages for today. Come back tomorrow for more!` };
+    return { allowed: false, message: `You've had a productive day. 🌙 Your ${DAILY_FREE_LIMIT} free messages are used up — come back tomorrow and Luna will be ready for you.` };
   }
   await Account.findByIdAndUpdate(account._id, { $inc: { dailyMessages: 1 }, lastReset: account.lastReset || now });
   return { allowed: true, remaining: DAILY_FREE_LIMIT - count - 1 };
@@ -928,6 +933,21 @@ app.post("/chat", requireAuth, async (req, res) => {
     // chatMode === 'agent' forces Luna's agent system (replaces Manus)
     if (!image && message && (chatMode === 'agent' || chatMode === 'manus')) {
       console.log('[Luna] Agent mode — running task:', message.substring(0, 80));
+
+      // Check if user is VIP or owner — unlimited agent access
+      const agentAccount = await Account.findById(req.user.id).catch(() => null);
+      const isVIP = agentAccount && VIP_EMAILS.includes((agentAccount.email || '').toLowerCase());
+
+      if (!isOwner && !isVIP) {
+        // Regular users — check daily message limit for agent mode
+        if (agentAccount) {
+          const limitCheck = await checkDailyLimit(agentAccount, 'message');
+          if (!limitCheck.allowed) {
+            return sendDone({ reply: limitCheck.message });
+          }
+        }
+      }
+
       try {
         const agentResult = await runAgent(
           message,

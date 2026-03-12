@@ -507,7 +507,7 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
       }
 
       if (decision.done || step === MAX_STEPS - 1) {
-        const reply = decision.reply || 'Task complete.';
+        const reply = cleanAgentReply(decision.reply || 'Task complete.');
         console.log(`[Agent] Done after ${step + 1} steps`);
         emit({ type: 'done', reply });
         return { reply, document: finalDocument };
@@ -573,6 +573,36 @@ async function runAgent(task, history = [], isOwner = false, onStep = null) {
     stepHistory.map(s => `**${s.tool}:** ${String(s.result).slice(0, 400)}`).join('\n\n')
   }`;
   return { reply: fallbackReply, document: finalDocument };
+}
+
+// ── Clean agent reply formatting ─────────────────────────────────────────
+// Fixes common model formatting issues: numbered list resets, dash lists,
+// ## headers, sycophantic openers.
+function cleanAgentReply(text) {
+  if (!text) return text;
+
+  // Fix numbered list resets — re-number any list that resets to 1
+  let listCounter = 0;
+  text = text.replace(/^(\d+)\. /gm, (match, num) => {
+    if (parseInt(num) === 1 && listCounter > 0) {
+      // Check if this is a genuine new list (blank line before it)
+      // We handle this by just incrementing
+    }
+    listCounter = parseInt(num) === 1 ? 1 : listCounter + 1;
+    return `${listCounter}. `;
+  });
+
+  // Fix dash list items running together — "- item1 - item2" → separate lines
+  text = text.replace(/ - ([A-Z])/g, '\n- $1');
+
+  // Remove ## markdown headers — convert to bold
+  text = text.replace(/^## (.+)$/gm, '**$1**');
+  text = text.replace(/^### (.+)$/gm, '**$1**');
+
+  // Remove hollow openers
+  text = text.replace(/^(Certainly!|Of course!|Great question!|Absolutely!|Sure!|Sure,|Of course,)\s*/i, '');
+
+  return text.trim();
 }
 
 module.exports = { runAgent };
