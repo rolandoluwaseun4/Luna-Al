@@ -151,7 +151,7 @@ Analyze the message and respond with ONLY a valid JSON object — no explanation
   "intent": "one of: chat | code | ui_build | creative | analysis | image_generate | image_edit | search_needed | agent_task",
   "is_followup": true or false,
   "topic": "brief topic of what they're asking about",
-  "response_format": "one of: prose | code | list | table | document",
+  "response_format": "one of: prose | code | list | table | structured | document",
   "response_length": "one of: one_sentence | short | medium | long | full_document",
   "tone": "one of: casual | technical | creative | direct",
   "needs_web_search": true or false,
@@ -172,7 +172,9 @@ GUIDANCE:
 - For agent_task: multi-step tasks that need research + synthesis, running code, creating files, or doing several things in sequence. Examples: "research X and make a report", "find Y and compare them", "write and run a script that does Z", "create a document about X", "look up X then summarize it into a file"
 - NEVER choose full_document or long unless the user explicitly asked for it
 - ui_build: use this when user asks to build a website, landing page, dashboard, UI, app interface, or any visual HTML/CSS output. Always set response_format: code and response_length: full_document for ui_build.
-- code: use for scripts, functions, algorithms, backend code, non-UI programming tasks`;
+- code: use for scripts, functions, algorithms, backend code, non-UI programming tasks
+- TABLE RULE: if user says "tabular form", "in a table", "as a table", "table format", or "compare in a table" — set response_format: table and response_length: medium. Never set short for table requests.
+- STRUCTURED RULE: if user asks for a plan, guide, breakdown, steps, study notes, roadmap, comparison, or anything that genuinely has multiple distinct sections — set response_format: structured and response_length: medium or long. This allows bold section headers and organized content.`;
 
   try {
     const res = await groq.chat.completions.create({
@@ -275,6 +277,7 @@ function craft(plan, baseSystemPrompt, webSearchResults = null, conversationCont
     code: 'Write clean, well-commented, production-ready code. Specify the language. Explain briefly what it does before the code block.',
     list: 'Format as a bullet list using • symbols. Keep each item to one line.',
     table: 'Use a markdown table for this comparison.',
+    structured: 'Use bold section headers (no ## symbols) to organize the content. Each section should have a clear header on its own line, followed by concise content — prose, bullets, or numbered steps depending on what fits. Only create sections that are genuinely needed.',
     document: 'Use plain bold section headers (no ## symbols). Bullet points only for genuine lists. Short sentences throughout.'
   };
 
@@ -282,13 +285,14 @@ function craft(plan, baseSystemPrompt, webSearchResults = null, conversationCont
   const STYLE_RULES = `
 WRITING STYLE — follow exactly:
 - Short sentences. One idea per sentence.
-- Plain prose for conversational responses. No headers.
+- Plain prose for conversational responses and simple answers. No headers.
 - When a response has named sections: plain bold header on its own line, then content below. Never ## symbols.
 - For genuine lists only: use • bullets. One line per item.
 - Never: "Certainly!", "Of course!", "Great question!", "Absolutely!", hollow opener phrases.
 - Never start with "I".
-- Never use ## markdown headers.
-- Never bold text for structure — only to highlight a specific key term.
+- Never use ## markdown headers — use plain bold instead.
+- Structure (bold headers, sections, numbered steps) is correct and encouraged when content genuinely has multiple distinct parts — plans, guides, breakdowns, study notes, comparisons.
+- For simple chat, short answers, explanations: plain prose only. No headers.
 - No padding, no summary at the end, no "let me know" closers unless genuinely useful.`;
 
   const toneInstructions = {
@@ -379,16 +383,20 @@ function injectLengthConstraint(history, plan) {
   const lastUserIdx = [...constrained].map((m,i) => ({m,i})).reverse().find(({m}) => m.role === 'user');
   if (!lastUserIdx) return constrained;
 
-  const lengthTag = {
-    one_sentence: '[Reply in ONE sentence only. No lists, no headers.]',
-    short:        '[Reply in 2-4 sentences only. No lists, no headers.]',
-    medium:       '[Reply in 1-3 paragraphs. No headers unless content is a document.]',
-    long:         '[Write a thorough response. Stay focused, no padding.]',
-    full_document:'[Write the full document the user requested.]'
-  }[plan.response_length] || '[Reply in 2-4 sentences only.]';
+  const lengthTag = plan.response_format === 'table'
+    ? '[Use a markdown table. No sentence count limit — show all necessary rows.]'
+    : {
+        one_sentence: '[Reply in ONE sentence only. No lists, no headers.]',
+        short:        '[Reply in 2-4 sentences only. No lists, no headers.]',
+        medium:       '[Reply in 1-3 paragraphs. No headers unless content is a document.]',
+        long:         '[Write a thorough response. Stay focused, no padding.]',
+        full_document:'[Write the full document the user requested.]'
+      }[plan.response_length] || '[Reply in 2-4 sentences only.]';
 
   const formatTag = (plan.response_format === 'prose' || !plan.response_format)
     ? '[Plain prose only. No bullet points, no headers.]'
+    : (plan.response_format === 'structured' || plan.response_format === 'document')
+    ? '[Use bold section headers where needed. Organize clearly.]'
     : '';
 
   const constraint = `
