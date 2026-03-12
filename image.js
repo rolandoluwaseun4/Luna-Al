@@ -162,7 +162,69 @@ async function generateWithGemini(prompt, existingImageBase64 = null) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-//  GENERATION — PROVIDER 2: Pollinations FLUX
+//  GENERATION — PROVIDER 2: HuggingFace FLUX
+//
+//  Uses HF_API_KEY from Railway env vars.
+//  Tries FLUX.1-dev first (better quality), falls back to FLUX.1-schnell.
+// ═════════════════════════════════════════════════════════════════════════
+const HF_API_KEY = process.env.HF_API_KEY;
+
+const HF_MODELS = [
+  'black-forest-labs/FLUX.1-dev',
+  'black-forest-labs/FLUX.1-schnell',
+];
+
+async function generateWithHuggingFace(prompt) {
+  if (!HF_API_KEY) throw new Error('HF_API_KEY not set');
+
+  for (const model of HF_MODELS) {
+    try {
+      console.log(`[Image] HuggingFace ${model}...`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000); // 60s — cold starts are slow
+
+      const res = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${HF_API_KEY}`,
+          'Content-Type': 'application/json',
+          'x-wait-for-model': 'true', // wait instead of 503 on cold start
+        },
+        body: JSON.stringify({
+          inputs: prompt,
+          parameters: {
+            width: 1024,
+            height: 1024,
+            num_inference_steps: model.includes('schnell') ? 4 : 28,
+            guidance_scale: model.includes('schnell') ? 0 : 3.5,
+          }
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const err = await res.text().catch(() => '');
+        console.warn(`[Image] HuggingFace ${model} ${res.status}: ${err.slice(0, 100)}`);
+        continue;
+      }
+
+      const buffer = await res.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString('base64');
+      // HF returns image/jpeg or image/png — check content-type
+      const ct = res.headers.get('content-type') || 'image/jpeg';
+      console.log(`[Image] HuggingFace ${model} ✅`);
+      return `data:${ct};base64,${base64}`;
+    } catch (err) {
+      console.warn(`[Image] HuggingFace ${model} failed: ${err.message}`);
+    }
+  }
+
+  throw new Error('HuggingFace FLUX failed');
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+//  GENERATION — PROVIDER 3: Pollinations FLUX
 //
 //  No API key required. Unlimited requests. Lower quality.
 //  This is what originally worked — keeping as a solid fallback.
@@ -218,17 +280,36 @@ async function generateImage(prompt, uid) {
   const lastImg = lastGeneratedImage.get(uid);
   const isEdit = !!(lastImg && isImageEditRequest(prompt));
 
-  // Step 1: Gemini 2.5 Flash Image — best quality, key rotation built in
-  try {
-    console.log(isEdit ? '[Image] Gemini → edit mode' : '[Image] Gemini → generate');
-    const image = await generateWithGemini(prompt, isEdit ? lastImg.base64 : null);
-    lastGeneratedImage.set(uid, { base64: image, prompt });
-    return { image, edited: isEdit, provider: 'gemini' };
-  } catch (err) {
-    console.warn('[Image] Gemini failed:', err.message);
+  // ── Image editing — Gemini only (needs previous image as input) ──────
+  if (isEdit) {
+    try {
+      console.log('[Image] Gemini → edit mode');
+      const image = await generateWithGemini(prompt, lastImg.base64);
+      lastGeneratedImage.set(uid, { base64: image, prompt });
+      return { image, edited: true, provider: 'gemini' };
+    } catch (err) {
+      console.warn('[Image] Gemini edit failed:', err.message);
+      return {
+        image: lastImg.base64,
+        edited: false,
+        provider: 'none',
+        error: 'Image editing is unavailable right now — Gemini keys are rate limited. Try generating a new image instead.'
+      };
+    }
   }
 
-  // Step 2: Pollinations — unlimited, no key, what originally worked
+  // ── New image generation: HuggingFace → Pollinations → Gemini ────────
+
+  // Step 1: HuggingFace FLUX.1-dev → FLUX.1-schnell
+  try {
+    const image = await generateWithHuggingFace(prompt);
+    lastGeneratedImage.set(uid, { base64: image, prompt });
+    return { image, edited: false, provider: 'huggingface' };
+  } catch (err) {
+    console.warn('[Image] HuggingFace failed:', err.message);
+  }
+
+  // Step 2: Pollinations FLUX — unlimited, no key
   try {
     console.log('[Image] Falling back to Pollinations...');
     const image = await generateWithPollinations(prompt);
@@ -236,6 +317,16 @@ async function generateImage(prompt, uid) {
     return { image, edited: false, provider: 'pollinations' };
   } catch (err) {
     console.warn('[Image] Pollinations failed:', err.message);
+  }
+
+  // Step 3: Gemini — last resort when keys aren't rate limited
+  try {
+    console.log('[Image] Trying Gemini as last resort...');
+    const image = await generateWithGemini(prompt, null);
+    lastGeneratedImage.set(uid, { base64: image, prompt });
+    return { image, edited: false, provider: 'gemini' };
+  } catch (err) {
+    console.warn('[Image] Gemini failed:', err.message);
   }
 
   throw new Error('All image providers failed');
