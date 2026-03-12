@@ -359,12 +359,34 @@ Step 3 — When you have the computed answer, set done: true and write the reply
 REPLY FORMAT (when done):
 Write the reply in plain, simple language a student can follow:
 
-1. State what type of problem it is in one sentence.
-2. Explain the method — what approach are you using and why.
-3. Show each step clearly, numbered. Use simple words.
-4. For any math expressions, wrap them in LaTeX: inline math uses $...$ and display math uses $$...$$. For example: "Differentiate $y = 3x^3 - 5x^2 + 2x - 7$ to get $\frac{dy}{dx} = 9x^2 - 10x + 2$"
-5. State the final answer clearly on its own line.
-6. Add a one-line tip about this type of problem if helpful.
+Use this EXACT format — no deviations:
+
+1. [One sentence: what type of problem this is]
+
+2. [One sentence: what method you are using and why]
+
+3. Step-by-step:
+
+1. [Step 1 description] $inline math here if needed$
+2. [Step 2 description] $inline math here if needed$
+3. [Step 3 description]
+
+$$display math for key equations on their own line$$
+
+4. Final answer: [state answer clearly]
+
+5. Tip: [one practical tip]
+
+LATEX RULES — critical:
+- Inline math (within a sentence): $x^2 + 5x + 6 = 0$
+- Display math (equation on its own line): put $$ on its own line, nothing else on that line
+- NEVER mix $$ display math inline with text on the same line
+- NEVER write raw math without $ delimiters
+
+NUMBERING RULES — critical:
+- Use sequential numbers: 1. 2. 3. 4. 5.
+- NEVER reset to 1. for each item
+- Count correctly from start to finish
 
 RULES:
 - Never guess or estimate — always use run_code for the actual computation
@@ -414,8 +436,9 @@ async function thinkStep(task, stepHistory, model, isMath) {
 
   let raw = res.choices[0]?.message?.content?.trim() || '{}';
 
-  // Strip <think> tags if DeepSeek includes them
-  raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  // Strip <think> blocks — handles both closed and unclosed tags (qwen3-32b, DeepSeek)
+  raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim(); // closed tags
+  raw = raw.replace(/<think>[\s\S]*/gi, '').trim();           // unclosed — strip everything after <think>
 
   // Strip markdown code fences if present
   raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
