@@ -224,6 +224,74 @@ async function generateWithHuggingFace(prompt) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
+//  GENERATION — PROVIDER 2: fal.ai FLUX
+//
+//  Uses FAL_KEY from Railway env vars.
+//  Tries FLUX.1-schnell first (fast, cheap), then FLUX.1-dev (better quality).
+//  Returns image as base64 by fetching the returned image URL.
+// ═════════════════════════════════════════════════════════════════════════
+const FAL_API_KEY = process.env.FAL_KEY;
+
+const FAL_MODELS = [
+  'fal-ai/flux/schnell',  // fast, $0.003/image
+  'fal-ai/flux/dev',      // better quality, $0.025/image
+];
+
+async function generateWithFal(prompt) {
+  if (!FAL_API_KEY) throw new Error('FAL_KEY not set');
+
+  for (const model of FAL_MODELS) {
+    try {
+      console.log(`[Image] fal.ai ${model}...`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000);
+
+      const res = await fetch(`https://fal.run/${model}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${FAL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          image_size: 'square_hd',
+          num_inference_steps: model.includes('schnell') ? 4 : 28,
+          num_images: 1,
+          enable_safety_checker: false,
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const err = await res.text().catch(() => '');
+        console.warn(`[Image] fal.ai ${model} ${res.status}: ${err.slice(0, 120)}`);
+        continue;
+      }
+
+      const json = await res.json();
+      const imageUrl = json?.images?.[0]?.url;
+      if (!imageUrl) {
+        console.warn(`[Image] fal.ai ${model} — no image URL in response`);
+        continue;
+      }
+
+      // Fetch the image and convert to base64
+      const imgRes = await fetch(imageUrl);
+      if (!imgRes.ok) throw new Error(`Failed to fetch fal image: ${imgRes.status}`);
+      const buffer = await imgRes.arrayBuffer();
+      const ct = imgRes.headers.get('content-type') || 'image/jpeg';
+      console.log(`[Image] fal.ai ${model} ✅`);
+      return `data:${ct};base64,${Buffer.from(buffer).toString('base64')}`;
+    } catch (err) {
+      console.warn(`[Image] fal.ai ${model} failed: ${err.message}`);
+    }
+  }
+
+  throw new Error('fal.ai FLUX failed');
+}
+
+// ═════════════════════════════════════════════════════════════════════════
 //  GENERATION — PROVIDER 3: Pollinations FLUX
 //
 //  No API key required. Unlimited requests. Lower quality.
@@ -298,15 +366,16 @@ async function generateImage(prompt, uid) {
     }
   }
 
-  // ── New image generation: HuggingFace → Pollinations → Gemini ────────
+  // ── New image generation: fal.ai → Pollinations → Gemini ─────────────
+  // Note: HuggingFace disabled — monthly credits depleted. Re-enable when topped up.
 
-  // Step 1: HuggingFace FLUX.1-dev → FLUX.1-schnell
+  // Step 1: fal.ai FLUX — fast, reliable, pay-per-use
   try {
-    const image = await generateWithHuggingFace(prompt);
+    const image = await generateWithFal(prompt);
     lastGeneratedImage.set(uid, { base64: image, prompt });
-    return { image, edited: false, provider: 'huggingface' };
+    return { image, edited: false, provider: 'fal' };
   } catch (err) {
-    console.warn('[Image] HuggingFace failed:', err.message);
+    console.warn('[Image] fal.ai failed:', err.message);
   }
 
   // Step 2: Pollinations FLUX — unlimited, no key
