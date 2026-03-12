@@ -1217,6 +1217,21 @@
         <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
 
+      <!-- Install banner — shows on mobile/tablet when not installed -->
+      <div id="install-banner" style="display:none;align-items:center;justify-content:space-between;padding:12px 16px;margin:0 10px 8px;background:linear-gradient(135deg,rgba(108,99,255,0.15),rgba(168,85,247,0.15));border:1px solid rgba(108,99,255,0.3);border-radius:14px;gap:12px;">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
+          <img src="icon-192.png" style="width:36px;height:36px;border-radius:10px;flex-shrink:0;" alt="Luna"/>
+          <div style="min-width:0;">
+            <p style="margin:0;color:#fff;font-size:13px;font-weight:600;">Install Luna</p>
+            <p style="margin:0;color:rgba(255,255,255,0.5);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Add to home screen for the best experience</p>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <button onclick="handleInstallBanner()" style="padding:7px 14px;background:linear-gradient(135deg,#6c63ff,#a855f7);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Install</button>
+          <button onclick="dismissInstallBanner()" style="padding:7px 10px;background:rgba(255,255,255,0.08);border:none;border-radius:10px;color:rgba(255,255,255,0.5);font-size:13px;cursor:pointer;">✕</button>
+        </div>
+      </div>
+
       <div class="chat-bar">
         <div class="reply-bar" id="reply-bar">
           <svg viewBox="0 0 24 24"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
@@ -1379,10 +1394,11 @@
           <div class="settings-row"><div class="settings-row-info"><h4 id="account-name">Guest</h4><p id="account-desc">Browsing as a guest</p></div></div>
           <button class="logout-btn" onclick="logout()">Sign Out</button>
         </div>
-        <div class="settings-section" id="install-section" style="display:none">
+        <div class="settings-section" id="install-section">
           <div class="settings-section-title">App</div>
           <div class="settings-row"><div class="settings-row-info"><h4>Install Luna</h4><p>Add Luna to your home screen</p></div></div>
-          <button class="install-btn" onclick="installApp()">Install App</button>
+          <button class="install-btn" onclick="installApp()" id="install-btn-native" style="display:none">Install App</button>
+          <button class="install-btn" onclick="showiOSInstallModal()" id="install-btn-ios" style="display:none">How to Install on iPhone</button>
         </div>
         <div class="settings-section">
           <div class="settings-section-title">Notifications</div>
@@ -3126,22 +3142,68 @@
 
   // ── PWA Install ──────────────────────────────────────────
   let deferredPrompt=null;
+  // iOS detection
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  const bannerDismissed = sessionStorage.getItem('install-banner-dismissed');
+
+  if (isIOS && !isInStandaloneMode && !bannerDismissed) {
+    // iOS Safari — show manual install instructions button in settings
+    document.getElementById('install-btn-ios').style.display = 'block';
+    // Show banner after 4 seconds
+    setTimeout(function(){ 
+      const ib = document.getElementById('install-banner');
+      if(ib) ib.style.display = 'flex';
+    }, 4000);
+  }
+
+  function handleInstallBanner() {
+    if(isIOS) {
+      showiOSInstallModal();
+      dismissInstallBanner();
+    } else if(deferredPrompt) {
+      installApp();
+    }
+  }
+
+  function dismissInstallBanner() {
+    const ib = document.getElementById('install-banner');
+    if(ib) ib.style.display = 'none';
+    sessionStorage.setItem('install-banner-dismissed', '1');
+  }
+
+  function showiOSInstallModal() {
+    const m = document.getElementById('ios-install-modal');
+    m.style.display = 'flex';
+    haptic('light');
+  }
+  function closeiOSInstallModal(e) {
+    if (!e || e.target === document.getElementById('ios-install-modal')) {
+      document.getElementById('ios-install-modal').style.display = 'none';
+    }
+  }
+
   window.addEventListener('beforeinstallprompt',function(e){
     e.preventDefault();deferredPrompt=e;
-    document.getElementById('install-section').style.display='block';
-    setTimeout(function(){const ib=document.getElementById('install-banner');if(ib)ib.style.display='flex';},3000);
+    document.getElementById('install-btn-native').style.display = 'block';
+    if(!bannerDismissed) {
+      setTimeout(function(){
+        const ib=document.getElementById('install-banner');
+        if(ib) ib.style.display='flex';
+      }, 4000);
+    }
   });
   function installApp(){
     if(!deferredPrompt)return;
     deferredPrompt.prompt();
     deferredPrompt.userChoice.then(function(r){
       deferredPrompt=null;
-      document.getElementById('install-section').style.display='none';
+      document.getElementById('install-btn-native').style.display='none';
       const ib2=document.getElementById('install-banner');if(ib2)ib2.style.display='none';
     });
   }
   window.addEventListener('appinstalled',function(){
-    document.getElementById('install-section').style.display='none';
+    document.getElementById('install-btn-native').style.display='none';
     const ib2=document.getElementById('install-banner');if(ib2)ib2.style.display='none';
     deferredPrompt=null;
   });
@@ -3399,6 +3461,39 @@
   <div id="shared-chat-messages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;"></div>
   <div style="padding:16px;border-top:1px solid var(--border);">
     <button onclick="startChat('Hi Luna!')" style="width:100%;padding:13px;background:var(--accent);border:none;border-radius:14px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Start your own chat with Luna</button>
+  </div>
+</div>
+
+<!-- iOS Install Modal -->
+<div id="ios-install-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);align-items:flex-end;justify-content:center;" onclick="closeiOSInstallModal(event)">
+  <div style="background:#1a1a2e;border-radius:20px 20px 0 0;padding:28px 24px 40px;width:100%;max-width:480px;border-top:1px solid rgba(255,255,255,0.1);">
+    <div style="width:40px;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;margin:0 auto 24px;"></div>
+    <h3 style="color:#fff;font-size:18px;font-weight:600;margin:0 0 8px;">Install Luna on iPhone</h3>
+    <p style="color:rgba(255,255,255,0.5);font-size:14px;margin:0 0 24px;">Add Luna to your home screen for the full app experience — no App Store needed.</p>
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="display:flex;align-items:flex-start;gap:14px;">
+        <div style="min-width:32px;height:32px;background:rgba(100,200,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#64c8ff;font-weight:700;font-size:15px;">1</div>
+        <div>
+          <p style="color:#fff;font-size:14px;margin:0 0 2px;font-weight:500;">Tap the Share button</p>
+          <p style="color:rgba(255,255,255,0.45);font-size:13px;margin:0;">The <strong style="color:rgba(255,255,255,0.7);">⬆ Share</strong> icon at the bottom of Safari</p>
+        </div>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:14px;">
+        <div style="min-width:32px;height:32px;background:rgba(100,200,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#64c8ff;font-weight:700;font-size:15px;">2</div>
+        <div>
+          <p style="color:#fff;font-size:14px;margin:0 0 2px;font-weight:500;">Scroll down and tap "Add to Home Screen"</p>
+          <p style="color:rgba(255,255,255,0.45);font-size:13px;margin:0;">It's in the share menu list</p>
+        </div>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:14px;">
+        <div style="min-width:32px;height:32px;background:rgba(100,200,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#64c8ff;font-weight:700;font-size:15px;">3</div>
+        <div>
+          <p style="color:#fff;font-size:14px;margin:0 0 2px;font-weight:500;">Tap "Add" in the top right</p>
+          <p style="color:rgba(255,255,255,0.45);font-size:13px;margin:0;">Luna will appear on your home screen like a real app</p>
+        </div>
+      </div>
+    </div>
+    <button onclick="closeiOSInstallModal()" style="margin-top:28px;width:100%;padding:14px;background:linear-gradient(135deg,#6c63ff,#a855f7);border:none;border-radius:14px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Got it</button>
   </div>
 </div>
 
