@@ -329,7 +329,6 @@ STRICT RULES:
 
 RESPONSE FORMAT (always valid JSON):
 {
-  "thinking": "brief reasoning about what to do next",
   "done": false,
   "tool": "web_search",
   "args": { "query": "..." }
@@ -337,79 +336,50 @@ RESPONSE FORMAT (always valid JSON):
 
 OR when finished (only after using at least one tool):
 {
-  "thinking": "I searched the web and have real verified info",
   "done": true,
   "reply": "Full detailed answer based on what I actually found..."
 }`;
 
 // ── Math-specific system prompt ───────────────────────────────────────────
 // Used instead of AGENT_SYSTEM_PROMPT when isMathTask() returns true.
-const MATH_SYSTEM_PROMPT = `You are Luna's math agent. You solve problems step by step, clearly, so a student can actually learn.
+const MATH_SYSTEM_PROMPT = `You are Luna's math agent. You solve math problems step by step so a student can learn.
 
 AVAILABLE TOOLS:
 - run_code(code: string, language: "python") — execute Python to compute exact answers
 - web_search(query: string) — look up formulas or methods you are unsure about
 
-HOW TO HANDLE EVERY MATH PROBLEM:
-
-Step 1 — Identify the problem type (algebra, geometry, arithmetic, statistics, etc.)
-Step 2 — Write Python code to solve it exactly. Use run_code.
-Step 3 — When you have the computed answer, set done: true and write the reply.
-
-REPLY FORMAT (when done):
-Write the reply in plain, simple language a student can follow:
-
-Use this EXACT format — no deviations:
-
-1. [One sentence: what type of problem this is]
-
-2. [One sentence: what method you are using and why]
-
-3. Step-by-step:
-
-1. [Step 1 description] $inline math here if needed$
-2. [Step 2 description] $inline math here if needed$
-3. [Step 3 description]
-
-$$display math for key equations on their own line$$
-
-4. Final answer: [state answer clearly]
-
-5. Tip: [one practical tip]
-
-LATEX RULES — critical:
-- Inline math (within a sentence): $x^2 + 5x + 6 = 0$
-- Display math (equation on its own line): put $$ on its own line, nothing else on that line
-- NEVER mix $$ display math inline with text on the same line
-- NEVER write raw math without $ delimiters
-
-NUMBERING RULES — critical:
-- Use sequential numbers: 1. 2. 3. 4. 5.
-- NEVER reset to 1. for each item
-- Count correctly from start to finish
+HOW TO SOLVE:
+Step 1 — Identify the problem type
+Step 2 — Write Python code to solve it exactly using run_code
+Step 3 — Once you have the computed result, set done: true and write the full explanation in reply
 
 RULES:
-- Never guess or estimate — always use run_code for the actual computation
+- NEVER guess — always use run_code for the actual computation
+- ONLY use standard Python — no sympy, numpy, scipy, or any external library
 - Show the working, not just the answer — the goal is understanding
-- Use simple language. Imagine explaining to a secondary school student.
-- If the problem has multiple parts, solve each part separately
-- ONLY use standard Python — no imports of sympy, numpy, scipy, or any external library. Do all math manually in plain Python using arithmetic, loops, and basic functions only.
-- Respond ONLY in valid JSON
+- Simple language — explain like a secondary school student is reading
+- Respond ONLY in valid JSON — no extra keys, no text outside the JSON
 
-RESPONSE FORMAT:
+WHEN CALLING A TOOL (done: false):
 {
-  "thinking": "what type of problem this is and my plan",
   "done": false,
   "tool": "run_code",
-  "args": { "code": "# Python solution\n...", "language": "python" }
+  "args": { "code": "# your python code here", "language": "python" }
 }
 
-OR when done:
+WHEN FINISHED (done: true) — write the complete explanation in reply:
 {
-  "thinking": "computed the answer, ready to explain",
   "done": true,
-  "reply": "Step by step explanation here..."
-}`;
+  "reply": "This is a [problem type] problem.\\n\\nMethod: [one sentence on what approach you used and why]\\n\\nSteps:\\n1. [step 1] $inline math$\\n2. [step 2] $inline math$\\n3. [step 3]\\n\\n$$key equation on its own line$$\\n\\nFinal answer: [clear answer]\\n\\nTip: [one useful tip]"
+}
+
+LATEX RULES:
+- Inline math: $x^2 + 5x + 6 = 0$
+- Display math (own line only): $$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$
+- NEVER write raw math without $ delimiters
+- NEVER put $$ on the same line as text
+
+CRITICAL: The reply field must contain the COMPLETE explanation. Do not set done: true until you have written the full step-by-step reply.`;
 
 async function thinkStep(task, stepHistory, model, isMath) {
   // Build context from all previous steps
@@ -443,16 +413,40 @@ async function thinkStep(task, stepHistory, model, isMath) {
   // Strip markdown code fences if present
   raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
 
+  // Try parsing as-is first
   try {
-    return JSON.parse(raw);
-  } catch (e) {
-    // Try to extract JSON from response
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try { return JSON.parse(jsonMatch[0]); } catch {}
-    }
-    throw new Error(`Agent returned invalid JSON: ${raw.slice(0, 200)}`);
+    const parsed = JSON.parse(raw);
+    // Strip internal "thinking" key — model sometimes adds it inside JSON
+    delete parsed.thinking;
+    return parsed;
+  } catch (e) {}
+
+  // Try to extract the outermost JSON object
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      delete parsed.thinking;
+      return parsed;
+    } catch {}
   }
+
+  // Last resort — try to salvage done/reply/tool fields manually
+  const done = /\"done\"\s*:\s*true/i.test(raw);
+  const replyMatch = raw.match(/"reply"\s*:\s*"([\s\S]*?)"\s*[,}]/);
+  const toolMatch = raw.match(/"tool"\s*:\s*"([^"]+)"/);
+  const argsMatch = raw.match(/"args"\s*:\s*(\{[^}]+\})/);
+
+  if (done || replyMatch || toolMatch) {
+    return {
+      done,
+      reply: replyMatch ? replyMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') : '',
+      tool: toolMatch ? toolMatch[1] : null,
+      args: argsMatch ? JSON.parse(argsMatch[1]) : {},
+    };
+  }
+
+  throw new Error(`Agent returned invalid JSON: ${raw.slice(0, 200)}`);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
