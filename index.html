@@ -2862,9 +2862,10 @@
                   });
                   const imgData = await imgRes.json();
                   genRow.remove();
-                  if(imgData.image){
-                    lastGeneratedImageUrl = imgData.image;
-                    addMsg('luna', json.editLastImage ? 'Here is the edited image:' : '', imgData.image);
+                  const imgSrc = imgData.image || imgData.result?.image;
+                  if(imgSrc){
+                    lastGeneratedImageUrl = imgSrc;
+                    addMsg('luna', json.editLastImage ? 'Here is the edited image:' : '', imgSrc);
                   } else {
                     addMsg('luna', imgData.error || 'Could not generate that image. Try describing it differently.');
                   }
