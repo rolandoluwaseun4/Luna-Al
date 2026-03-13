@@ -106,13 +106,26 @@ async function generateWithCloudflare(prompt) {
     throw new Error(`Cloudflare: HTTP ${res.status} — ${errText.slice(0, 200)}`);
   }
 
-  // Cloudflare returns raw binary image bytes for this model
-  const buffer    = await res.arrayBuffer();
-  const base64    = Buffer.from(buffer).toString('base64');
-  const mimeType  = res.headers.get('content-type') || 'image/png';
+  // Cloudflare returns JSON { result: { image: "base64..." } } for flux-1-schnell
+  const contentType = res.headers.get('content-type') || '';
+  let dataUrl;
+
+  if (contentType.includes('application/json')) {
+    // JSON response — extract base64 from result.image
+    const json = await res.json();
+    const b64 = json?.result?.image || json?.image;
+    if (!b64) throw new Error(`Cloudflare: no image in JSON response — ${JSON.stringify(json).slice(0, 200)}`);
+    dataUrl = b64.startsWith('data:') ? b64 : `data:image/jpeg;base64,${b64}`;
+  } else {
+    // Raw binary fallback
+    const buffer = await res.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    const mimeType = contentType || 'image/png';
+    dataUrl = `data:${mimeType};base64,${base64}`;
+  }
 
   console.log('[Image] Cloudflare Workers AI ✅');
-  return `data:${mimeType};base64,${base64}`;
+  return dataUrl;
 }
 
 // ═════════════════════════════════════════════════════════════════════════
