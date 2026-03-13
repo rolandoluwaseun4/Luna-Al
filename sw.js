@@ -1,4 +1,4 @@
-const CACHE_NAME = 'luna-ai-v1';
+const CACHE_NAME = 'luna-ai-v2';
 const ASSETS = [
   '/Luna-AI/',
   '/Luna-AI/index.html',
