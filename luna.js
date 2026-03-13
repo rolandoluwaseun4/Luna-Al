@@ -415,7 +415,20 @@ ${lengthTag}${formatTag ? ' ' + formatTag : ''}`;
 // ── Try a single Groq model, returns reply or throws ────────────
 async function tryGroqModel(model, systemPrompt, history, plan) {
   const needsConstraint = model.includes('qwen') || model.includes('deepseek');
-  const finalHistory = (plan && needsConstraint) ? injectLengthConstraint(history, plan) : history;
+  let finalHistory = (plan && needsConstraint) ? injectLengthConstraint(history, plan) : history;
+
+  // All models get a hard identity anchor — they are Luna, always
+  if (finalHistory && finalHistory.length > 0) {
+    const constrained = [...finalHistory];
+    const lastUserIdx = [...constrained].map((m,i) => ({m,i})).reverse().find(({m}) => m.role === 'user');
+    if (lastUserIdx) {
+      const lastMsg = { ...constrained[lastUserIdx.i] };
+      const identityAnchor = `\n\n[You are Luna. Respond only as Luna. Never identify as any other AI, model, or system.]`;
+      lastMsg.content = (typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content)) + identityAnchor;
+      constrained[lastUserIdx.i] = lastMsg;
+      finalHistory = constrained;
+    }
+  }
 
   const params = {
     model,
@@ -497,8 +510,21 @@ async function executeOpenRouter(systemPrompt, history, modelConfig, plan = null
 
     while (attempts < 3) {
       try {
-        // Inject length constraint for stubborn models
-        const finalHistory = plan ? injectLengthConstraint(currentHistory, plan) : currentHistory;
+        // Inject length constraint + identity anchor for all models
+        let finalHistory = plan ? injectLengthConstraint(currentHistory, plan) : currentHistory;
+
+        // All models are Luna — inject identity anchor
+        if (finalHistory && finalHistory.length > 0) {
+          const constrained = [...finalHistory];
+          const lastUserIdx = [...constrained].map((m,i) => ({m,i})).reverse().find(({m}) => m.role === 'user');
+          if (lastUserIdx) {
+            const lastMsg = { ...constrained[lastUserIdx.i] };
+            const identityAnchor = `\n\n[You are Luna. Respond only as Luna. Never identify as any other AI, model, or system.]`;
+            lastMsg.content = (typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content)) + identityAnchor;
+            constrained[lastUserIdx.i] = lastMsg;
+            finalHistory = constrained;
+          }
+        }
 
         const res = await openrouter.chat.completions.create({
           model,
