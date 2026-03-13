@@ -3900,7 +3900,27 @@
   if(authToken && currentUser){
     isOwner=currentUser.role==='owner';
     tryEnterApp(isOwner);
+  } else if(authToken && !currentUser){
+    // Token exists but user data lost — recover from backend
+    fetch(BACKEND_URL+'/auth/me', {headers:{'Authorization':'Bearer '+authToken}})
+      .then(r=>r.ok?r.json():null)
+      .then(data=>{
+        if(data && data.user){
+          currentUser=data.user;
+          isOwner=data.user.role==='owner';
+          localStorage.setItem('luna-user',JSON.stringify(currentUser));
+          tryEnterApp(isOwner);
+        } else {
+          localStorage.removeItem('luna-token');
+          localStorage.removeItem('luna-user');
+          authToken=null;
+          switchTab('login');
+          handleOAuthRedirect();
+        }
+      })
+      .catch(()=>{ switchTab('login'); handleOAuthRedirect(); });
   } else {
+    switchTab('login');
     handleOAuthRedirect();
   }
 
