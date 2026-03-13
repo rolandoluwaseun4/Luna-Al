@@ -980,13 +980,16 @@
         display: flex !important;
       }
 
-      /* Chat area takes remaining space */
+      /* Chat area takes remaining space — only active screen shows */
       .screen {
         flex: 1;
         overflow: hidden;
-        display: flex;
+        display: none;
         flex-direction: column;
         height: 100%;
+      }
+      .screen.active {
+        display: flex;
       }
 
       /* Center chat content with max-width */
