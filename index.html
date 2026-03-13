@@ -321,14 +321,16 @@
 
     /* ─── HOME SCREEN ────────────────────────────────── */
     #home-screen {
-      align-items: center; justify-content: flex-start;
+      align-items: stretch; justify-content: flex-start;
       overflow-y: auto; padding-top: 20px;
+      flex-direction: column;
     }
     .home-inner {
       display: flex; flex-direction: column; align-items: center;
-      padding: 20px 22px 120px; width: 100%; max-width: 480px;
-      margin: 0 auto; gap: 0;
+      padding: 20px 22px 0; width: 100%; max-width: 480px;
+      margin: 0 auto; gap: 0; flex-shrink: 0;
     }
+    .home-spacer { flex: 1; min-height: 20px; }
     /* Luna orb with underglow */
     .luna-orb-wrap {
       position: relative; margin-bottom: 26px;
@@ -371,11 +373,11 @@
     }
     .starter-card:hover { background: var(--accent-soft); color: var(--text); transform: translateY(-1px); }
     .starter-card:active { transform: scale(0.98); }
-    /* Home input — pinned to bottom like the chat bar */
+    /* Home input — sticky to bottom of scroll container */
     .home-input-outer {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
-      padding: 12px 16px 32px;
-      background: linear-gradient(to top, var(--bg) 65%, transparent);
+      position: sticky; bottom: 0; z-index: 10;
+      padding: 12px 16px 32px; flex-shrink: 0;
+      background: linear-gradient(to top, var(--bg) 70%, transparent);
     }
     .home-input-pill {
       width: 100%; max-width: 480px; margin: 0 auto;
@@ -1012,7 +1014,6 @@
 
       /* Home screen centered nicely */
       #home-screen {
-        display: flex;
         align-items: center;
         justify-content: center;
         flex: 1;
@@ -1030,7 +1031,6 @@
       }
       .home-input-outer {
         padding: 12px 32px 32px;
-        left: 260px; /* offset sidebar width */
       }
 
       /* Auth box stays centered */
@@ -1062,7 +1062,6 @@
       .messages { max-width: 800px; }
       .chat-bar { max-width: 800px; }
       .home-body { max-width: 620px; }
-      .home-input-outer { left: 280px; }
     }
 
 </style>
@@ -1233,6 +1232,7 @@
           <div class="starter-card" onclick="startChat('Tips to be more productive')">Tips to be more productive</div>
         </div>
       </div>
+      <div class="home-spacer"></div>
       <div class="home-input-outer">
         <div class="home-input-pill">
           <textarea id="home-input" placeholder="Message Luna..." rows="1"></textarea>
@@ -1240,8 +1240,6 @@
             <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
           </button>
         </div>
-      </div>
-    </div>
       </div>
     </div>
 
