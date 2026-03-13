@@ -4,52 +4,34 @@
  * image.js — Luna's Image Intelligence Module
  *
  * ── GENERATION STACK ─────────────────────────────────────────────────────
- *   1. Gemini 2.5 Flash Image (gemini-2.5-flash-image)
- *      - Called via REST API directly (not SDK — old SDK doesn't support it)
- *      - Free: 500 req/day PER Google Cloud project
- *      - 3 keys from 3 different accounts = up to 1,500/day
- *      - Handles: generation, editing, character consistency, text-in-image
+ *   1. Cloudflare Workers AI  (CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN)
+ *      - Model: @cf/black-forest-labs/flux-1-schnell
+ *      - Fast, high quality, ~100 free neurons/day on free tier
  *
- *   2. Pollinations FLUX
- *      - No API key, unlimited
- *      - What originally worked before Gemini attempts
- *      - Lower quality, last resort
+ *   2. Pixazo Free API        (PIXAZO_API_KEY)
+ *      - Fallback when Cloudflare is rate-limited or unavailable
+ *      - Returns a hosted image URL directly
  *
- * ── VISION STACK (reading/understanding images in chat) ──────────────────
+ *   3. AI Horde               (anonymous key — no signup needed)
+ *      - Community-run, always available, slightly slower
+ *      - Uses polling: submit job → check status → fetch result
+ *
+ * ── VISION STACK (image understanding in chat) ───────────────────────────
  *   1. Gemini Flash via executeGemini() in luna.js (primary)
  *   2. qwen3-vl-30b-thinking via OpenRouter (fallback)
  *   3. llama-3.2-11b-vision via OpenRouter (light fallback)
  *
- * ── DAILY LIMITS ─────────────────────────────────────────────────────────
- *   Gemini gen:  500/day × 3 keys = ~1,500 high quality images
- *   Pollinations: unlimited (lower quality)
+ * ── ENV VARIABLES REQUIRED ───────────────────────────────────────────────
+ *   CLOUDFLARE_ACCOUNT_ID   — Cloudflare account ID (dashboard → right sidebar)
+ *   CLOUDFLARE_API_TOKEN    — API token with "Workers AI" permission
+ *   PIXAZO_API_KEY          — From your Pixazo dashboard
+ *   OPENROUTER_API_KEY      — For vision fallback only (optional)
  * ─────────────────────────────────────────────────────────────────────────
  */
 
 const OpenAI = require('openai');
 
-// ── Gemini key pool ───────────────────────────────────────────────────────
-// Each key should be from a DIFFERENT Google Cloud project for separate quotas
-const geminiKeys = [
-  process.env.GEMINI_API_KEY,
-  process.env.GEMINI_API_KEY_2,
-  process.env.GEMINI_API_KEY_3,
-].filter(Boolean);
-
-let geminiKeyIndex = 0;
-
-function currentGeminiKey() {
-  return geminiKeys[geminiKeyIndex];
-}
-
-function rotateGeminiKey() {
-  if (geminiKeys.length <= 1) return false;
-  geminiKeyIndex = (geminiKeyIndex + 1) % geminiKeys.length;
-  console.warn(`[Image] Rotated to Gemini key ${geminiKeyIndex + 1}/${geminiKeys.length}`);
-  return true;
-}
-
-// ── OpenRouter client (vision fallback only) ──────────────────────────────
+// ── OpenRouter client (vision fallback only — generation unchanged) ───────
 const openrouter = process.env.OPENROUTER_API_KEY
   ? new OpenAI({
       baseURL: 'https://openrouter.ai/api/v1',
@@ -62,10 +44,11 @@ const openrouter = process.env.OPENROUTER_API_KEY
   : null;
 
 // ── Last generated image store (per user, in-memory) ─────────────────────
-const lastGeneratedImage = new Map(); // userId -> { base64, prompt }
+// Stores { base64, prompt } so edit requests can reference the previous image
+const lastGeneratedImage = new Map();
 
 // ═════════════════════════════════════════════════════════════════════════
-//  DETECTION HELPERS
+//  DETECTION HELPER — is this an edit request or a fresh generation?
 // ═════════════════════════════════════════════════════════════════════════
 
 function isImageEditRequest(prompt) {
@@ -78,336 +61,308 @@ function isImageEditRequest(prompt) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-//  GENERATION — PROVIDER 1: Gemini 2.5 Flash Image
+//  PROVIDER 1 — Cloudflare Workers AI
 //
-//  Uses REST API directly (not @google/generative-ai SDK)
-//  because the old SDK doesn't support gemini-2.5-flash-image.
-//
-//  Model: gemini-2.5-flash-image (stable, free, 500 req/day per project)
-//  Endpoint: v1beta/models/gemini-2.5-flash-image:generateContent
+//  Endpoint: POST /accounts/{id}/ai/run/@cf/black-forest-labs/flux-1-schnell
+//  Auth:     Bearer token via CLOUDFLARE_API_TOKEN
+//  Returns:  Raw image bytes (arrayBuffer → base64 data URL)
+//  Docs:     https://developers.cloudflare.com/workers-ai/models/flux-1-schnell/
 // ═════════════════════════════════════════════════════════════════════════
-async function generateWithGemini(prompt, existingImageBase64 = null) {
-  if (geminiKeys.length === 0) throw new Error('No Gemini keys configured');
+async function generateWithCloudflare(prompt) {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const apiToken  = process.env.CLOUDFLARE_API_TOKEN;
 
-  let keysAttempted = 0;
-  while (keysAttempted < geminiKeys.length) {
-    try {
-      const apiKey = currentGeminiKey();
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent`;
-
-      // Build parts — text + optional existing image for edit mode
-      const parts = [{ text: prompt }];
-      if (existingImageBase64) {
-        const base64Data = existingImageBase64.includes(',')
-          ? existingImageBase64.split(',')[1]
-          : existingImageBase64;
-        const mimeType = existingImageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
-        parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
-      }
-
-      const body = {
-        contents: [{ role: 'user', parts }],
-        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
-      };
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 45000); // 45s timeout
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
-
-      if (res.status === 429 || res.status === 503) {
-        // Rate limited — try next key
-        const errText = await res.text().catch(() => '');
-        console.warn(`[Image] Gemini key ${geminiKeyIndex + 1} rate limited (${res.status})`);
-        if (rotateGeminiKey()) { keysAttempted++; continue; }
-        throw new Error(`Gemini rate limited: ${errText.slice(0, 100)}`);
-      }
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        throw new Error(`Gemini ${res.status}: ${errText.slice(0, 200)}`);
-      }
-
-      const data = await res.json();
-      const parts_out = data?.candidates?.[0]?.content?.parts || [];
-
-      for (const part of parts_out) {
-        if (part.inlineData || part.inline_data) {
-          const inlineData = part.inlineData || part.inline_data;
-          console.log(`[Image] Gemini 2.5 Flash Image ✅ (key ${geminiKeyIndex + 1})`);
-          return `data:${inlineData.mimeType || inlineData.mime_type};base64,${inlineData.data}`;
-        }
-      }
-
-      throw new Error('No image in Gemini response — model may have returned text only');
-
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        console.warn(`[Image] Gemini key ${geminiKeyIndex + 1} timed out`);
-        if (rotateGeminiKey()) { keysAttempted++; continue; }
-      }
-      throw err;
-    }
+  if (!accountId || !apiToken) {
+    throw new Error('Cloudflare: CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN not set in .env');
   }
-  throw new Error('All Gemini keys exhausted');
+
+  const model    = '@cf/black-forest-labs/flux-1-schnell';
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
+
+  console.log('[Image] Cloudflare Workers AI → generating...');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000); // 60s timeout
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      prompt,
+      num_steps: 4,   // schnell is optimised for 1–4 steps
+    }),
+    signal: controller.signal,
+  });
+  clearTimeout(timeout);
+
+  if (res.status === 429) {
+    throw new Error(`Cloudflare: rate limited (429) — daily free neurons exhausted`);
+  }
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Cloudflare: HTTP ${res.status} — ${errText.slice(0, 200)}`);
+  }
+
+  // Cloudflare returns raw binary image bytes for this model
+  const buffer    = await res.arrayBuffer();
+  const base64    = Buffer.from(buffer).toString('base64');
+  const mimeType  = res.headers.get('content-type') || 'image/png';
+
+  console.log('[Image] Cloudflare Workers AI ✅');
+  return `data:${mimeType};base64,${base64}`;
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-//  GENERATION — PROVIDER 2: HuggingFace FLUX
+//  PROVIDER 2 — Pixazo Free API
 //
-//  Uses HF_API_KEY from Railway env vars.
-//  Tries FLUX.1-dev first (better quality), falls back to FLUX.1-schnell.
+//  Endpoint: POST https://api.pixazo.io/v1/generate  (verify in your dashboard)
+//  Auth:     API key via PIXAZO_API_KEY
+//  Returns:  JSON { image_url: "https://..." } — fetched and converted to base64
+//  Docs:     https://docs.pixazo.io  (check for latest endpoint/field names)
 // ═════════════════════════════════════════════════════════════════════════
-const HF_API_KEY = process.env.HF_API_KEY;
+async function generateWithPixazo(prompt) {
+  const apiKey = process.env.PIXAZO_API_KEY;
 
-const HF_MODELS = [
-  'black-forest-labs/FLUX.1-dev',
-  'black-forest-labs/FLUX.1-schnell',
-];
-
-async function generateWithHuggingFace(prompt) {
-  if (!HF_API_KEY) throw new Error('HF_API_KEY not set');
-
-  for (const model of HF_MODELS) {
-    try {
-      console.log(`[Image] HuggingFace ${model}...`);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 60000); // 60s — cold starts are slow
-
-      const res = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${HF_API_KEY}`,
-          'Content-Type': 'application/json',
-          'x-wait-for-model': 'true', // wait instead of 503 on cold start
-        },
-        body: JSON.stringify({
-          inputs: prompt,
-          parameters: {
-            width: 1024,
-            height: 1024,
-            num_inference_steps: model.includes('schnell') ? 4 : 28,
-            guidance_scale: model.includes('schnell') ? 0 : 3.5,
-          }
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        const err = await res.text().catch(() => '');
-        console.warn(`[Image] HuggingFace ${model} ${res.status}: ${err.slice(0, 100)}`);
-        continue;
-      }
-
-      const buffer = await res.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString('base64');
-      // HF returns image/jpeg or image/png — check content-type
-      const ct = res.headers.get('content-type') || 'image/jpeg';
-      console.log(`[Image] HuggingFace ${model} ✅`);
-      return `data:${ct};base64,${base64}`;
-    } catch (err) {
-      console.warn(`[Image] HuggingFace ${model} failed: ${err.message}`);
-    }
+  if (!apiKey) {
+    throw new Error('Pixazo: PIXAZO_API_KEY not set in .env');
   }
 
-  throw new Error('HuggingFace FLUX failed');
+  // ── NOTE: Verify this endpoint + request/response shape in your Pixazo dashboard ──
+  const endpoint = 'https://api.pixazo.io/v1/generate';
+
+  console.log('[Image] Pixazo → generating...');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      prompt,
+      width: 1024,
+      height: 1024,
+    }),
+    signal: controller.signal,
+  });
+  clearTimeout(timeout);
+
+  if (res.status === 401) throw new Error('Pixazo: invalid API key (401)');
+  if (res.status === 429) throw new Error('Pixazo: rate limited (429)');
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Pixazo: HTTP ${res.status} — ${errText.slice(0, 200)}`);
+  }
+
+  const json = await res.json();
+
+  // ── Adapt field name if Pixazo uses something other than image_url ────────
+  const imageUrl = json?.image_url || json?.url || json?.data?.url;
+  if (!imageUrl) {
+    throw new Error(`Pixazo: no image URL in response — ${JSON.stringify(json).slice(0, 200)}`);
+  }
+
+  // Download the hosted image and convert to base64 data URL
+  const imgRes = await fetch(imageUrl);
+  if (!imgRes.ok) throw new Error(`Pixazo: failed to fetch image (${imgRes.status})`);
+
+  const buffer   = await imgRes.arrayBuffer();
+  const mimeType = imgRes.headers.get('content-type') || 'image/jpeg';
+
+  console.log('[Image] Pixazo ✅');
+  return `data:${mimeType};base64,${Buffer.from(buffer).toString('base64')}`;
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-//  GENERATION — PROVIDER 2: fal.ai FLUX
+//  PROVIDER 3 — AI Horde  (anonymous, no signup)
 //
-//  Uses FAL_KEY from Railway env vars.
-//  Tries FLUX.1-schnell first (fast, cheap), then FLUX.1-dev (better quality).
-//  Returns image as base64 by fetching the returned image URL.
+//  Anonymous key: "0000000000"  — slower queue priority, still works fine
+//  Flow:
+//    1. POST /generate/async    → returns { id }
+//    2. Poll GET /generate/check/{id} until done === true
+//    3. GET /generate/status/{id} → returns { generations: [{ img }] }
+//  Docs: https://stablehorde.net/api/
 // ═════════════════════════════════════════════════════════════════════════
-const FAL_API_KEY = process.env.FAL_KEY;
 
-const FAL_MODELS = [
-  'fal-ai/flux/schnell',  // fast, $0.003/image
-  'fal-ai/flux/dev',      // better quality, $0.025/image
-];
+// Anonymous API key — no account needed
+const AI_HORDE_ANON_KEY = '0000000000';
 
-async function generateWithFal(prompt) {
-  if (!FAL_API_KEY) throw new Error('FAL_KEY not set');
+// How often to poll for completion (ms) and max wait time
+const HORDE_POLL_INTERVAL = 4_000;   // 4 seconds between status checks
+const HORDE_MAX_WAIT      = 180_000; // 3 minutes max
 
-  for (const model of FAL_MODELS) {
-    try {
-      console.log(`[Image] fal.ai ${model}...`);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 60000);
+async function generateWithAIHorde(prompt) {
+  const BASE = 'https://stablehorde.net/api/v2';
 
-      const res = await fetch(`https://fal.run/${model}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Key ${FAL_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt,
-          image_size: 'square_hd',
-          num_inference_steps: model.includes('schnell') ? 4 : 28,
-          num_images: 1,
-          enable_safety_checker: false,
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
+  const commonHeaders = {
+    'Content-Type': 'application/json',
+    'apikey': AI_HORDE_ANON_KEY,
+    'Client-Agent': 'LunaAI:1.0:contact@luna.ai',
+  };
 
-      if (!res.ok) {
-        const err = await res.text().catch(() => '');
-        console.warn(`[Image] fal.ai ${model} ${res.status}: ${err.slice(0, 120)}`);
-        continue;
-      }
+  // ── Step 1: Submit generation job ────────────────────────────────────────
+  console.log('[Image] AI Horde → submitting job (anonymous key)...');
 
-      const json = await res.json();
-      const imageUrl = json?.images?.[0]?.url;
-      if (!imageUrl) {
-        console.warn(`[Image] fal.ai ${model} — no image URL in response`);
-        continue;
-      }
+  const submitRes = await fetch(`${BASE}/generate/async`, {
+    method: 'POST',
+    headers: commonHeaders,
+    body: JSON.stringify({
+      prompt,
+      params: {
+        width: 512,          // anonymous tier: keep size moderate for faster queue
+        height: 512,
+        steps: 20,
+        cfg_scale: 7,
+        sampler_name: 'k_euler_a',
+        n: 1,                // one image
+      },
+      models: ['stable_diffusion'],  // widely available on horde workers
+      nsfw: false,
+      censor_nsfw: true,
+      r2: true,              // use R2 storage → faster image delivery
+    }),
+  });
 
-      // Fetch the image and convert to base64
-      const imgRes = await fetch(imageUrl);
-      if (!imgRes.ok) throw new Error(`Failed to fetch fal image: ${imgRes.status}`);
-      const buffer = await imgRes.arrayBuffer();
-      const ct = imgRes.headers.get('content-type') || 'image/jpeg';
-      console.log(`[Image] fal.ai ${model} ✅`);
-      return `data:${ct};base64,${Buffer.from(buffer).toString('base64')}`;
-    } catch (err) {
-      console.warn(`[Image] fal.ai ${model} failed: ${err.message}`);
-    }
+  if (!submitRes.ok) {
+    const err = await submitRes.text().catch(() => '');
+    throw new Error(`AI Horde submit failed (${submitRes.status}): ${err.slice(0, 200)}`);
   }
 
-  throw new Error('fal.ai FLUX failed');
+  const { id: jobId } = await submitRes.json();
+  if (!jobId) throw new Error('AI Horde: no job ID returned');
+  console.log(`[Image] AI Horde job ID: ${jobId} — polling...`);
+
+  // ── Step 2: Poll until done ───────────────────────────────────────────────
+  const deadline = Date.now() + HORDE_MAX_WAIT;
+
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, HORDE_POLL_INTERVAL));
+
+    const checkRes = await fetch(`${BASE}/generate/check/${jobId}`, {
+      headers: commonHeaders,
+    });
+
+    if (!checkRes.ok) {
+      console.warn(`[Image] AI Horde check error (${checkRes.status}) — retrying`);
+      continue;
+    }
+
+    const status = await checkRes.json();
+    const waitSec = Math.round((status.wait_time || 0));
+    console.log(`[Image] AI Horde → done: ${status.done}, queue pos: ${status.queue_position ?? '?'}, ~${waitSec}s`);
+
+    if (!status.done) continue;
+
+    // ── Step 3: Retrieve the result ─────────────────────────────────────────
+    const resultRes = await fetch(`${BASE}/generate/status/${jobId}`, {
+      headers: commonHeaders,
+    });
+
+    if (!resultRes.ok) {
+      throw new Error(`AI Horde status fetch failed (${resultRes.status})`);
+    }
+
+    const result = await resultRes.json();
+    const generation = result?.generations?.[0];
+
+    if (!generation) {
+      throw new Error('AI Horde: no generation in result');
+    }
+
+    // Result is either a base64 string or a URL (depends on r2 flag)
+    if (generation.img) {
+      // If it starts with http it's a URL; otherwise it's raw base64
+      if (generation.img.startsWith('http')) {
+        const imgRes = await fetch(generation.img);
+        if (!imgRes.ok) throw new Error(`AI Horde: image download failed (${imgRes.status})`);
+        const buffer = await imgRes.arrayBuffer();
+        console.log('[Image] AI Horde ✅ (URL)');
+        return `data:image/webp;base64,${Buffer.from(buffer).toString('base64')}`;
+      } else {
+        // Raw base64 (without data: prefix)
+        console.log('[Image] AI Horde ✅ (base64)');
+        return `data:image/webp;base64,${generation.img}`;
+      }
+    }
+
+    throw new Error('AI Horde: generation has no img field');
+  }
+
+  throw new Error('AI Horde: timed out after 3 minutes');
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-//  GENERATION — PROVIDER 3: Pollinations FLUX
+//  MAIN EXPORT — generateImage(prompt, uid?)
 //
-//  No API key required. Unlimited requests. Lower quality.
-//  This is what originally worked — keeping as a solid fallback.
+//  Fallback order:
+//    1. Cloudflare Workers AI  (fastest, highest quality)
+//    2. Pixazo                 (fallback if Cloudflare fails/rate-limited)
+//    3. AI Horde               (always available, slower — last resort)
+//
+//  Returns: { image: <base64 data URL>, provider: string, edited: boolean }
+//  Throws:  only if ALL three providers fail
 // ═════════════════════════════════════════════════════════════════════════
-async function generateWithPollinations(prompt) {
-  // Pollinations anonymous tier: 1 request every 15s — respect this or get 500s
-  const encodedPrompt = encodeURIComponent(prompt);
-  const seed = Math.floor(Math.random() * 99999);
-
-  // Two URL variants to try — flux model first, default as backup
-  const urls = [
-    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${seed}`,
-    `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${seed}`,
-  ];
-
-  for (let i = 0; i < urls.length; i++) {
-    const url = urls[i];
-    try {
-      if (i > 0) {
-        // Wait 16s before second URL attempt — respect 1 req/15s anonymous limit
-        console.log('[Image] Pollinations waiting 16s (rate limit)...');
-        await new Promise(r => setTimeout(r, 16000));
-      }
-
-      console.log(`[Image] Pollinations attempt ${i + 1}...`);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 90000); // 90s — their servers are slow
-      const response = await fetch(url, { method: 'GET', signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        console.warn(`[Image] Pollinations ${response.status} — ${i < urls.length - 1 ? 'trying next' : 'giving up'}`);
-        continue;
-      }
-
-      const buffer = await response.arrayBuffer();
-      console.log('[Image] Pollinations ✅');
-      return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
-    } catch (err) {
-      console.warn(`[Image] Pollinations error (attempt ${i + 1}): ${err.message}`);
-    }
+async function generateImage(prompt, uid = 'anonymous') {
+  if (!prompt || !prompt.trim()) {
+    throw new Error('generateImage: prompt is required');
   }
 
-  throw new Error('Pollinations failed');
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-//  MAIN GENERATE FUNCTION
-//  Gemini (key rotation) → Pollinations
-//  Returns { image: base64String, edited: boolean, provider: string }
-// ═════════════════════════════════════════════════════════════════════════
-async function generateImage(prompt, uid) {
+  // Note: image editing (passing a previous image as reference) requires
+  // a provider that supports img2img. For now, edit requests are treated
+  // as fresh generations with the edit description as the new prompt.
   const lastImg = lastGeneratedImage.get(uid);
-  const isEdit = !!(lastImg && isImageEditRequest(prompt));
+  const isEdit  = !!(lastImg && isImageEditRequest(prompt));
 
-  // ── Image editing — Gemini only (needs previous image as input) ──────
   if (isEdit) {
-    try {
-      console.log('[Image] Gemini → edit mode');
-      const image = await generateWithGemini(prompt, lastImg.base64);
-      lastGeneratedImage.set(uid, { base64: image, prompt });
-      return { image, edited: true, provider: 'gemini' };
-    } catch (err) {
-      console.warn('[Image] Gemini edit failed:', err.message);
-      return {
-        image: lastImg.base64,
-        edited: false,
-        provider: 'none',
-        error: 'Image editing is unavailable right now — Gemini keys are rate limited. Try generating a new image instead.'
-      };
-    }
+    console.log('[Image] Edit request detected — generating fresh with new prompt (no img2img in current stack)');
   }
 
-  // ── New image generation: fal.ai → Pollinations → Gemini ─────────────
-  // Note: HuggingFace disabled — monthly credits depleted. Re-enable when topped up.
-
-  // Step 1: fal.ai FLUX — fast, reliable, pay-per-use
+  // ── Provider 1: Cloudflare Workers AI ────────────────────────────────────
   try {
-    const image = await generateWithFal(prompt);
+    const image = await generateWithCloudflare(prompt);
     lastGeneratedImage.set(uid, { base64: image, prompt });
-    return { image, edited: false, provider: 'fal' };
+    return { image, edited: isEdit, provider: 'cloudflare' };
   } catch (err) {
-    console.warn('[Image] fal.ai failed:', err.message);
+    console.warn('[Image] ⚠ Cloudflare failed:', err.message, '→ trying Pixazo...');
   }
 
-  // Step 2: Pollinations FLUX — unlimited, no key
+  // ── Provider 2: Pixazo ───────────────────────────────────────────────────
   try {
-    console.log('[Image] Falling back to Pollinations...');
-    const image = await generateWithPollinations(prompt);
+    const image = await generateWithPixazo(prompt);
     lastGeneratedImage.set(uid, { base64: image, prompt });
-    return { image, edited: false, provider: 'pollinations' };
+    return { image, edited: isEdit, provider: 'pixazo' };
   } catch (err) {
-    console.warn('[Image] Pollinations failed:', err.message);
+    console.warn('[Image] ⚠ Pixazo failed:', err.message, '→ trying AI Horde...');
   }
 
-  // Step 3: Gemini — last resort when keys aren't rate limited
+  // ── Provider 3: AI Horde (anonymous, always available) ───────────────────
   try {
-    console.log('[Image] Trying Gemini as last resort...');
-    const image = await generateWithGemini(prompt, null);
+    const image = await generateWithAIHorde(prompt);
     lastGeneratedImage.set(uid, { base64: image, prompt });
-    return { image, edited: false, provider: 'gemini' };
+    return { image, edited: isEdit, provider: 'ai-horde' };
   } catch (err) {
-    console.warn('[Image] Gemini failed:', err.message);
+    console.warn('[Image] ⚠ AI Horde failed:', err.message);
   }
 
-  throw new Error('All image providers failed');
+  // All three failed — surface a clear error
+  throw new Error(
+    'All image providers failed (Cloudflare → Pixazo → AI Horde). ' +
+    'Check your .env keys and network connectivity.'
+  );
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-//  VISION FALLBACK — when Gemini Vision fails in luna.js
+//  VISION FALLBACK — called from luna.js when primary Gemini Vision fails
 //
-//  Only called when the primary Gemini vision (executeGemini) fails.
 //  Models tried in order:
-//  1. qwen3-vl-30b-a3b-thinking:free — best free vision, OCR, screenshots, docs
-//  2. llama-3.2-11b-vision-instruct:free — lighter, faster fallback
+//    1. qwen3-vl-30b-a3b-thinking:free — best free vision (OCR, screenshots)
+//    2. llama-3.2-11b-vision-instruct:free — lighter, faster fallback
 // ═════════════════════════════════════════════════════════════════════════
 const VISION_FALLBACK_MODELS = [
   'qwen/qwen3-vl-30b-a3b-thinking:free',
@@ -415,15 +370,15 @@ const VISION_FALLBACK_MODELS = [
 ];
 
 async function analyzeImageWithOpenRouter(systemPrompt, history, imageBase64) {
-  if (!openrouter) throw new Error('OpenRouter not configured');
+  if (!openrouter) throw new Error('OpenRouter not configured — OPENROUTER_API_KEY missing');
 
   const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-  const mimeType = imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
-  const dataUrl = `data:${mimeType};base64,${base64Data}`;
+  const mimeType   = imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
+  const dataUrl    = `data:${mimeType};base64,${base64Data}`;
 
   // Build messages — inject image into the last user message
   const safeHistory = history.slice(-10);
-  const messages = [{ role: 'system', content: systemPrompt }];
+  const messages    = [{ role: 'system', content: systemPrompt }];
 
   safeHistory.forEach((msg, i) => {
     const isLast = i === safeHistory.length - 1;
@@ -462,10 +417,29 @@ async function analyzeImageWithOpenRouter(systemPrompt, history, imageBase64) {
   throw new Error('All vision fallback models failed');
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+//  EXPORTS
+//
+//  Primary:
+//    generateImage(prompt, uid?)   — the only function you need to call
+//
+//  Individual providers (for testing or direct use):
+//    generateWithCloudflare(prompt)
+//    generateWithPixazo(prompt)
+//    generateWithAIHorde(prompt)
+//
+//  Vision:
+//    analyzeImageWithOpenRouter(systemPrompt, history, imageBase64)
+//
+//  Utilities:
+//    isImageEditRequest(prompt)    — detect if user wants to edit prev image
+//    lastGeneratedImage            — Map<uid, {base64, prompt}>
+// ═════════════════════════════════════════════════════════════════════════
 module.exports = {
   generateImage,
-  generateWithGemini,
-  generateWithPollinations,
+  generateWithCloudflare,
+  generateWithPixazo,
+  generateWithAIHorde,
   analyzeImageWithOpenRouter,
   isImageEditRequest,
   lastGeneratedImage,
