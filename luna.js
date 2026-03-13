@@ -674,6 +674,10 @@ HUMAN WRITING RULES:
 - Start with something direct and specific. Never a definition, never "In today's world".
 - One clear angle — don't cover everything equally like Wikipedia.
 
+EMOJIS:
+- Preserve all emojis exactly as they appear. Never remove them.
+- If the original has emojis, keep them in the same positions.
+
 BANNED PHRASES — remove completely:
 "In today's world", "In conclusion", "Furthermore", "Moreover", "It is important to note",
 "It is worth noting", "As we can see", "In summary", "To summarize",
@@ -711,6 +715,9 @@ async function rewriteForStyle(text, plan) {
   const topicLower = (plan?.topic || '').toLowerCase();
   const isPersonal = personalTopics.some(t => topicLower.includes(t));
   if (isPersonal) return text;
+
+  // Skip rewrite for roasts — preserve brutal tone and emojis
+  if (topicLower.includes('roast')) return text;
 
   try {
     const res = await groq.chat.completions.create({
