@@ -42,6 +42,62 @@
       --sidebar:rgba(10,8,10,0.98);
     }
 
+    /* ── SPLASH SCREEN ───────────────────────────────────── */
+    #splash {
+      position: fixed; inset: 0; z-index: 9999;
+      background: #000;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: opacity 0.6s ease;
+    }
+    #splash.hide { opacity: 0; pointer-events: none; }
+    .splash-scene {
+      width: 150px; height: 150px;
+      position: relative;
+      transform-style: preserve-3d;
+      perspective: 500px;
+    }
+    .splash-orbit {
+      position: absolute; inset: 0;
+      transform-style: preserve-3d;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .splash-orbit1 { animation: sRot1 3s linear infinite; }
+    .splash-orbit2 { animation: sRot2 3s linear infinite; }
+    .splash-orbit3 { animation: sRot3 3s linear infinite; }
+    @keyframes sRot1 {
+      from { transform: rotateY(0deg); }
+      to   { transform: rotateY(360deg); }
+    }
+    @keyframes sRot2 {
+      from { transform: rotateZ(60deg) rotateY(0deg); }
+      to   { transform: rotateZ(60deg) rotateY(360deg); }
+    }
+    @keyframes sRot3 {
+      from { transform: rotateZ(-60deg) rotateY(0deg); }
+      to   { transform: rotateZ(-60deg) rotateY(360deg); }
+    }
+    .splash-ring {
+      width: 130px; height: 130px;
+      border-radius: 50%;
+      border: 2.5px solid #fff;
+      position: absolute;
+      box-shadow: 0 0 8px rgba(255,255,255,0.8), 0 0 22px rgba(255,255,255,0.2);
+    }
+    .splash-label {
+      margin-top: 40px;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+      font-size: 13px; font-weight: 300;
+      letter-spacing: 8px; text-transform: uppercase;
+      color: rgba(255,255,255,0.38);
+      animation: splashFade 1.2s ease 0.4s both;
+    }
+    @keyframes splashFade {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    /* ── END SPLASH ──────────────────────────────────────── */
+
     html, body {
       height: 100%; overflow: hidden;
       background: var(--bg);
@@ -340,32 +396,28 @@
     }
     .home-spacer { flex: 1; min-height: 20px; }
     /* Luna orb with gradient glow */
+    /* Luna orb — SVG intersecting rings, static */
     .luna-orb-wrap {
-      position: relative; margin-bottom: 26px;
+      position: relative; margin-bottom: 32px;
       display: flex; align-items: center; justify-content: flex-start;
     }
-    .luna-orb-glow {
-      position: absolute; bottom: -16px; left: 10px;
-      width: 90px; height: 30px;
-      background: radial-gradient(ellipse, rgba(124,58,237,0.55) 0%, transparent 70%);
-      filter: blur(10px); pointer-events: none;
-    }
+    .luna-orb-glow { display: none; }
     .luna-orb {
-      width: 72px; height: 72px; border-radius: 20px;
-      overflow: hidden; position: relative; z-index: 1;
-      background: linear-gradient(135deg,#7c3aed,#a855f7,#ec4899);
-      box-shadow: 0 0 40px rgba(124,58,237,0.32);
+      width: 72px; height: 72px;
+      background: none; box-shadow: none; border-radius: 0;
+      overflow: visible; display: flex; align-items: center; justify-content: center;
     }
-    .luna-orb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .luna-orb img { display: none; }
+    .orb-scene { width: 72px; height: 72px; }
     /* Title */
     .home-title {
       font-size: 27px; font-weight: 700; text-align: left;
       margin-bottom: 10px; line-height: 1.2; letter-spacing: -0.3px; width: 100%;
     }
-    .home-title .accent { color: var(--accent); }
+    .home-title .accent { color: var(--accent); letter-spacing: 1px; }
     .home-sub {
       font-size: 14px; color: var(--text-dim);
-      text-align: left; line-height: 1.65; margin-bottom: 24px; max-width: 340px;
+      text-align: left; line-height: 1.65; margin-bottom: 40px; max-width: 340px;
     }
     /* Starter cards 2x2 */
     .starter-grid {
@@ -373,7 +425,7 @@
       gap: 10px; width: 100%; margin-bottom: 0;
     }
     .starter-card {
-      padding: 17px 15px; border-radius: 16px;
+      padding: 20px 16px; border-radius: 16px;
       background: var(--surface);
       border: 1px solid var(--border);
       cursor: pointer; transition: all .2s;
@@ -494,16 +546,30 @@
     .msg-reaction { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; padding: 2px 8px; border-radius: 100px; background: rgba(255,255,255,0.07); border: 1px solid var(--border); cursor: pointer; }
 
     /* Typing indicator */
-    .typing-row { display: flex; gap: 9px; align-items: center; padding: 0 16px 8px; }
+    .typing-row { display: flex; gap: 9px; align-items: center; padding: 0 20px 8px; }
     .typing-bubble {
-      display: flex; gap: 5px; align-items: center;
-      padding: 11px 15px; border-radius: 18px; border-top-left-radius: 5px;
-      background: var(--luna-bubble); border: 1px solid var(--border);
+      width: 36px; height: 36px; position: relative;
+      transform-style: preserve-3d; perspective: 200px;
+      display: flex; align-items: center; justify-content: center;
+      background: none; border: none; padding: 0;
     }
-    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: dotBounce 1.2s infinite; }
-    .dot:nth-child(2) { animation-delay: .2s; }
-    .dot:nth-child(3) { animation-delay: .4s; }
-    @keyframes dotBounce { 0%,60%,100%{transform:translateY(0);} 30%{transform:translateY(-6px);} }
+    .typing-ring-orbit {
+      position: absolute; inset: 0; transform-style: preserve-3d;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .typing-ring-orbit:nth-child(1) { animation: tRot1 3s linear infinite; }
+    .typing-ring-orbit:nth-child(2) { animation: tRot2 3s linear infinite; }
+    .typing-ring-orbit:nth-child(3) { animation: tRot3 3s linear infinite; }
+    @keyframes tRot1 { from{transform:rotateY(0deg)} to{transform:rotateY(360deg)} }
+    @keyframes tRot2 { from{transform:rotateZ(60deg) rotateY(0deg)} to{transform:rotateZ(60deg) rotateY(360deg)} }
+    @keyframes tRot3 { from{transform:rotateZ(-60deg) rotateY(0deg)} to{transform:rotateZ(-60deg) rotateY(360deg)} }
+    .typing-ring-el {
+      width: 26px; height: 26px; border-radius: 50%;
+      border: 1.5px solid #fff; position: absolute;
+      box-shadow: 0 0 5px rgba(255,255,255,0.55);
+    }
+    .dot { display: none; }
+    @keyframes dotBounce { }
     #thinking-label { font-size: 12px; color: var(--text-dim); margin-top: 4px; display: none; }
 
     /* ─── LUNA THINKING BLOCK ───────────────────────── */
@@ -1424,6 +1490,17 @@
 </head>
 <body>
 
+<!-- ── SPLASH SCREEN ─────────────────────────────────────── -->
+<div id="splash">
+  <div class="splash-scene">
+    <div class="splash-orbit splash-orbit1"><div class="splash-ring"></div></div>
+    <div class="splash-orbit splash-orbit2"><div class="splash-ring"></div></div>
+    <div class="splash-orbit splash-orbit3"><div class="splash-ring"></div></div>
+  </div>
+  <div class="splash-label">Luna</div>
+</div>
+<!-- ── END SPLASH ────────────────────────────────────────── -->
+
 <canvas id="starfield"></canvas>
 <div id="app">
 
@@ -1576,9 +1653,28 @@
       <div class="home-inner">
         <div class="luna-orb-wrap">
           <div class="luna-orb-glow"></div>
-          <div class="luna-orb"><img src="icon-192.png" alt="Luna"/></div>
+          <div class="luna-orb">
+            <svg class="orb-scene" viewBox="-36 -36 72 72" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <filter id="orbglow">
+                  <feGaussianBlur stdDeviation="1.2" result="blur"/>
+                  <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <!-- flat horizontal ellipse -->
+              <ellipse cx="0" cy="0" rx="32" ry="12" fill="none" stroke="#fff" stroke-width="1.8" filter="url(#orbglow)" opacity="0.9"/>
+              <!-- tilted left 55deg -->
+              <g transform="rotate(-55)">
+                <ellipse cx="0" cy="0" rx="32" ry="12" fill="none" stroke="#fff" stroke-width="1.8" filter="url(#orbglow)" opacity="0.9"/>
+              </g>
+              <!-- tilted right 55deg -->
+              <g transform="rotate(55)">
+                <ellipse cx="0" cy="0" rx="32" ry="12" fill="none" stroke="#fff" stroke-width="1.8" filter="url(#orbglow)" opacity="0.9"/>
+              </g>
+            </svg>
+          </div>
         </div>
-        <div class="home-title">Hello<span id="home-username-display"></span>, I'm <span class="accent">Luna.</span></div>
+        <div class="home-title">Hello<span id="home-username-display"></span>, I'm <span class="accent">LUNA.</span></div>
         <div class="home-sub">Your personal AI — ready to chat, create, and help you with anything.</div>
         <div class="starter-grid">
           <div class="starter-card" onclick="startChat('Help me write something')">Help me write something</div>
@@ -1612,11 +1708,12 @@
       </div>
       <div class="messages" id="messages">
         <div id="typing-row" class="typing-row" style="display:none;">
-          <div class="msg-avatar luna-av"><img src="icon-192.png" alt="L"/></div>
-          <div>
-            <div class="typing-bubble"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
-            <div id="thinking-label">Thinking deeply...</div>
+          <div class="typing-bubble">
+            <div class="typing-ring-orbit"><div class="typing-ring-el"></div></div>
+            <div class="typing-ring-orbit"><div class="typing-ring-el"></div></div>
+            <div class="typing-ring-orbit"><div class="typing-ring-el"></div></div>
           </div>
+          <div id="thinking-label">Thinking deeply...</div>
         </div>
       </div>
       <button class="scroll-btn" id="scroll-btn" onclick="scrollToBottom()">
@@ -2170,7 +2267,7 @@
         localStorage.setItem('luna-token', token);
         localStorage.setItem('luna-user', JSON.stringify(user));
         window.history.replaceState({}, '', window.location.pathname);
-        enterApp(isOwner);
+        tryEnterApp(isOwner);
       } catch(e) {
         console.error('OAuth redirect error:', e);
       }
@@ -2204,7 +2301,7 @@
       localStorage.setItem('luna-user',JSON.stringify(currentUser));
       const owner=currentUser.role==='owner';
       isOwner=owner;
-      enterApp(owner);
+      tryEnterApp(owner);
     }catch(e){errEl.textContent='Could not connect. Try again.';btn.textContent='Sign In';btn.disabled=false;}
   }
 
@@ -2225,7 +2322,7 @@
       localStorage.setItem('luna-token',authToken);
       localStorage.setItem('luna-user',JSON.stringify(currentUser));
       isOwner=currentUser.role==='owner';
-      enterApp(isOwner);
+      tryEnterApp(isOwner);
     }catch(e){errEl.textContent='Could not connect. Try again.';btn.textContent='Create Account';btn.disabled=false;}
   }
 
@@ -2238,7 +2335,7 @@
       const data=await res.json();
       if(data.token){authToken=data.token;currentUser=data.user;localStorage.setItem('luna-token',authToken);localStorage.setItem('luna-user',JSON.stringify(currentUser));}
     }catch(e){}
-    isOwner=false;enterApp(false);
+    isOwner=false;tryEnterApp(false);
   }
   const homeInput=document.getElementById('home-input');
   const homeSend=document.getElementById('home-send');
@@ -2252,6 +2349,36 @@
     const errEl=document.getElementById('login-error');
     submitLogin(document.getElementById('login-email')?.value, pw);
   }
+  // Splash: auto-dismiss after 2 rotations (3s), then enterApp when auth also ready
+  let splashDone = false, authDone = false, pendingOwner = null;
+  function dismissSplash(){
+    const splash = document.getElementById('splash');
+    if(splash){ splash.classList.add('hide'); setTimeout(()=>splash.remove(), 650); }
+  }
+  function tryEnterApp(owner){
+    authDone = true; pendingOwner = owner;
+    if(splashDone) _doEnterApp(owner);
+  }
+  setTimeout(()=>{
+    splashDone = true;
+    if(authDone) _doEnterApp(pendingOwner);
+    else dismissSplash();
+  }, 1500);
+
+  function _doEnterApp(owner){
+    const splash = document.getElementById('splash');
+    if(splash){ splash.classList.add('hide'); }
+    // Quick dark flash between splash and Luna page
+    const flash = document.createElement('div');
+    flash.style.cssText = 'position:fixed;inset:0;background:#000;z-index:9998;opacity:1;pointer-events:none;transition:opacity 0.2s ease;';
+    document.body.appendChild(flash);
+    setTimeout(()=>{
+      if(splash) splash.remove();
+      enterApp(owner);
+      requestAnimationFrame(()=>{ flash.style.opacity='0'; setTimeout(()=>flash.remove(), 220); });
+    }, 300);
+  }
+
   function enterApp(owner){
     // Hide auth, show app
     document.getElementById('auth-screen').style.display='none';
@@ -2383,8 +2510,12 @@
     // Show loading spinner in chat
     const loadingEl = document.createElement('div');
     loadingEl.id = 'thread-loading';
-    loadingEl.style.cssText = 'text-align:center;padding:40px;color:var(--text-dim);font-size:14px;';
-    loadingEl.textContent = 'Loading...';
+    loadingEl.style.cssText = 'display:flex;align-items:center;justify-content:center;padding:60px;';
+    loadingEl.innerHTML = `<div class="typing-bubble" style="width:40px;height:40px;">
+      <div class="typing-ring-orbit"><div class="typing-ring-el"></div></div>
+      <div class="typing-ring-orbit"><div class="typing-ring-el"></div></div>
+      <div class="typing-ring-orbit"><div class="typing-ring-el"></div></div>
+    </div>`;
     messagesEl.appendChild(loadingEl);
 
     try{
@@ -2862,10 +2993,9 @@
                   });
                   const imgData = await imgRes.json();
                   genRow.remove();
-                  const imgSrc = imgData.image || imgData.result?.image;
-                  if(imgSrc){
-                    lastGeneratedImageUrl = imgSrc;
-                    addMsg('luna', json.editLastImage ? 'Here is the edited image:' : '', imgSrc);
+                  if(imgData.image){
+                    lastGeneratedImageUrl = imgData.image;
+                    addMsg('luna', json.editLastImage ? 'Here is the edited image:' : '', imgData.image);
                   } else {
                     addMsg('luna', imgData.error || 'Could not generate that image. Try describing it differently.');
                   }
@@ -3769,7 +3899,7 @@
   // ── Auto-login ────────────────────────────────────────────
   if(authToken && currentUser){
     isOwner=currentUser.role==='owner';
-    enterApp(isOwner);
+    tryEnterApp(isOwner);
   } else {
     handleOAuthRedirect();
   }

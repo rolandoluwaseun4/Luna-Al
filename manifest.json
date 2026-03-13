@@ -2,11 +2,11 @@
   "name": "Luna AI",
   "short_name": "Luna",
   "description": "Your personal AI assistant.",
-  "start_url": "/Luna-Al/",
-  "scope": "/Luna-Al/",
+  "start_url": "/Luna-AI/",
+  "scope": "/Luna-AI/",
   "display": "standalone",
-  "background_color": "#07020f",
-  "theme_color": "#080408",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "orientation": "portrait",
   "icons": [
     {
