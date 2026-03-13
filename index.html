@@ -193,6 +193,27 @@
       border-right: 1px solid rgba(255,255,255,0.05);
     }
     .drawer.open .drawer-panel { transform: translateX(0); }
+    /* Desktop brand — hidden on mobile */
+    .sb-desktop-brand {
+      display: none;
+      align-items: center; justify-content: space-between;
+      padding: 18px 14px 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      margin-bottom: 4px;
+    }
+    .sb-brand-logo {
+      display: flex; align-items: center; gap: 9px;
+      font-size: 16px; font-weight: 600; cursor: pointer; color: var(--text);
+    }
+    .sb-brand-logo img { width: 26px; height: 26px; border-radius: 7px; }
+    .sb-new-btn {
+      width: 30px; height: 30px; border-radius: 8px; border: none;
+      background: none; color: var(--text-dim); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .2s;
+    }
+    .sb-new-btn:hover { background: rgba(255,255,255,0.07); color: var(--text); }
+    .sb-new-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
     /* Sidebar top: search + edit icon */
     .sb-top {
@@ -305,7 +326,7 @@
     }
     .home-inner {
       display: flex; flex-direction: column; align-items: center;
-      padding: 20px 22px 40px; width: 100%; max-width: 480px;
+      padding: 20px 22px 120px; width: 100%; max-width: 480px;
       margin: 0 auto; gap: 0;
     }
     /* Luna orb with underglow */
@@ -338,7 +359,7 @@
     /* Starter cards 2x2 */
     .starter-grid {
       display: grid; grid-template-columns: 1fr 1fr;
-      gap: 10px; width: 100%; margin-bottom: 28px;
+      gap: 10px; width: 100%; margin-bottom: 0;
     }
     .starter-card {
       padding: 17px 15px; border-radius: 16px;
@@ -350,13 +371,18 @@
     }
     .starter-card:hover { background: var(--accent-soft); color: var(--text); transform: translateY(-1px); }
     .starter-card:active { transform: scale(0.98); }
-    /* Home input */
+    /* Home input — pinned to bottom like the chat bar */
+    .home-input-outer {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+      padding: 12px 16px 32px;
+      background: linear-gradient(to top, var(--bg) 65%, transparent);
+    }
     .home-input-pill {
-      width: 100%; display: flex; align-items: center; gap: 10px;
+      width: 100%; max-width: 480px; margin: 0 auto;
+      display: flex; align-items: center; gap: 10px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 100px; padding: 10px 10px 10px 20px;
-      margin-top: 0;
     }
     #home-input {
       flex: 1; background: none; border: none; outline: none;
@@ -900,39 +926,35 @@
     /* ─── DESKTOP RESPONSIVE (768px+) ───────────────── */
     @media (min-width: 768px) {
 
-      /* App becomes a side-by-side layout */
+      /* Full height app — no top navbar */
       #app {
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         height: 100%;
       }
+
+      /* Hide navbar entirely on desktop — sidebar handles everything */
+      .navbar { display: none !important; }
+
+      /* App body fills full height */
       .app-body {
         flex: 1;
         display: flex;
         flex-direction: row;
         overflow: hidden;
-        height: 0; /* prevent overflow */
+        height: 100%;
       }
 
-      /* Hide hamburger — sidebar is always visible */
-      .hamburger { display: none !important; }
-
-      /* Navbar: taller, more padding, centered brand */
-      .navbar {
-        padding: 16px 28px;
-        border-bottom: 1px solid var(--border);
-      }
-
-      /* Desktop layout wrapper — navbar + body row */
+      /* Desktop layout wrapper */
       #main-content {
         display: flex !important;
         flex-direction: row !important;
         flex: 1;
         overflow: hidden;
-        height: 0; /* flex child needs this to not overflow */
+        height: 100%;
       }
 
-      /* Sidebar always visible on desktop */
+      /* Sidebar always visible, full height */
       .drawer {
         position: relative !important;
         pointer-events: all !important;
@@ -949,6 +971,11 @@
         height: 100% !important;
         border-right: 1px solid var(--border) !important;
         background: var(--sidebar-bg) !important;
+      }
+
+      /* Show Luna brand inside sidebar on desktop */
+      .sb-desktop-brand {
+        display: flex !important;
       }
 
       /* Chat area takes remaining space */
@@ -1001,6 +1028,10 @@
       .home-input-pill {
         max-width: 560px;
       }
+      .home-input-outer {
+        padding: 12px 32px 32px;
+        left: 260px; /* offset sidebar width */
+      }
 
       /* Auth box stays centered */
       #auth-screen {
@@ -1031,6 +1062,7 @@
       .messages { max-width: 800px; }
       .chat-bar { max-width: 800px; }
       .home-body { max-width: 620px; }
+      .home-input-outer { left: 280px; }
     }
 
 </style>
@@ -1112,6 +1144,16 @@
   <div class="drawer" id="drawer">
     <div class="drawer-overlay" onclick="closeDrawer()"></div>
     <div class="drawer-panel">
+      <!-- Desktop brand header (hidden on mobile) -->
+      <div class="sb-desktop-brand">
+        <div class="sb-brand-logo" onclick="goHome()">
+          <img src="icon-192.png" alt="Luna"/>
+          Luna
+        </div>
+        <button class="sb-new-btn" onclick="newChat()" title="New chat">
+          <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </button>
+      </div>
       <!-- Search + edit -->
       <div class="sb-top">
         <div class="sb-search">
@@ -1190,12 +1232,16 @@
           <div class="starter-card" onclick="startChat('Write a Python sorting script')">Write a Python sorting script</div>
           <div class="starter-card" onclick="startChat('Tips to be more productive')">Tips to be more productive</div>
         </div>
+      </div>
+      <div class="home-input-outer">
         <div class="home-input-pill">
           <textarea id="home-input" placeholder="Message Luna..." rows="1"></textarea>
           <button class="home-send" id="home-send" disabled>
             <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
           </button>
         </div>
+      </div>
+    </div>
       </div>
     </div>
 
