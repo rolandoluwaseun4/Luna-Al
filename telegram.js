@@ -1219,7 +1219,9 @@ app.get("/threads/:userId", requireAuth, async (req, res) => {
       .sort({ lastUpdated: -1 })
       .select('threadId title lastUpdated createdAt messages');
     
-    const result = threads.map(t => {
+    const result = threads
+      .filter(t => t.messages.length > 0 && t.title && t.title !== 'New Chat')
+      .map(t => {
       const lastMsg = t.messages[t.messages.length - 1];
       const lastText = lastMsg
         ? (typeof lastMsg.content === 'string' ? lastMsg.content

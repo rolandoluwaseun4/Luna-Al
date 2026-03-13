@@ -259,11 +259,19 @@
       padding: 11px 16px; border-radius: 10px;
       cursor: pointer; transition: background .15s;
       font-size: 15px; color: var(--text);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       font-weight: 400;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
     .sb-thread:hover { background: rgba(255,255,255,0.05); }
     .sb-thread.active-thread { background: rgba(155,127,212,0.12); }
+    .sb-thread-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sb-thread-del {
+      opacity: 0; font-size: 18px; color: var(--text-dim); line-height: 1;
+      padding: 2px 4px; border-radius: 4px; transition: opacity .15s;
+      flex-shrink: 0;
+    }
+    .sb-thread:hover .sb-thread-del { opacity: 1; }
+    .sb-thread-del:hover { color: #ff6b6b; }
     .sb-empty-hist { padding: 16px; font-size: 14px; color: var(--text-dim); }
 
     /* Sidebar profile at bottom */
@@ -1756,13 +1764,16 @@
   function populateSidebarThreads(threads){
     const list = document.getElementById('sb-history-list');
     if(!list) return;
-    if(!threads || !threads.length){
+    // Only show threads that have a real title (not empty/New Chat)
+    const validThreads = (threads||[]).filter(t => t.title && t.title !== 'New Chat' && t.title.trim() !== '');
+    if(!validThreads.length){
       list.innerHTML = '<div class="sb-empty-hist" id="sb-empty">No conversations yet</div>';
       return;
     }
-    list.innerHTML = threads.map(t=>`
-      <div class="sb-thread ${t.threadId===currentThreadId?'active-thread':''}" onclick="openThread('${t.threadId}','${(t.title||'Chat').replace(/'/g,"\\'")}');closeDrawer();">
-        ${t.title||'Conversation'}
+    list.innerHTML = validThreads.map(t=>`
+      <div class="sb-thread ${t.threadId===currentThreadId?'active-thread':''}" onclick="openThread('${t.threadId}','${(t.title||'Chat').replace(/'/g,"\\'")}')">
+        <span class="sb-thread-title">${t.title||'Conversation'}</span>
+        <span class="sb-thread-del" onclick="deleteThread(event,'${t.threadId}')" title="Delete">×</span>
       </div>`).join('');
   }
 
@@ -2008,37 +2019,40 @@
   }
 
   async function openThread(threadId, title){
-    showScreen('history-detail');
-    document.getElementById('history-detail-title').textContent=title;
-    document.getElementById('continue-btn').dataset.tid=threadId;
-    const msgsEl=document.getElementById('history-detail-msgs');
-    msgsEl.innerHTML='<div class="history-loading">Loading...</div>';
+    // Clear chat and go straight to chat screen
+    Array.from(messagesEl.children).forEach(c=>{if(c.id!=='typing-row')c.remove();});
+    currentThreadId = threadId;
+    closeDrawer();
+    showScreen('chat');
+
+    // Show loading spinner in chat
+    const loadingEl = document.createElement('div');
+    loadingEl.id = 'thread-loading';
+    loadingEl.style.cssText = 'text-align:center;padding:40px;color:var(--text-dim);font-size:14px;';
+    loadingEl.textContent = 'Loading...';
+    messagesEl.appendChild(loadingEl);
+
     try{
-      const res=await fetch(BACKEND_URL+'/threads/'+getUserId()+'/'+threadId,{headers:getAuthHeaders()});
-      const data=await res.json();
-      activeThreadMessages=data.messages||[];
-      msgsEl.innerHTML=data.messages.map(m=>`
-        <div class="history-dmsg ${m.role==='assistant'?'luna':'user'}">
-          ${renderMarkdown(m.text)}
-          <div class="history-dmsg-time">${new Date(m.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
-        </div>`).join('');
-      msgsEl.scrollTop=msgsEl.scrollHeight;
-    }catch(e){msgsEl.innerHTML='<div class="history-loading">Could not load messages.</div>';}
+      const res = await fetch(BACKEND_URL+'/threads/'+getUserId()+'/'+threadId, {headers:getAuthHeaders()});
+      const data = await res.json();
+      const messages = data.messages || [];
+
+      // Remove loader
+      document.getElementById('thread-loading')?.remove();
+
+      // Render only this thread's messages
+      messages.forEach(m => {
+        addMsg(m.role==='assistant'?'luna':'user', m.text, null, true);
+      });
+
+      setTimeout(()=>scrollToBottom(), 100);
+    }catch(e){
+      document.getElementById('thread-loading')?.remove();
+      addMsg('luna', 'Could not load this conversation.', null, true);
+    }
   }
 
-  function continueThread(){
-    const threadId=document.getElementById('continue-btn').dataset.tid;
-    if(!threadId)return;
-    // Set currentThreadId so next messages go to this thread
-    currentThreadId=threadId;
-    // Load messages into chat screen
-    Array.from(messagesEl.children).forEach(c=>{if(c.id!=='typing-row')c.remove();});
-    activeThreadMessages.forEach(m=>{
-      addMsg(m.role==='assistant'?'luna':'user', m.text, null, true);
-    });
-    showScreen('chat');
-    chatInput.focus();
-  }
+  function continueThread(){ /* replaced by openThread */ }
 
   async function deleteThread(e, threadId){
     e.stopPropagation();
@@ -2053,14 +2067,13 @@
     }catch(e){alert('Could not delete. Try again.');}
   }
   async function newChat(){
+    // Clear chat screen
     Array.from(messagesEl.children).forEach(c=>{if(c.id!=='typing-row')c.remove();});
-    homeInput.value='';homeSend.disabled=true;clearImage();
-    // Create new thread on backend
-    try{
-      const res=await fetch(BACKEND_URL+'/threads/'+getUserId(),{method:'POST',headers:getAuthHeaders()});
-      const data=await res.json();
-      currentThreadId=data.threadId;
-    }catch(e){ currentThreadId=null; } // Backend will create thread on first message
+    homeInput.value=''; homeSend.disabled=true; clearImage();
+    // Reset thread — backend creates a new one on first message
+    currentThreadId = null;
+    lastGeneratedImageUrl = null;
+    document.title = 'Luna';
     goHome();
   }
   function isDesktop(){ return window.innerWidth >= 768; }
