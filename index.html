@@ -1761,7 +1761,7 @@
       return;
     }
     list.innerHTML = threads.map(t=>`
-      <div class="sb-thread" onclick="openThread('${t._id||t.id}','${(t.title||'Chat').replace(/'/g,"\\'")}');closeDrawer();">
+      <div class="sb-thread ${t.threadId===currentThreadId?'active-thread':''}" onclick="openThread('${t.threadId}','${(t.title||'Chat').replace(/'/g,"\\'")}');closeDrawer();">
         ${t.title||'Conversation'}
       </div>`).join('');
   }
