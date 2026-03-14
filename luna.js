@@ -441,7 +441,8 @@ ${lengthTag}${formatTag ? ' ' + formatTag : ''}`;
 
 // ── Try a single Groq model, returns reply or throws ────────────
 async function tryGroqModel(model, systemPrompt, history, plan) {
-  const needsConstraint = model.includes('qwen') || model.includes('deepseek');
+  const isQwen = model.includes('qwen3');
+  const needsConstraint = isQwen || model.includes('deepseek');
   let finalHistory = (plan && needsConstraint) ? injectLengthConstraint(history, plan) : history;
 
   // All models get a hard identity anchor — they are Luna, always
@@ -457,10 +458,38 @@ async function tryGroqModel(model, systemPrompt, history, plan) {
     }
   }
 
+  // ── Qwen3-specific: inject format directive into system prompt ───────────
+  // Qwen3 reasons during its thinking phase and can override formatting
+  // instructions before writing. Reinforcing the format rule inside the
+  // system prompt — right before generation — counters this.
+  let finalSystemPrompt = systemPrompt;
+  if (isQwen && plan) {
+    const fmtMap = {
+      table:      'OUTPUT FORMAT: Use a markdown table. No prose paragraphs as the main content.',
+      structured: 'OUTPUT FORMAT: Use **Bold Headers** for each section. Bullets or numbered steps inside sections. Make it scannable.',
+      list:       'OUTPUT FORMAT: Bullet list only. Use - for each item. No paragraphs.',
+      code:       'OUTPUT FORMAT: Code block with language tag. Brief explanation before it.',
+      prose:      'OUTPUT FORMAT: Plain prose. Use **bold** for key terms. Short paragraphs.',
+      document:   'OUTPUT FORMAT: **Bold section headers**. Bullets where appropriate. Complete and structured.',
+    };
+    const fmtDirective = fmtMap[plan.response_format] || fmtMap.prose;
+    const lenMap = {
+      one_sentence: 'LENGTH: One sentence only. Stop after it.',
+      short:        'LENGTH: 2–4 sentences. Stop after that.',
+      medium:       'LENGTH: 1–3 paragraphs or equivalent structured sections.',
+      long:         'LENGTH: Thorough — cover the topic fully. No padding.',
+      full_document:'LENGTH: Write the complete document the user requested.',
+    };
+    const lenDirective = lenMap[plan.response_length] || lenMap.short;
+
+    finalSystemPrompt = systemPrompt +
+      `\n\n━━━ FORMATTING RULES (ABSOLUTE — follow in your thinking AND your output) ━━━\n${fmtDirective}\n${lenDirective}\nThese rules override any default tendencies. Do not debate them in your thinking. Just follow them.`;
+  }
+
   const params = {
     model,
     max_tokens: (plan && plan.intent === 'ui_build') ? 8192 : 4096,
-    messages: [{ role: 'system', content: systemPrompt }, ...finalHistory],
+    messages: [{ role: 'system', content: finalSystemPrompt }, ...finalHistory],
   };
 
   // Enable native thinking for qwen3 via Groq's reasoning_format
