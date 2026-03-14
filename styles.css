@@ -909,17 +909,25 @@
     .scroll-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
 
     /* ─── MARKDOWN in bubbles ────────────────────────── */
-    .mrow.luna .bubble h2 { font-size: 16px; font-weight: 700; color: #fff; margin: 18px 0 8px; letter-spacing: -0.2px; }
-    .mrow.luna .bubble h3 { font-size: 15px; font-weight: 700; color: #fff; margin: 18px 0 8px; letter-spacing: -0.2px; }
-    .mrow.luna .bubble strong { font-weight: 600; color: #ffffff; }
+    .mrow.luna .bubble h2 { font-size: 16px; font-weight: 700; color: #fff; margin: 20px 0 6px; letter-spacing: -0.2px; }
+    .mrow.luna .bubble h3 { font-size: 15px; font-weight: 700; color: #fff; margin: 16px 0 5px; letter-spacing: -0.2px; }
+    .mrow.luna .bubble h2:first-child, .mrow.luna .bubble h3:first-child { margin-top: 0; }
+    .mrow.luna .bubble strong { font-weight: 650; color: #ffffff; }
     .mrow.luna .bubble em { font-style: italic; color: rgba(240,236,255,0.82); }
-    .mrow.luna .bubble code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 5px; font-family: monospace; font-size: 13px; color: #c4a8ff; }
-    .mrow.luna .bubble pre { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px; overflow-x: auto; margin: 14px 0; font-size: 13px; color: #c4a8ff; line-height: 1.6; }
-    .mrow.luna .bubble ul, .mrow.luna .bubble ol { padding-left: 20px; margin: 8px 0 14px; display: flex; flex-direction: column; gap: 8px; }
-    .mrow.luna .bubble li { color: #f0ecff; line-height: 1.65; }
-    .mrow.luna .bubble p { margin-bottom: 14px; }
+    .mrow.luna .bubble code { background: rgba(255,255,255,.09); padding: 2px 7px; border-radius: 5px; font-family: 'SF Mono','Fira Code',monospace; font-size: 13px; color: #c4a8ff; }
+    .mrow.luna .bubble pre { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,0.09); border-radius: 12px; padding: 16px; overflow-x: auto; margin: 14px 0; font-size: 13px; color: #c4a8ff; line-height: 1.6; }
+    .mrow.luna .bubble pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+    /* Lists — use custom markers since display:flex removes native ones */
+    .mrow.luna .bubble ul { list-style: none; padding-left: 0; margin: 10px 0 16px; display: flex; flex-direction: column; gap: 7px; }
+    .mrow.luna .bubble ol { list-style: none; counter-reset: luna-ol; padding-left: 0; margin: 10px 0 16px; display: flex; flex-direction: column; gap: 7px; }
+    .mrow.luna .bubble ul > li { color: #f0ecff; line-height: 1.65; padding-left: 18px; position: relative; }
+    .mrow.luna .bubble ul > li::before { content: '•'; position: absolute; left: 2px; top: 0; color: rgba(200,185,255,0.65); line-height: 1.65; }
+    .mrow.luna .bubble ol > li { color: #f0ecff; line-height: 1.65; padding-left: 24px; position: relative; counter-increment: luna-ol; }
+    .mrow.luna .bubble ol > li::before { content: counter(luna-ol) '.'; position: absolute; left: 0; top: 0; color: rgba(200,185,255,0.65); font-size: 13px; font-weight: 600; line-height: 1.65; }
+    .mrow.luna .bubble p { margin-bottom: 12px; line-height: 1.78; }
     .mrow.luna .bubble p:last-child { margin-bottom: 0; }
     .mrow.luna .bubble blockquote { border-left: 3px solid var(--accent); padding: 10px 16px; margin: 14px 0; background: var(--accent-soft); border-radius: 0 8px 8px 0; font-style: italic; color: rgba(240,236,255,0.85); }
+    .mrow.luna .bubble hr { border: none; border-top: 1px solid rgba(255,255,255,0.10); margin: 16px 0; }
     /* Tables */
     .mrow.luna .bubble table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; overflow-x: auto; display: block; }
     .mrow.luna .bubble thead th { background: rgba(138,100,255,0.18); color: #ffffff; font-weight: 600; padding: 10px 14px; text-align: left; border-bottom: 2px solid rgba(138,100,255,0.4); white-space: nowrap; }

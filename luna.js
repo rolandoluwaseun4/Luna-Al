@@ -176,7 +176,7 @@ GUIDANCE:
 - ui_build: use this when user asks to build a website, landing page, dashboard, UI, app interface, or any visual HTML/CSS output. Always set response_format: code and response_length: full_document for ui_build.
 - code: use for scripts, functions, algorithms, backend code, non-UI programming tasks
 - TABLE RULE: if user says "tabular form", "in a table", "as a table", "table format", or "compare in a table" — set response_format: table and response_length: medium. Never set short for table requests.
-- STRUCTURED RULE: if user asks for a plan, guide, breakdown, steps, study notes, roadmap, comparison, or anything that genuinely has multiple distinct sections — set response_format: structured and response_length: medium or long. This allows bold section headers and organized content.
+- STRUCTURED RULE: if user asks for a plan, guide, breakdown, steps, study notes, roadmap, comparison, explanation of multiple things, "how does X work", "what are the differences", "pros and cons", or anything that genuinely has multiple distinct parts — set response_format: structured and response_length: medium or long. This unlocks bold headers and organized content.
 - LETTER COUNT RULE: if user asks how many of a letter/character are in a word, or to count letters/vowels/consonants in anything — set intent: agent_task. Never answer letter counting questions directly — always route to agent.`;
 
   try {
@@ -276,27 +276,27 @@ function craft(plan, baseSystemPrompt, webSearchResults = null, conversationCont
   };
 
   const formatInstructions = {
-    prose: 'Write in plain prose. Short sentences. No markdown headers.',
+    prose: 'Write in clear, readable prose. Use **bold** to highlight key terms or concepts. Use a bullet list (- item) only when you have 3 or more genuinely list-like items. No section headers unless the response is naturally multi-part.',
     code: 'Write clean, well-commented, production-ready code. Specify the language. Explain briefly what it does before the code block.',
-    list: 'Format as a bullet list using • symbols. Keep each item to one line.',
-    table: 'Use a markdown table for this comparison.',
-    structured: 'Use bold section headers (no ## symbols) to organize the content. Each section should have a clear header on its own line, followed by concise content — prose, bullets, or numbered steps depending on what fits. Only create sections that are genuinely needed.',
-    document: 'Use plain bold section headers (no ## symbols). Bullet points only for genuine lists. Short sentences throughout.'
+    list: 'Format as a bullet list using - for each item. Keep each item concise. Group related items if needed.',
+    table: 'Use a markdown table for this comparison. Include a header row. Keep cell content concise.',
+    structured: 'Use bold section headers (e.g. **Header**) on their own line to organize the content. Follow each header with concise content — prose, bullets, or numbered steps as appropriate. Only create sections that genuinely exist.',
+    document: 'Use bold section headers (**Header**) for each major section. Bullet points for lists. Short, clear sentences throughout.'
   };
 
   // Style rules injected into every non-UI response
   const STYLE_RULES = `
 WRITING STYLE — follow exactly:
 - Short sentences. One idea per sentence.
-- Plain prose for conversational responses and simple answers. No headers.
-- When a response has named sections: plain bold header on its own line, then content below. Never ## symbols.
-- For genuine lists only: use • bullets. One line per item.
+- Use **bold** to highlight key terms, names, or important phrases — not decoration.
+- For genuine lists of 3+ items: use - bullets. One clear item per line.
+- For step-by-step instructions: use numbered lists (1. 2. 3.).
+- When a response covers multiple distinct sections: use a **Bold Header** on its own line above each section.
+- Use \`inline code\` for technical terms, commands, filenames, and values.
 - Never: "Certainly!", "Of course!", "Great question!", "Absolutely!", hollow opener phrases.
 - Never start with "I".
-- Never use ## markdown headers — use plain bold instead.
-- Structure (bold headers, sections, numbered steps) is correct and encouraged when content genuinely has multiple distinct parts — plans, guides, breakdowns, study notes, comparisons.
-- For simple chat, short answers, explanations: plain prose only. No headers.
-- No padding, no summary at the end, no "let me know" closers unless genuinely useful.`;
+- No padding, no summary at the end, no "let me know" closers unless genuinely useful.
+- For simple chat and single-question answers: plain prose, no bullets, no headers.`;
 
   const toneInstructions = {
     casual: 'Be conversational and natural — like talking to a smart friend.',
@@ -397,9 +397,11 @@ function injectLengthConstraint(history, plan) {
       }[plan.response_length] || '[Reply in 2-4 sentences only.]';
 
   const formatTag = (plan.response_format === 'prose' || !plan.response_format)
-    ? '[Plain prose only. No bullet points, no headers.]'
+    ? '[Use plain prose. Bold key terms with **bold**. Bullet points only for genuine lists of 3+ items. No section headers.]'
     : (plan.response_format === 'structured' || plan.response_format === 'document')
-    ? '[Use bold section headers where needed. Organize clearly.]'
+    ? '[Use **Bold Headers** for each section. Bullets or numbered steps inside sections as needed. Make it easy to scan.]'
+    : (plan.response_format === 'list')
+    ? '[Format as a bullet list with - items. No prose paragraphs.]'
     : '';
 
   const constraint = `
