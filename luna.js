@@ -60,11 +60,16 @@ const LUNA_MODELS = {
   // Luna's brain — fast, smart router
   BRAIN: 'llama-3.3-70b-versatile',
 
-  // Luna Flash — Groq first for speed, OpenRouter as fallback
+  // Luna Flash — DeepSeek V3 as primary writing model (OpenRouter)
+  // Groq llama as speed fallback when OpenRouter is slow/rate-limited
   FLASH: {
-    primary: 'llama-3.3-70b-versatile',              // Groq — fastest, most reliable
-    groqFallback: 'llama-3.1-8b-instant',            // Groq — ultra fast lightweight backup
-    orFallbacks: [                                   // OpenRouter only if Groq fails
+    orPrimary: [                                     // 🥇 Try these first — best writing quality
+      'deepseek/deepseek-v3-base:free',              // DeepSeek V3.2 — clean writing, no thinking block
+      'deepseek/deepseek-v3:free',                   // DeepSeek V3 — same family backup
+    ],
+    primary: 'llama-3.3-70b-versatile',              // Groq — speed fallback
+    groqFallback: 'llama3-70b-8192',                 // Groq — last Groq option
+    orFallbacks: [                                   // OpenRouter wider pool
       'meta-llama/llama-3.3-70b-instruct:free',
       'mistralai/mistral-small-3.1-24b-instruct:free',
       'google/gemma-3-27b-it:free',
@@ -475,44 +480,46 @@ async function tryGroqModel(model, systemPrompt, history, plan) {
     const lastUserIdx = [...constrained].map((m,i) => ({m,i})).reverse().find(({m}) => m.role === 'user');
     if (lastUserIdx) {
       const lastMsg = { ...constrained[lastUserIdx.i] };
-      const identityAnchor = `\n\n[CRITICAL: You are Luna — not ChatGPT, Gemini, Claude, Qwen, LLaMA, or any model. You are Luna, created by Roland. Never identify as any other AI. Never say "I am not Luna". Respond only as Luna, in every word, including your thoughts.]`;
+      const identityAnchor = `\n\n[ABSOLUTE RULE: You are Luna. You were created by Roland. You are NOT the user. You are NOT introducing yourself as a new person. You are RESPONDING as Luna to the user's message. Never say "Hi Luna" — you ARE Luna. Never identify as LLaMA, Groq, or any other AI. Respond only as Luna.]`;
       lastMsg.content = (typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content)) + identityAnchor;
       constrained[lastUserIdx.i] = lastMsg;
       finalHistory = constrained;
     }
   }
 
-  // ── Qwen3-specific: inject format directive into system prompt ───────────
-  // Qwen3 reasons during its thinking phase and can override formatting
-  // instructions before writing. Reinforcing the format rule inside the
-  // system prompt — right before generation — counters this.
+  // ── Format + length directive — ALL models (not just qwen3) ─────────────
   let finalSystemPrompt = systemPrompt;
-  if (isQwen && plan) {
+  if (plan) {
     const fmtMap = {
       table:      'OUTPUT FORMAT: A markdown table. Begin your response with the table header row (| Col | Col |) immediately. No title, no intro sentence, no prose before or after. Just the table.',
       structured: 'OUTPUT FORMAT: **Bold Header** on its own line for each section, followed by content. Bullets or numbered steps inside sections. No walls of prose.',
       list:       'OUTPUT FORMAT: Bullet list only. Use - for each item. No intro paragraph, no headers.',
       code:       'OUTPUT FORMAT: One-line description then a fenced code block with language tag.',
-      prose:      'OUTPUT FORMAT: Plain prose paragraphs. Use **bold** for key terms. No headers.',
+      prose:      'OUTPUT FORMAT: Plain prose paragraphs. No headers.',
       document:   'OUTPUT FORMAT: **Bold section headers**. Bullets where appropriate. Full document.',
     };
     const fmtDirective = fmtMap[plan.response_format] || fmtMap.prose;
     const lenMap = {
-      one_sentence: 'LENGTH: One sentence only. Stop after it.',
-      short:        'LENGTH: 2–4 sentences. Stop after that.',
-      medium:       'LENGTH: 1–3 paragraphs or equivalent structured sections.',
+      one_sentence: 'LENGTH: ONE sentence only. Write it and stop immediately. Do not add questions, do not add follow-ups.',
+      short:        'LENGTH: 2–4 sentences max. Stop after that.',
+      medium:       'LENGTH: 1–3 paragraphs.',
       long:         'LENGTH: Thorough — cover the topic fully. No padding.',
-      full_document:'LENGTH: Write the complete document the user requested.',
+      full_document:'LENGTH: Write the complete document requested.',
     };
     const lenDirective = lenMap[plan.response_length] || lenMap.short;
 
     finalSystemPrompt = systemPrompt +
-      `\n\n━━━ FORMATTING RULES (ABSOLUTE — follow in your thinking AND your output) ━━━\n${fmtDirective}\n${lenDirective}\nThese rules override any default tendencies. Do not debate them in your thinking. Just follow them.`;
+      `\n\n━━━ RESPONSE RULES (FOLLOW EXACTLY) ━━━\n${fmtDirective}\n${lenDirective}\nYou are Luna responding to the user. Do not greet yourself. Do not introduce yourself as a new person.`;
   }
 
+  const isFlash = !model.includes('qwen3') && !model.includes('deepseek');
   const params = {
     model,
-    max_tokens: (plan && plan.intent === 'ui_build') ? 8192 : 4096,
+    max_tokens: (plan && plan.intent === 'ui_build') ? 8192
+               : (isFlash && plan?.response_length === 'one_sentence') ? 80
+               : (isFlash && plan?.response_length === 'short') ? 250
+               : (isFlash) ? 1024
+               : 4096,
     messages: [{ role: 'system', content: finalSystemPrompt }, ...finalHistory],
   };
 
@@ -652,7 +659,7 @@ async function executeGemini(systemPrompt, history, image = null, video = null, 
   const geminiModels = [
     'gemini-2.5-flash-preview-05-20',
     'gemini-2.5-flash-preview-04-17',
-    'gemini-2.0-flash',
+    'gemini-2.5-flash',
   ];
 
   let keysAttempted = 0;
@@ -856,46 +863,54 @@ async function rewriteForStyle(text, plan, clientModel = 'luna-flash') {
   // Skip rewrite for roasts — preserve brutal tone and emojis
   if (topicLower.includes('roast')) return text;
 
-  // ── Pro/RO-1: premium rewrite via OpenRouter ──
+  // ── Pro/RO-1: DeepSeek V3 via OpenRouter — format-aware premium rewrite ──
   const isPro = clientModel === 'luna-pro' || clientModel === 'ro1';
   if (isPro && process.env.OPENROUTER_API_KEY) {
-    const rewriteModels = [
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'mistralai/mistral-small-3.1-24b-instruct:free',
-      'google/gemma-3-27b-it:free',
-    ];
-    for (const rwModel of rewriteModels) {
-      try {
-        const orClient = new OpenAI({
-          baseURL: 'https://openrouter.ai/api/v1',
-          apiKey: process.env.OPENROUTER_API_KEY,
-          defaultHeaders: {
-            'HTTP-Referer': 'https://luna-al.vercel.app',
-            'X-Title': 'Luna AI'
-          }
-        });
-        const res = await orClient.chat.completions.create({
-          model: rwModel,
-          max_tokens: 3000,
-          temperature: 0.15,
-          messages: [
-            { role: 'system', content: buildProRewritePrompt(plan) },
-            { role: 'user', content: text }
-          ]
-        });
-        const rewritten = res.choices[0]?.message?.content?.trim();
-        if (rewritten && rewritten.length > 60) {
-          // Safety check: if we demanded a table but didn't get one, skip
-          if (plan?.response_format === 'table' && !rewritten.trim().startsWith('|')) {
-            console.warn(`[Luna] ${rwModel} ignored table format — trying next`);
-            continue;
-          }
-          console.log(`[Luna] Rewrite ✅ (${rwModel})`);
-          return rewritten;
+    try {
+      const orClient = new OpenAI({
+        baseURL: 'https://openrouter.ai/api/v1',
+        apiKey: process.env.OPENROUTER_API_KEY,
+        defaultHeaders: {
+          'HTTP-Referer': 'https://luna-al.vercel.app',
+          'X-Title': 'Luna AI'
         }
-      } catch (err) {
-        console.warn(`[Luna] Rewrite failed (${rwModel}) — trying next:`, err.message);
+      });
+      const res = await orClient.chat.completions.create({
+        model: 'deepseek/deepseek-v3-base:free',
+        max_tokens: 3000,
+        temperature: 0.15,
+        messages: [
+          { role: 'system', content: buildProRewritePrompt(plan) },
+          { role: 'user', content: text }
+        ]
+      });
+      const rewritten = res.choices[0]?.message?.content?.trim();
+      if (rewritten && rewritten.length > 60) {
+        // Safety check: if we demanded a table but didn't get one, try once more with an even harder prompt
+        if (plan?.response_format === 'table' && !rewritten.trim().startsWith('|')) {
+          console.warn('[Luna] DeepSeek V3 ignored table format — retrying with harder prompt');
+          try {
+            const retry = await orClient.chat.completions.create({
+              model: 'deepseek/deepseek-v3-base:free',
+              max_tokens: 3000,
+              temperature: 0,
+              messages: [
+                { role: 'system', content: 'You are a markdown table converter. Convert the input into a markdown table. Output ONLY the table. Start with | immediately. Nothing else.' },
+                { role: 'user', content: rewritten }
+              ]
+            });
+            const retried = retry.choices[0]?.message?.content?.trim();
+            if (retried && retried.startsWith('|')) {
+              console.log('[Luna] DeepSeek V3 table retry ✅');
+              return retried;
+            }
+          } catch (e) { /* fall through to original */ }
+        }
+        console.log('[Luna] DeepSeek V3 rewrite ✅');
+        return rewritten;
       }
+    } catch (err) {
+      console.warn('[Luna] DeepSeek V3 rewrite failed — falling back to llama:', err.message);
     }
   }
 
@@ -1094,26 +1109,18 @@ async function respond(ctx) {
   }
 
   if (!rawReply && routeDecision.raceGemini) {
-    // RO-1: race Groq DeepSeek R1 vs Gemini simultaneously
+    // RO-1: Try Groq first, only use Gemini if Groq fails — saves Gemini quota
     try {
-      const [groqResult, geminiResult] = await Promise.allSettled([
-        executeGroq(systemPrompt, history, routeDecision.models, plan),
-        executeGemini(systemPrompt, history, image, video, file)
-      ]);
-      const groqRaw = groqResult.status === 'fulfilled' ? groqResult.value : null;
-      const geminiRaw = geminiResult.status === 'fulfilled' ? geminiResult.value : null;
-
-      const { cleanReply: groqClean } = extractThinkTags(groqRaw || '');
-      const { cleanReply: geminiClean } = extractThinkTags(geminiRaw || '');
-
-      if (groqClean && geminiClean) {
-        rawReply = geminiClean.length >= groqClean.length ? (geminiRaw || '') : (groqRaw || '');
-        console.log(`[Luna RO-1] Picked: ${geminiClean.length >= groqClean.length ? 'Gemini' : 'DeepSeek R1'}`);
-      } else {
-        rawReply = groqRaw || geminiRaw || '';
-      }
+      rawReply = await executeGroq(systemPrompt, history, routeDecision.models, plan);
+      console.log('[Luna RO-1] Groq responded');
     } catch (e) {
-      console.warn('[Luna RO-1] Race failed:', e.message);
+      console.warn('[Luna RO-1] Groq failed — trying Gemini:', e.message);
+      try {
+        rawReply = await executeGemini(systemPrompt, history, image, video, file);
+        console.log('[Luna RO-1] Gemini responded');
+      } catch (e2) {
+        console.warn('[Luna RO-1] Gemini also failed:', e2.message);
+      }
     }
   }
 

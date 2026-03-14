@@ -526,7 +526,7 @@ async function callGemini(systemPrompt, messages, imageBase64 = null, videoBase6
   const geminiModels = [
     'gemini-2.5-flash-preview-05-20',
     'gemini-2.5-flash-preview-04-17',
-    'gemini-2.0-flash',
+    'gemini-2.5-flash',
   ];
 
   // Try each key × each model until something works
