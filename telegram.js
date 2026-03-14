@@ -213,7 +213,8 @@ async function tavilySearch(query, maxResults = 5) {
         search_depth: 'basic',
         max_results: maxResults,
         include_answer: true,
-        include_raw_content: false
+        include_raw_content: false,
+        days: 7
       })
     });
     if (!res.ok) return { text: null, sources: [] };
