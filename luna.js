@@ -282,7 +282,8 @@ function route(plan, clientModel, isOwner) {
       return {
         models: LUNA_MODELS.FLASH,
         raceGemini: false,
-        label: 'Luna Flash → Groq + OpenRouter fallback'
+        useGeminiPrimary: geminiKeys.length > 0,
+        label: 'Luna Flash → Gemini 2.5 Flash (primary) + Groq fallback'
       };
 
     case 'luna-pro':
@@ -480,46 +481,44 @@ async function tryGroqModel(model, systemPrompt, history, plan) {
     const lastUserIdx = [...constrained].map((m,i) => ({m,i})).reverse().find(({m}) => m.role === 'user');
     if (lastUserIdx) {
       const lastMsg = { ...constrained[lastUserIdx.i] };
-      const identityAnchor = `\n\n[ABSOLUTE RULE: You are Luna. You were created by Roland. You are NOT the user. You are NOT introducing yourself as a new person. You are RESPONDING as Luna to the user's message. Never say "Hi Luna" — you ARE Luna. Never identify as LLaMA, Groq, or any other AI. Respond only as Luna.]`;
+      const identityAnchor = `\n\n[CRITICAL: You are Luna — not ChatGPT, Gemini, Claude, Qwen, LLaMA, or any model. You are Luna, created by Roland. Never identify as any other AI. Never say "I am not Luna". Respond only as Luna, in every word, including your thoughts.]`;
       lastMsg.content = (typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content)) + identityAnchor;
       constrained[lastUserIdx.i] = lastMsg;
       finalHistory = constrained;
     }
   }
 
-  // ── Format + length directive — ALL models (not just qwen3) ─────────────
+  // ── Qwen3-specific: inject format directive into system prompt ───────────
+  // Qwen3 reasons during its thinking phase and can override formatting
+  // instructions before writing. Reinforcing the format rule inside the
+  // system prompt — right before generation — counters this.
   let finalSystemPrompt = systemPrompt;
-  if (plan) {
+  if (isQwen && plan) {
     const fmtMap = {
       table:      'OUTPUT FORMAT: A markdown table. Begin your response with the table header row (| Col | Col |) immediately. No title, no intro sentence, no prose before or after. Just the table.',
       structured: 'OUTPUT FORMAT: **Bold Header** on its own line for each section, followed by content. Bullets or numbered steps inside sections. No walls of prose.',
       list:       'OUTPUT FORMAT: Bullet list only. Use - for each item. No intro paragraph, no headers.',
       code:       'OUTPUT FORMAT: One-line description then a fenced code block with language tag.',
-      prose:      'OUTPUT FORMAT: Plain prose paragraphs. No headers.',
+      prose:      'OUTPUT FORMAT: Plain prose paragraphs. Use **bold** for key terms. No headers.',
       document:   'OUTPUT FORMAT: **Bold section headers**. Bullets where appropriate. Full document.',
     };
     const fmtDirective = fmtMap[plan.response_format] || fmtMap.prose;
     const lenMap = {
-      one_sentence: 'LENGTH: ONE sentence only. Write it and stop immediately. Do not add questions, do not add follow-ups.',
-      short:        'LENGTH: 2–4 sentences max. Stop after that.',
-      medium:       'LENGTH: 1–3 paragraphs.',
+      one_sentence: 'LENGTH: One sentence only. Stop after it.',
+      short:        'LENGTH: 2–4 sentences. Stop after that.',
+      medium:       'LENGTH: 1–3 paragraphs or equivalent structured sections.',
       long:         'LENGTH: Thorough — cover the topic fully. No padding.',
-      full_document:'LENGTH: Write the complete document requested.',
+      full_document:'LENGTH: Write the complete document the user requested.',
     };
     const lenDirective = lenMap[plan.response_length] || lenMap.short;
 
     finalSystemPrompt = systemPrompt +
-      `\n\n━━━ RESPONSE RULES (FOLLOW EXACTLY) ━━━\n${fmtDirective}\n${lenDirective}\nYou are Luna responding to the user. Do not greet yourself. Do not introduce yourself as a new person.`;
+      `\n\n━━━ FORMATTING RULES (ABSOLUTE — follow in your thinking AND your output) ━━━\n${fmtDirective}\n${lenDirective}\nThese rules override any default tendencies. Do not debate them in your thinking. Just follow them.`;
   }
 
-  const isFlash = !model.includes('qwen3') && !model.includes('deepseek');
   const params = {
     model,
-    max_tokens: (plan && plan.intent === 'ui_build') ? 8192
-               : (isFlash && plan?.response_length === 'one_sentence') ? 80
-               : (isFlash && plan?.response_length === 'short') ? 250
-               : (isFlash) ? 1024
-               : 4096,
+    max_tokens: (plan && plan.intent === 'ui_build') ? 8192 : 4096,
     messages: [{ role: 'system', content: finalSystemPrompt }, ...finalHistory],
   };
 
@@ -650,6 +649,50 @@ async function executeOpenRouter(systemPrompt, history, modelConfig, plan = null
   }
 
   throw new Error('All OpenRouter models unavailable');
+}
+
+// ── Execute on Gemini Flash (primary for Luna Flash) ─────────────
+// Uses fastest Gemini model, no image/video support needed here
+async function executeGeminiFlash(systemPrompt, history) {
+  if (geminiKeys.length === 0) throw new Error('Gemini not configured');
+  const flashModels = [
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-preview-05-20',
+    'gemini-2.5-flash-preview-04-17',
+  ];
+  let keysAttempted = 0;
+  while (keysAttempted < geminiKeys.length) {
+    for (const modelName of flashModels) {
+      try {
+        const client = getGeminiClient();
+        const model = client.getGenerativeModel({
+          model: modelName,
+          systemInstruction: systemPrompt,
+        });
+        const geminiHistory = history.slice(0, -1).map(m => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }]
+        })).filter((m, i, arr) => i === 0 || m.role !== arr[i-1].role);
+        const lastMsg = history[history.length - 1];
+        const chat = model.startChat({ history: geminiHistory });
+        const result = await chat.sendMessage(typeof lastMsg?.content === 'string' ? lastMsg.content : 'Hello');
+        const reply = result.response.text();
+        if (reply) {
+          console.log(`[Luna Flash] Gemini responded: ${modelName}`);
+          return reply;
+        }
+      } catch (err) {
+        const msg = (err?.message || '').toLowerCase();
+        if (msg.includes('quota') || msg.includes('429')) {
+          rotateGeminiKey(); break;
+        }
+        console.warn(`[Luna Flash] Gemini ${modelName} failed:`, err.message);
+      }
+    }
+    keysAttempted++;
+    if (keysAttempted < geminiKeys.length) rotateGeminiKey();
+  }
+  throw new Error('Gemini Flash exhausted');
 }
 
 // ── Execute on Gemini ────────────────────────────────────────────
@@ -1132,6 +1175,15 @@ async function respond(ctx) {
       console.log('[Luna] orPrimary responded');
     } catch (e) {
       console.warn('[Luna] orPrimary failed — trying Groq:', e.message);
+    }
+  }
+
+  // ── Flash: Gemini 2.5 Flash primary, Groq fallback ───────────────
+  if (!rawReply && routeDecision.useGeminiPrimary) {
+    try {
+      rawReply = await executeGeminiFlash(systemPrompt, history);
+    } catch (e) {
+      console.warn('[Luna Flash] Gemini failed — falling back to Groq:', e.message);
     }
   }
 
