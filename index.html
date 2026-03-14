@@ -4,11 +4,10 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Luna AI</title>
-  <link rel="manifest" href="manifest.json?v=2"/>
-  <meta name="theme-color" content="#000000"/>
+  <link rel="manifest" href="manifest.json"/>
+  <meta name="theme-color" content="#050308"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="black"/>
-  <meta name="apple-mobile-web-app-title" content="Luna"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
@@ -3901,27 +3900,7 @@
   if(authToken && currentUser){
     isOwner=currentUser.role==='owner';
     tryEnterApp(isOwner);
-  } else if(authToken && !currentUser){
-    // Token exists but user data lost — recover from backend
-    fetch(BACKEND_URL+'/auth/me', {headers:{'Authorization':'Bearer '+authToken}})
-      .then(r=>r.ok?r.json():null)
-      .then(data=>{
-        if(data && data.user){
-          currentUser=data.user;
-          isOwner=data.user.role==='owner';
-          localStorage.setItem('luna-user',JSON.stringify(currentUser));
-          tryEnterApp(isOwner);
-        } else {
-          localStorage.removeItem('luna-token');
-          localStorage.removeItem('luna-user');
-          authToken=null;
-          switchTab('login');
-          handleOAuthRedirect();
-        }
-      })
-      .catch(()=>{ switchTab('login'); handleOAuthRedirect(); });
   } else {
-    switchTab('login');
     handleOAuthRedirect();
   }
 
@@ -4082,7 +4061,7 @@
     if (tog) tog.checked = !!localStorage.getItem('luna-push-sub');
   }
 
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('/Luna-AI/sw.js').catch(function(){});}
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('/Luna-Al/sw.js').catch(function(){});}
 </script>
 
 <!-- ONBOARDING OVERLAY -->
