@@ -60,16 +60,11 @@ const LUNA_MODELS = {
   // Luna's brain — fast, smart router
   BRAIN: 'llama-3.3-70b-versatile',
 
-  // Luna Flash — DeepSeek V3 as primary writing model (OpenRouter)
-  // Groq llama as speed fallback when OpenRouter is slow/rate-limited
+  // Luna Flash — Groq first for speed, OpenRouter as fallback
   FLASH: {
-    orPrimary: [                                     // 🥇 Try these first — best writing quality
-      'deepseek/deepseek-v3-base:free',              // DeepSeek V3.2 — clean writing, no thinking block
-      'deepseek/deepseek-v3:free',                   // DeepSeek V3 — same family backup
-    ],
-    primary: 'llama-3.3-70b-versatile',              // Groq — speed fallback
-    groqFallback: 'llama3-70b-8192',                 // Groq — last Groq option
-    orFallbacks: [                                   // OpenRouter wider pool
+    primary: 'llama-3.3-70b-versatile',              // Groq — fastest, most reliable
+    groqFallback: 'llama-3.1-8b-instant',            // Groq — ultra fast lightweight backup
+    orFallbacks: [                                   // OpenRouter only if Groq fails
       'meta-llama/llama-3.3-70b-instruct:free',
       'mistralai/mistral-small-3.1-24b-instruct:free',
       'google/gemma-3-27b-it:free',
@@ -861,54 +856,46 @@ async function rewriteForStyle(text, plan, clientModel = 'luna-flash') {
   // Skip rewrite for roasts — preserve brutal tone and emojis
   if (topicLower.includes('roast')) return text;
 
-  // ── Pro/RO-1: DeepSeek V3 via OpenRouter — format-aware premium rewrite ──
+  // ── Pro/RO-1: premium rewrite via OpenRouter ──
   const isPro = clientModel === 'luna-pro' || clientModel === 'ro1';
   if (isPro && process.env.OPENROUTER_API_KEY) {
-    try {
-      const orClient = new OpenAI({
-        baseURL: 'https://openrouter.ai/api/v1',
-        apiKey: process.env.OPENROUTER_API_KEY,
-        defaultHeaders: {
-          'HTTP-Referer': 'https://luna-al.vercel.app',
-          'X-Title': 'Luna AI'
+    const rewriteModels = [
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'mistralai/mistral-small-3.1-24b-instruct:free',
+      'google/gemma-3-27b-it:free',
+    ];
+    for (const rwModel of rewriteModels) {
+      try {
+        const orClient = new OpenAI({
+          baseURL: 'https://openrouter.ai/api/v1',
+          apiKey: process.env.OPENROUTER_API_KEY,
+          defaultHeaders: {
+            'HTTP-Referer': 'https://luna-al.vercel.app',
+            'X-Title': 'Luna AI'
+          }
+        });
+        const res = await orClient.chat.completions.create({
+          model: rwModel,
+          max_tokens: 3000,
+          temperature: 0.15,
+          messages: [
+            { role: 'system', content: buildProRewritePrompt(plan) },
+            { role: 'user', content: text }
+          ]
+        });
+        const rewritten = res.choices[0]?.message?.content?.trim();
+        if (rewritten && rewritten.length > 60) {
+          // Safety check: if we demanded a table but didn't get one, skip
+          if (plan?.response_format === 'table' && !rewritten.trim().startsWith('|')) {
+            console.warn(`[Luna] ${rwModel} ignored table format — trying next`);
+            continue;
+          }
+          console.log(`[Luna] Rewrite ✅ (${rwModel})`);
+          return rewritten;
         }
-      });
-      const res = await orClient.chat.completions.create({
-        model: 'deepseek/deepseek-v3-base:free',
-        max_tokens: 3000,
-        temperature: 0.15,
-        messages: [
-          { role: 'system', content: buildProRewritePrompt(plan) },
-          { role: 'user', content: text }
-        ]
-      });
-      const rewritten = res.choices[0]?.message?.content?.trim();
-      if (rewritten && rewritten.length > 60) {
-        // Safety check: if we demanded a table but didn't get one, try once more with an even harder prompt
-        if (plan?.response_format === 'table' && !rewritten.trim().startsWith('|')) {
-          console.warn('[Luna] DeepSeek V3 ignored table format — retrying with harder prompt');
-          try {
-            const retry = await orClient.chat.completions.create({
-              model: 'deepseek/deepseek-v3-base:free',
-              max_tokens: 3000,
-              temperature: 0,
-              messages: [
-                { role: 'system', content: 'You are a markdown table converter. Convert the input into a markdown table. Output ONLY the table. Start with | immediately. Nothing else.' },
-                { role: 'user', content: rewritten }
-              ]
-            });
-            const retried = retry.choices[0]?.message?.content?.trim();
-            if (retried && retried.startsWith('|')) {
-              console.log('[Luna] DeepSeek V3 table retry ✅');
-              return retried;
-            }
-          } catch (e) { /* fall through to original */ }
-        }
-        console.log('[Luna] DeepSeek V3 rewrite ✅');
-        return rewritten;
+      } catch (err) {
+        console.warn(`[Luna] Rewrite failed (${rwModel}) — trying next:`, err.message);
       }
-    } catch (err) {
-      console.warn('[Luna] DeepSeek V3 rewrite failed — falling back to llama:', err.message);
     }
   }
 
