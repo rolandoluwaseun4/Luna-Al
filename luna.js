@@ -57,18 +57,22 @@ function rotateGeminiKey() {
 
 // ── Model definitions — Luna knows exactly what she has ─────────
 const LUNA_MODELS = {
-  // Luna's brain — upgraded to 70b for smarter routing decisions
+  // Luna's brain — fast, smart router
   BRAIN: 'llama-3.3-70b-versatile',
 
-  // Luna Flash — Groq primary (fast), OpenRouter fallback pool
+  // Luna Flash — DeepSeek V3 as primary writing model (OpenRouter)
+  // Groq llama as speed fallback when OpenRouter is slow/rate-limited
   FLASH: {
-    primary: 'llama-3.3-70b-versatile',        // Groq — fastest
-    groqFallback: 'llama3-70b-8192',            // Groq — backup
-    orFallbacks: [                              // OpenRouter when Groq rate limits
+    orPrimary: [                                     // 🥇 Try these first — best writing quality
+      'deepseek/deepseek-v3-base:free',              // DeepSeek V3.2 — clean writing, no thinking block
+      'deepseek/deepseek-v3:free',                   // DeepSeek V3 — same family backup
+    ],
+    primary: 'llama-3.3-70b-versatile',              // Groq — speed fallback
+    groqFallback: 'llama3-70b-8192',                 // Groq — last Groq option
+    orFallbacks: [                                   // OpenRouter wider pool
       'meta-llama/llama-3.3-70b-instruct:free',
       'mistralai/mistral-small-3.1-24b-instruct:free',
       'google/gemma-3-27b-it:free',
-      'nvidia/nemotron-3-nano-30b-a3b:free',
       'nousresearch/hermes-3-llama-3.1-405b:free',
       'openai/gpt-oss-20b:free',
       'arcee-ai/trinity-mini:free',
@@ -76,12 +80,13 @@ const LUNA_MODELS = {
     ]
   },
 
-  // Luna Pro — qwen3-32b with thinking enabled, OpenRouter pool fallback
+  // Luna Pro — qwen3-32b with thinking block ✅ (keeps the "Thought for a moment" UX)
   PRO: {
-    primary: 'qwen/qwen3-32b',                  // Groq — thinking tags via enable_thinking ✅
-    groqFallback: 'llama-3.3-70b-versatile',    // Groq — fast fallback
-    orFallbacks: [                              // OpenRouter fallbacks
-      'qwen/qwen3-next-80b-a3b-instruct:free',
+    primary: 'qwen/qwen3-32b',                       // Groq — thinking enabled, reasoning depth
+    groqFallback: 'llama-3.3-70b-versatile',         // Groq — fast fallback if qwen3 rate limits
+    orFallbacks: [                                   // OpenRouter fallbacks (thinking models first)
+      'deepseek/deepseek-r1:free',                   // Thinking model — keeps the thinking block UX
+      'qwen/qwen3-235b-a22b:free',                   // Larger Qwen3 if available
       'openai/gpt-oss-120b:free',
       'arcee-ai/trinity-large-preview:free',
       'nousresearch/hermes-3-llama-3.1-405b:free',
@@ -89,11 +94,12 @@ const LUNA_MODELS = {
     ]
   },
 
-  // RO-1 — qwen3-32b with thinking + Gemini race
+  // RO-1 — qwen3-32b with thinking + Gemini race for complex tasks
   RO1: {
-    primary: 'qwen/qwen3-32b',                  // Groq — thinking enabled
+    primary: 'qwen/qwen3-32b',                       // Groq — thinking enabled
     groqFallback: 'llama-3.3-70b-versatile',
     orFallbacks: [
+      'deepseek/deepseek-r1:free',                   // Thinking fallback
       'arcee-ai/trinity-large-preview:free',
       'liquid/lfm-2.5-1.2b-thinking:free',
       'openai/gpt-oss-120b:free',
@@ -134,11 +140,28 @@ async function think(message, history = [], clientModel = 'luna-flash', hasImage
   // These run BEFORE the LLM brain so they're 100% reliable.
   const msg = message.toLowerCase().trim();
 
-  // Comparison / pros & cons → always table
-  const isComparison = /\bpros.{0,10}cons\b|\badvantages?.{0,10}disadvantages?\b|\bvs\.?\b|\bversus\b|\bcompare\b|\bdifferences?.{0,10}between\b|\bwhich is better\b/.test(msg);
+  // Only fire table override when user is explicitly comparing TWO OR MORE named things
+  // "compare X and Y", "X vs Y", "pros and cons of X", "differences between X and Y"
+  // NOT: "compare my options", "what's the difference" (vague, no subjects)
+  const isComparison = (
+    /\bpros\s+and\s+cons\b/.test(msg) ||
+    /\badvantages?\s+and\s+disadvantages?\b/.test(msg) ||
+    /\b\w[\w\s]{1,20}\s+vs\.?\s+\w[\w\s]{1,20}\b/.test(msg) ||     // "X vs Y"
+    /\b\w[\w\s]{1,20}\s+versus\s+\w[\w\s]{1,20}\b/.test(msg) ||    // "X versus Y"
+    /\bcompare\s+\w.{2,}\s+(and|with|to)\s+\w/.test(msg) ||        // "compare X and Y"
+    /\bdifferences?\s+between\s+\w.{2,}\s+and\s+\w/.test(msg) ||   // "differences between X and Y"
+    /\bwhich is (better|faster|cheaper|easier|best)\b/.test(msg)    // "which is better"
+  );
 
-  // Structured multi-part → structured format
-  const isStructured = /\bhow does .{3,} work\b|\bwalk me through\b|\bstep.{0,5}by.{0,5}step\b|\bguide (me |to |on )?\b|\bexplain how\b|\bbreakdown\b|break.{0,5}down|\broadmap\b|\bstudy plan\b/.test(msg);
+  // Only fire structured override for clear multi-step/multi-section requests
+  const isStructured = (
+    /\bhow does .{3,} work\b/.test(msg) ||
+    /\bwalk me through\b/.test(msg) ||
+    /\bstep.{0,5}by.{0,5}step\b/.test(msg) ||
+    /\bstudy plan\b/.test(msg) ||
+    /\broadmap\b/.test(msg) ||
+    /\bguide (me |to |for |on )\b/.test(msg)
+  );
 
   // Build a short conversation summary for context
   const recentMessages = history.slice(-6).map(m =>
@@ -402,36 +425,41 @@ ABSOLUTE RULE: If the length says one sentence or 2-4 sentences — write that a
   return craftedPrompt;
 }
 
-// ── Inject length constraint into last user message ─────────────
-// qwen3 and other strong models ignore system prompt length rules.
-// Injecting directly into the user turn is much harder to ignore.
+// ── Inject length + format constraint into last user message ────
+// Injecting directly into the user turn is harder for models to ignore
+// than system prompt alone — both are needed for qwen3.
 function injectLengthConstraint(history, plan) {
   if (!history || history.length === 0) return history;
+
+  // Don't inject anything for simple prose short/one-sentence — adds noise
+  // and can confuse models on casual questions
+  const isSimpleProse = (plan.response_format === 'prose' || !plan.response_format)
+    && (plan.response_length === 'one_sentence' || plan.response_length === 'short');
+  if (isSimpleProse) return history;
   const constrained = [...history];
   const lastUserIdx = [...constrained].map((m,i) => ({m,i})).reverse().find(({m}) => m.role === 'user');
   if (!lastUserIdx) return constrained;
 
-  const lengthTag = plan.response_format === 'table'
-    ? '[Use a markdown table. No sentence count limit — show all necessary rows.]'
-    : {
-        one_sentence: '[Reply in ONE sentence only. No lists, no headers.]',
-        short:        '[Reply in 2-4 sentences only. No lists, no headers.]',
-        medium:       '[Reply in 1-3 paragraphs. No headers unless content is a document.]',
-        long:         '[Write a thorough response. Stay focused, no padding.]',
-        full_document:'[Write the full document the user requested.]'
-      }[plan.response_length] || '[Reply in 2-4 sentences only.]';
+  // Format constraint — explicit and direct
+  const formatTag = {
+    table:      '[YOUR RESPONSE MUST BE A MARKDOWN TABLE. Start with the header row immediately. No intro paragraph, no title, no prose before or after the table. Just the table.]',
+    structured: '[YOUR RESPONSE MUST USE **Bold Headers** for each section. Bullets or numbered steps inside sections. No walls of prose.]',
+    list:       '[YOUR RESPONSE MUST BE A BULLET LIST using - for each item. No paragraphs, no headers.]',
+    code:       '[YOUR RESPONSE MUST START WITH a brief one-line description then a code block.]',
+    prose:      '[Use plain prose. Bold key terms with **bold**. Short paragraphs. No section headers.]',
+    document:   '[Use **Bold Section Headers**. Bullets where appropriate. Write the full document.]',
+  }[plan.response_format] || '[Plain prose. Short paragraphs.]';
 
-  const formatTag = (plan.response_format === 'prose' || !plan.response_format)
-    ? '[Use plain prose. Bold key terms with **bold**. Bullet points only for genuine lists of 3+ items. No section headers.]'
-    : (plan.response_format === 'structured' || plan.response_format === 'document')
-    ? '[Use **Bold Headers** for each section. Bullets or numbered steps inside sections as needed. Make it easy to scan.]'
-    : (plan.response_format === 'list')
-    ? '[Format as a bullet list with - items. No prose paragraphs.]'
-    : '';
+  // Length constraint
+  const lengthTag = {
+    one_sentence: '[LENGTH: ONE sentence only. Write it and stop immediately.]',
+    short:        '[LENGTH: 2-4 sentences only. Stop after that.]',
+    medium:       '[LENGTH: 1-3 paragraphs or equivalent. No padding.]',
+    long:         '[LENGTH: Thorough. Cover the topic fully. No padding.]',
+    full_document:'[LENGTH: Write the complete document.]',
+  }[plan.response_length] || '[LENGTH: 2-4 sentences only.]';
 
-  const constraint = `
-
-${lengthTag}${formatTag ? ' ' + formatTag : ''}`;
+  const constraint = `\n\n${formatTag}\n${lengthTag}`;
 
   const lastMsg = { ...constrained[lastUserIdx.i] };
   lastMsg.content = (typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content)) + constraint;
@@ -442,8 +470,9 @@ ${lengthTag}${formatTag ? ' ' + formatTag : ''}`;
 // ── Try a single Groq model, returns reply or throws ────────────
 async function tryGroqModel(model, systemPrompt, history, plan) {
   const isQwen = model.includes('qwen3');
-  const needsConstraint = isQwen || model.includes('deepseek');
-  let finalHistory = (plan && needsConstraint) ? injectLengthConstraint(history, plan) : history;
+  // Apply format+length constraint to all models — not just qwen3
+  // Qwen3 and deepseek need it most but llama benefits too
+  let finalHistory = plan ? injectLengthConstraint(history, plan) : history;
 
   // All models get a hard identity anchor — they are Luna, always
   if (finalHistory && finalHistory.length > 0) {
@@ -465,12 +494,12 @@ async function tryGroqModel(model, systemPrompt, history, plan) {
   let finalSystemPrompt = systemPrompt;
   if (isQwen && plan) {
     const fmtMap = {
-      table:      'OUTPUT FORMAT: Use a markdown table. No prose paragraphs as the main content.',
-      structured: 'OUTPUT FORMAT: Use **Bold Headers** for each section. Bullets or numbered steps inside sections. Make it scannable.',
-      list:       'OUTPUT FORMAT: Bullet list only. Use - for each item. No paragraphs.',
-      code:       'OUTPUT FORMAT: Code block with language tag. Brief explanation before it.',
-      prose:      'OUTPUT FORMAT: Plain prose. Use **bold** for key terms. Short paragraphs.',
-      document:   'OUTPUT FORMAT: **Bold section headers**. Bullets where appropriate. Complete and structured.',
+      table:      'OUTPUT FORMAT: A markdown table. Begin your response with the table header row (| Col | Col |) immediately. No title, no intro sentence, no prose before or after. Just the table.',
+      structured: 'OUTPUT FORMAT: **Bold Header** on its own line for each section, followed by content. Bullets or numbered steps inside sections. No walls of prose.',
+      list:       'OUTPUT FORMAT: Bullet list only. Use - for each item. No intro paragraph, no headers.',
+      code:       'OUTPUT FORMAT: One-line description then a fenced code block with language tag.',
+      prose:      'OUTPUT FORMAT: Plain prose paragraphs. Use **bold** for key terms. No headers.',
+      document:   'OUTPUT FORMAT: **Bold section headers**. Bullets where appropriate. Full document.',
     };
     const fmtDirective = fmtMap[plan.response_format] || fmtMap.prose;
     const lenMap = {
@@ -744,9 +773,11 @@ function cleanResponse(text) {
 }
 
 // ── Style rewrite pass ────────────────────────────────────────────────────
-// Fast llama-3.1-8b-instant pass to enforce Luna's exact writing style.
-// Skips: code blocks, short replies, UI builds, agent tasks.
-const REWRITE_SYSTEM = `You are a writing editor. Make this response sound like a real human wrote it — sharp, natural, never AI-generated.
+// Two-tier rewrite:
+//   Flash    → llama-3.1-8b-instant on Groq (fast, lightweight polish)
+//   Pro/RO-1 → DeepSeek V3 on OpenRouter (premium writing quality)
+//              Qwen3 thinks and reasons → DeepSeek V3 writes the clean output
+const REWRITE_SYSTEM = `You are a writing editor for Luna, a personal AI assistant. Your job is to take a draft response and rewrite it so it reads like a sharp, natural human wrote it — while strictly following the format rules given.
 
 HUMAN WRITING RULES:
 - Vary sentence length. Mix short punchy ones with longer ones. Never uniform blocks.
@@ -758,30 +789,53 @@ HUMAN WRITING RULES:
 
 EMOJIS:
 - Preserve all emojis exactly as they appear. Never remove them.
-- If the original has emojis, keep them in the same positions.
 
 BANNED PHRASES — remove completely:
 "In today's world", "In conclusion", "Furthermore", "Moreover", "It is important to note",
 "It is worth noting", "As we can see", "In summary", "To summarize",
-"Certainly!", "Great question!", "Of course!", "Absolutely!", "I'd be happy to",
-"In the modern world", "It goes without saying", "Needless to say"
+"Certainly!", "Great question!", "Of course!", "Absolutely!", "I'd be happy to"
 
 NUMBERED LISTS:
 - Count correctly: 1. 2. 3. 4. — never reset to 1. for every item.
-- Only for genuinely sequential steps.
 
-BULLET LISTS:
-- Use • only for genuine unordered lists. Not for regular sentences.
-
-BOLD HEADERS:
-- Only when response has 2+ genuinely distinct named sections.
-- Never for chat, opinions, or short answers. When in doubt — prose.
-
-Preserve all facts exactly. Do not add anything new. Only make it sound human.
-
+Preserve all facts exactly. Do not add anything new. Only rewrite the style.
 Return only the rewritten text. No explanation. No preamble.`;
 
-async function rewriteForStyle(text, plan) {
+// Stronger rewrite prompt for Pro/RO-1 — format-aware
+function buildProRewritePrompt(plan) {
+  const fmtMap = {
+    table:      'The response MUST be a markdown table. If the draft is not a table, convert it into one. Start with the header row immediately.',
+    structured: 'Use **Bold Headers** for each section. Bullets or numbered steps inside sections. Make it scannable and clean.',
+    list:       'Format as a clean bullet list using - for each item. No prose paragraphs.',
+    code:       'Keep the code block intact. Only rewrite the explanation text around it.',
+    prose:      'Clean flowing prose. Use **bold** for key terms. Short paragraphs. No headers.',
+    document:   'Use **Bold Section Headers**. Bullets where appropriate. Write the full document cleanly.',
+  };
+  const fmt = fmtMap[plan?.response_format] || fmtMap.prose;
+  const len = {
+    one_sentence: 'LENGTH: One sentence only.',
+    short:        'LENGTH: 2-4 sentences. Stop after that.',
+    medium:       'LENGTH: 1-3 paragraphs or equivalent structured sections.',
+    long:         'LENGTH: Thorough. Cover the topic fully.',
+    full_document:'LENGTH: Write the complete document.',
+  }[plan?.response_length] || 'LENGTH: Keep it concise.';
+
+  return `You are a writing editor for Luna AI. Rewrite the draft below so it reads like a sharp, natural human wrote it.
+
+FORMAT RULE (ABSOLUTE): ${fmt}
+${len}
+
+WRITING RULES:
+- Vary sentence length. Use contractions. Simple English.
+- No hollow openers: "Certainly!", "Great question!", "Of course!", "Absolutely!"
+- No hollow closers: "Let me know if...", "Feel free to ask", "Hope this helps"
+- No "Furthermore", "Moreover", "In conclusion", "It is important to note"
+- Preserve all facts exactly. Do not add anything new.
+
+Return only the rewritten text. No explanation. No preamble.`;
+}
+
+async function rewriteForStyle(text, plan, clientModel = 'luna-flash') {
   if (!text) return text;
 
   // Skip for these intent types
@@ -801,6 +855,38 @@ async function rewriteForStyle(text, plan) {
   // Skip rewrite for roasts — preserve brutal tone and emojis
   if (topicLower.includes('roast')) return text;
 
+  // ── Pro/RO-1: DeepSeek V3 via OpenRouter — format-aware premium rewrite ──
+  const isPro = clientModel === 'luna-pro' || clientModel === 'ro1';
+  if (isPro && process.env.OPENROUTER_API_KEY) {
+    try {
+      const orClient = new OpenAI({
+        baseURL: 'https://openrouter.ai/api/v1',
+        apiKey: process.env.OPENROUTER_API_KEY,
+        defaultHeaders: {
+          'HTTP-Referer': 'https://luna-al.vercel.app',
+          'X-Title': 'Luna AI'
+        }
+      });
+      const res = await orClient.chat.completions.create({
+        model: 'deepseek/deepseek-v3-base:free',
+        max_tokens: 3000,
+        temperature: 0.15,
+        messages: [
+          { role: 'system', content: buildProRewritePrompt(plan) },
+          { role: 'user', content: text }
+        ]
+      });
+      const rewritten = res.choices[0]?.message?.content?.trim();
+      if (rewritten && rewritten.length > 60) {
+        console.log('[Luna] DeepSeek V3 rewrite ✅');
+        return rewritten;
+      }
+    } catch (err) {
+      console.warn('[Luna] DeepSeek V3 rewrite failed — falling back to llama:', err.message);
+    }
+  }
+
+  // ── Flash / fallback: llama-3.1-8b-instant on Groq (fast, lightweight) ──
   try {
     const res = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
@@ -1018,7 +1104,18 @@ async function respond(ctx) {
     }
   }
 
-  // Step 1: Try Groq (fast, primary for all tiers)
+  // Step 1: Try orPrimary on OpenRouter first (e.g. DeepSeek V3 for Flash)
+  if (!rawReply && routeDecision.models.orPrimary?.length) {
+    try {
+      const primaryConfig = { orFallbacks: routeDecision.models.orPrimary };
+      rawReply = await executeOpenRouter(systemPrompt, history, primaryConfig, plan);
+      console.log('[Luna] orPrimary responded');
+    } catch (e) {
+      console.warn('[Luna] orPrimary failed — trying Groq:', e.message);
+    }
+  }
+
+  // Step 2: Try Groq (fast, reliable)
   if (!rawReply) {
     try {
       rawReply = await executeGroq(systemPrompt, history, routeDecision.models, plan);
@@ -1027,7 +1124,7 @@ async function respond(ctx) {
     }
   }
 
-  // Step 2: OpenRouter fallback (wide model pool)
+  // Step 3: OpenRouter fallback pool
   if (!rawReply) {
     try {
       rawReply = await executeOpenRouter(systemPrompt, history, routeDecision.models, plan);
@@ -1073,7 +1170,7 @@ async function respond(ctx) {
 
   // Pass 2: LLM rewrite — enforces Luna's exact writing style
   // Skipped for code, UI builds, short replies, agent tasks
-  fullReply = await rewriteForStyle(fullReply, plan);
+  fullReply = await rewriteForStyle(fullReply, plan, clientModel);
 
   // ── Step 11: Stream to user ───────────────────────────────────
   if (thinkContent && onChunk) {
