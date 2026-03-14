@@ -1,4 +1,28 @@
 
+  // ── Sources panel CSS ─────────────────────────────────────
+  (function(){
+    const s = document.createElement('style');
+    s.textContent = `
+      .sources-panel { margin-top: 12px; }
+      .sources-label { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+      .sources-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+      .sources-row::-webkit-scrollbar { display: none; }
+      .source-card {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 12px; border-radius: 12px; text-decoration: none;
+        background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+        flex-shrink: 0; max-width: 180px; min-width: 120px;
+        transition: background .15s;
+      }
+      .source-card:hover { background: rgba(255,255,255,0.08); }
+      .source-favicon { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; object-fit: contain; }
+      .source-info { overflow: hidden; }
+      .source-domain { font-size: 10px; color: rgba(255,255,255,0.35); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .source-title { font-size: 11px; color: rgba(255,255,255,0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+    `;
+    document.head.appendChild(s);
+  })();
+
   // ── Starfield ─────────────────────────────────────────────
   (function(){
     const canvas = document.getElementById('starfield');
@@ -777,9 +801,9 @@
       chatSend.classList.add('stop-mode');
       chatSend.disabled=false;
       chatSend.innerHTML='<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" fill="#fff" stroke="none"/></svg>';
-      chatSend.onclick=function(){ streamStopped=true; finalizeMessage(fullText); };
+      chatSend.onclick=function(){ streamStopped=true; finalizeMessage(fullText, undefined, []); };
 
-      function finalizeMessage(text, doc){
+      function finalizeMessage(text, doc, sources){
         chatSend.classList.remove('stop-mode');
         chatSend.innerHTML='<svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>';
         chatSend.onclick=null;
@@ -835,6 +859,20 @@
           +'<button class="mac" title="Bad response" onclick="dislikeMac(this,\''+enc+'\')"><svg viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg></button>'
           +'<button class="mac" title="Regenerate" onclick="regenMac(this)"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg></button>';
         mbody.insertBefore(actions,mbody.querySelector('.mtime'));
+        // ── Sources panel (Pro/RO-1 only) ────────────────────
+        if(sources && sources.length){
+          const panel = document.createElement('div');
+          panel.className = 'sources-panel';
+          panel.innerHTML = '<div class="sources-label">Sources</div><div class="sources-row">'
+            + sources.map(s=>`<a class="source-card" href="${s.url}" target="_blank" rel="noopener">
+                <img class="source-favicon" src="${s.favicon}" onerror="this.style.display='none'" alt=""/>
+                <div class="source-info">
+                  <div class="source-domain">${s.domain}</div>
+                  <div class="source-title">${s.title}</div>
+                </div></a>`).join('')
+            + '</div>';
+          mbody.insertBefore(panel, mbody.querySelector('.mtime'));
+        }
         const mtimeEl=mbody.querySelector('.mtime');if(mtimeEl)mtimeEl.style.display='';
         messagesEl.scrollTop=messagesEl.scrollHeight;
       }
@@ -951,7 +989,7 @@
               }
               // Agent mode sends reply in done payload (no delta chunks) — use it directly
               if(!fullText && json.reply) fullText = json.reply;
-              if(!streamStopped) finalizeMessage(fullText, json.document);
+              if(!streamStopped) finalizeMessage(fullText, json.document, json.sources||[]);
             }
           }catch(e){}
         }

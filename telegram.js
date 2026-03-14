@@ -198,9 +198,11 @@ passport.use(new GoogleStrategy({
 
 // ── Tavily Web Search (replaces DuckDuckGo) ──────────────────
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
+const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
 
+// Returns { text, sources } — text for Luna's context, sources for frontend UI
 async function tavilySearch(query, maxResults = 5) {
-  if (!TAVILY_API_KEY) return null;
+  if (!TAVILY_API_KEY) return { text: null, sources: [] };
   try {
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -214,19 +216,54 @@ async function tavilySearch(query, maxResults = 5) {
         include_raw_content: false
       })
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { text: null, sources: [] };
     const data = await res.json();
     const parts = [];
     if (data.answer) parts.push(`Summary: ${data.answer}`);
+    const sources = [];
     if (data.results?.length) {
-      const results = data.results.slice(0, maxResults).map(r =>
-        `• ${r.title}\n  ${r.content?.slice(0, 200) || ''}\n  Source: ${r.url}`
-      );
-      parts.push(results.join('\n\n'));
+      data.results.slice(0, maxResults).forEach(r => {
+        parts.push(`• ${r.title}\n  ${r.content?.slice(0, 200) || ''}\n  Source: ${r.url}`);
+        try {
+          const hostname = new URL(r.url).hostname;
+          sources.push({
+            title: r.title,
+            url: r.url,
+            favicon: `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`,
+            domain: hostname.replace('www.', '')
+          });
+        } catch(e) {}
+      });
     }
-    return parts.length ? parts.join('\n\n') : null;
+    return { text: parts.length ? parts.join('\n\n') : null, sources };
   } catch (e) {
     console.error('Tavily error:', e.message);
+    return { text: null, sources: [] };
+  }
+}
+
+// Firecrawl — deep scrape top result for Pro/RO-1
+async function firecrawlSearch(query) {
+  if (!FIRECRAWL_API_KEY) return null;
+  try {
+    const res = await fetch('https://api.firecrawl.dev/v1/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${FIRECRAWL_API_KEY}`
+      },
+      body: JSON.stringify({ query, limit: 3, scrapeOptions: { formats: ['markdown'] } }),
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.data?.length) return null;
+    const parts = data.data.slice(0, 3).map(r =>
+      `### ${r.title || r.url}\n${(r.markdown || r.description || '').slice(0, 800)}\nSource: ${r.url}`
+    );
+    return parts.join('\n\n---\n\n');
+  } catch (e) {
+    console.error('Firecrawl error:', e.message);
     return null;
   }
 }
@@ -1043,19 +1080,36 @@ app.post("/chat", requireAuth, async (req, res) => {
     // ── Build base system prompt ─────────────────────────────
     const baseSystemPrompt = getSystemPrompt(uid, isOwner, userProfile, userMemories);
 
-    // ── Web search function — Luna decides if she needs it ───
+    // ── Web search function — model-aware ───────────────────
+    let searchSources = []; // will be populated for Pro/RO-1
     async function webSearchFn(query) {
       if (urlPageContent) {
         return `Web page content for ${query}:\n${urlPageContent}`;
       }
-      if (TAVILY_API_KEY) {
-        const results = await tavilySearch(query);
-        return results || null;
+      const isPro = clientModelRaw === 'luna-pro' || clientModelRaw === 'ro1';
+
+      if (isPro) {
+        // Pro/RO-1: Firecrawl deep search + Tavily sources
+        const [tavilyResult, firecrawlResult] = await Promise.all([
+          tavilySearch(query),
+          firecrawlSearch(query)
+        ]);
+        if (tavilyResult.sources?.length) searchSources = tavilyResult.sources;
+        const parts = [];
+        if (tavilyResult.text) parts.push(tavilyResult.text);
+        if (firecrawlResult) parts.push(`\n\n## Deep Content\n${firecrawlResult}`);
+        return parts.length ? parts.join('\n\n') : null;
+      } else {
+        // Flash: Tavily only, no sources returned to frontend
+        if (TAVILY_API_KEY) {
+          const result = await tavilySearch(query);
+          return result.text || null;
+        }
+        if (isNewsQuery(query) && NEWS_API_KEY) {
+          return await newsSearch(query);
+        }
+        return null;
       }
-      if (isNewsQuery(query) && NEWS_API_KEY) {
-        return await newsSearch(query);
-      }
-      return null;
     }
 
     // ── Luna orchestrates everything ─────────────────────────
@@ -1105,7 +1159,10 @@ app.post("/chat", requireAuth, async (req, res) => {
     // If agent created a document, include it in the done payload
     const donePayload = { reply: fullReply, threadId: thread.threadId, title: thread.title };
     if (lunaResult.document) {
-      donePayload.document = lunaResult.document; // { filename, base64, mimeType, size }
+      donePayload.document = lunaResult.document;
+    }
+    if (searchSources.length) {
+      donePayload.sources = searchSources;
     }
     sendDone(donePayload);
 
