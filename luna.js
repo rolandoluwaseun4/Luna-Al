@@ -804,7 +804,13 @@ Return only the rewritten text. No explanation. No preamble.`;
 // Stronger rewrite prompt for Pro/RO-1 — format-aware
 function buildProRewritePrompt(plan) {
   const fmtMap = {
-    table:      'The response MUST be a markdown table. If the draft is not a table, convert it into one. Start with the header row immediately.',
+    table: `The response MUST be a markdown table. No exceptions.
+IGNORE whatever format the draft uses. Convert ALL content into a markdown table.
+Start your response with | (the pipe character) immediately — no intro sentence, no title, nothing before the table.
+Format:
+| Column1 | Column2 | Column3 |
+|---------|---------|---------|
+| data    | data    | data    |`,
     structured: 'Use **Bold Headers** for each section. Bullets or numbered steps inside sections. Make it scannable and clean.',
     list:       'Format as a clean bullet list using - for each item. No prose paragraphs.',
     code:       'Keep the code block intact. Only rewrite the explanation text around it.',
@@ -822,7 +828,7 @@ function buildProRewritePrompt(plan) {
 
   return `You are a writing editor for Luna AI. Rewrite the draft below so it reads like a sharp, natural human wrote it.
 
-FORMAT RULE (ABSOLUTE): ${fmt}
+FORMAT RULE (ABSOLUTE — overrides everything else): ${fmt}
 ${len}
 
 WRITING RULES:
@@ -878,6 +884,26 @@ async function rewriteForStyle(text, plan, clientModel = 'luna-flash') {
       });
       const rewritten = res.choices[0]?.message?.content?.trim();
       if (rewritten && rewritten.length > 60) {
+        // Safety check: if we demanded a table but didn't get one, try once more with an even harder prompt
+        if (plan?.response_format === 'table' && !rewritten.trim().startsWith('|')) {
+          console.warn('[Luna] DeepSeek V3 ignored table format — retrying with harder prompt');
+          try {
+            const retry = await orClient.chat.completions.create({
+              model: 'deepseek/deepseek-v3-base:free',
+              max_tokens: 3000,
+              temperature: 0,
+              messages: [
+                { role: 'system', content: 'You are a markdown table converter. Convert the input into a markdown table. Output ONLY the table. Start with | immediately. Nothing else.' },
+                { role: 'user', content: rewritten }
+              ]
+            });
+            const retried = retry.choices[0]?.message?.content?.trim();
+            if (retried && retried.startsWith('|')) {
+              console.log('[Luna] DeepSeek V3 table retry ✅');
+              return retried;
+            }
+          } catch (e) { /* fall through to original */ }
+        }
         console.log('[Luna] DeepSeek V3 rewrite ✅');
         return rewritten;
       }

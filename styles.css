@@ -919,11 +919,11 @@
     .mrow.luna .bubble pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
     /* Lists — use custom markers since display:flex removes native ones */
     .mrow.luna .bubble ul { list-style: none; padding-left: 0; margin: 10px 0 16px; display: flex; flex-direction: column; gap: 7px; }
-    .mrow.luna .bubble ol { list-style: none; counter-reset: luna-ol; padding-left: 0; margin: 10px 0 16px; display: flex; flex-direction: column; gap: 7px; }
+    .mrow.luna .bubble ol { list-style: none; counter-reset: luna-ol; padding-left: 0; margin: 10px 0 16px; display: block; }
     .mrow.luna .bubble ul > li { color: #f0ecff; line-height: 1.65; padding-left: 18px; position: relative; }
     .mrow.luna .bubble ul > li::before { content: '•'; position: absolute; left: 2px; top: 0; color: rgba(200,185,255,0.65); line-height: 1.65; }
-    .mrow.luna .bubble ol > li { color: #f0ecff; line-height: 1.65; padding-left: 24px; position: relative; counter-increment: luna-ol; }
-    .mrow.luna .bubble ol > li::before { content: counter(luna-ol) '.'; position: absolute; left: 0; top: 0; color: rgba(200,185,255,0.65); font-size: 13px; font-weight: 600; line-height: 1.65; }
+    .mrow.luna .bubble ol > li { color: #f0ecff; line-height: 1.65; padding-left: 26px; position: relative; counter-increment: luna-ol; margin-bottom: 8px; }
+    .mrow.luna .bubble ol > li::before { content: counter(luna-ol) '.'; position: absolute; left: 0; top: 0; color: rgba(200,185,255,0.75); font-size: 13px; font-weight: 700; line-height: 1.65; min-width: 20px; }
     .mrow.luna .bubble p { margin-bottom: 12px; line-height: 1.78; }
     .mrow.luna .bubble p:last-child { margin-bottom: 0; }
     .mrow.luna .bubble blockquote { border-left: 3px solid var(--accent); padding: 10px 16px; margin: 14px 0; background: var(--accent-soft); border-radius: 0 8px 8px 0; font-style: italic; color: rgba(240,236,255,0.85); }
