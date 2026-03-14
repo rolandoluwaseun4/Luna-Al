@@ -130,6 +130,16 @@ function extractThinkTags(text) {
  * @returns {object} plan - Luna's reasoning plan
  */
 async function think(message, history = [], clientModel = 'luna-flash', hasImage = false, userName = null) {
+  // ── Pre-brain format override — catch obvious patterns the brain might miss ──
+  // These run BEFORE the LLM brain so they're 100% reliable.
+  const msg = message.toLowerCase().trim();
+
+  // Comparison / pros & cons → always table
+  const isComparison = /\bpros.{0,10}cons\b|\badvantages?.{0,10}disadvantages?\b|\bvs\.?\b|\bversus\b|\bcompare\b|\bdifferences?.{0,10}between\b|\bwhich is better\b/.test(msg);
+
+  // Structured multi-part → structured format
+  const isStructured = /\bhow does .{3,} work\b|\bwalk me through\b|\bstep.{0,5}by.{0,5}step\b|\bguide (me |to |on )?\b|\bexplain how\b|\bbreakdown\b|break.{0,5}down|\broadmap\b|\bstudy plan\b/.test(msg);
+
   // Build a short conversation summary for context
   const recentMessages = history.slice(-6).map(m =>
     `${m.role === 'user' ? 'User' : 'Luna'}: ${String(m.content).slice(0, 150)}`
@@ -175,8 +185,8 @@ GUIDANCE:
 - NEVER choose full_document or long unless the user explicitly asked for it
 - ui_build: use this when user asks to build a website, landing page, dashboard, UI, app interface, or any visual HTML/CSS output. Always set response_format: code and response_length: full_document for ui_build.
 - code: use for scripts, functions, algorithms, backend code, non-UI programming tasks
-- TABLE RULE: if user says "tabular form", "in a table", "as a table", "table format", or "compare in a table" — set response_format: table and response_length: medium. Never set short for table requests.
-- STRUCTURED RULE: if user asks for a plan, guide, breakdown, steps, study notes, roadmap, comparison, explanation of multiple things, "how does X work", "what are the differences", "pros and cons", or anything that genuinely has multiple distinct parts — set response_format: structured and response_length: medium or long. This unlocks bold headers and organized content.
+- TABLE RULE: if user says "tabular form", "in a table", "as a table", "table format", "compare in a table", "pros and cons", "advantages and disadvantages", "X vs Y", "compare X and Y", "differences between X and Y", "X versus Y" — set response_format: table and response_length: medium. Never set short for table requests. This rule has HIGHEST priority — it overrides prose.
+- STRUCTURED RULE: if user asks for a plan, guide, breakdown, steps, study notes, roadmap, "how does X work", "explain X", "walk me through", or anything with multiple genuinely distinct parts — set response_format: structured and response_length: medium or long. This unlocks bold headers and organized content. This rule has HIGH priority — it overrides prose.
 - LETTER COUNT RULE: if user asks how many of a letter/character are in a word, or to count letters/vowels/consonants in anything — set intent: agent_task. Never answer letter counting questions directly — always route to agent.`;
 
   try {
@@ -190,6 +200,21 @@ GUIDANCE:
     const raw = res.choices[0]?.message?.content?.trim() || '';
     const clean = raw.replace(/```json|```/g, '').trim();
     const plan = JSON.parse(clean);
+
+    // ── Apply pre-brain overrides (pattern matching beats the LLM for clear cases) ──
+    if (isComparison && plan.intent !== 'image_generate' && plan.intent !== 'ui_build') {
+      plan.response_format = 'table';
+      if (plan.response_length === 'one_sentence' || plan.response_length === 'short') {
+        plan.response_length = 'medium';
+      }
+      console.log('[Luna Brain] ⚡ Override → table (comparison detected)');
+    } else if (isStructured && plan.response_format === 'prose' && plan.intent !== 'image_generate' && plan.intent !== 'ui_build') {
+      plan.response_format = 'structured';
+      if (plan.response_length === 'one_sentence' || plan.response_length === 'short') {
+        plan.response_length = 'medium';
+      }
+      console.log('[Luna Brain] ⚡ Override → structured (multi-part detected)');
+    }
 
     console.log(`[Luna Brain] Intent: ${plan.intent} | Length: ${plan.response_length} | Format: ${plan.response_format} | Followup: ${plan.is_followup}`);
     return plan;
