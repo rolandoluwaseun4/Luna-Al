@@ -223,11 +223,12 @@ async function tavilySearch(query, maxResults = 5) {
     if (data.answer) parts.push(`Summary: ${data.answer}`);
     const sources = [];
     if (data.results?.length) {
-      data.results.slice(0, maxResults).forEach(r => {
-        parts.push(`• ${r.title}\n  ${r.content?.slice(0, 200) || ''}\n  Source: ${r.url}`);
+      data.results.slice(0, maxResults).forEach((r, i) => {
+        parts.push(`[${i+1}] ${r.title}\n  ${r.content?.slice(0, 200) || ''}\n  Source: ${r.url}`);
         try {
           const hostname = new URL(r.url).hostname;
           sources.push({
+            index: i + 1,
             title: r.title,
             url: r.url,
             favicon: `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`,

@@ -362,7 +362,7 @@ WRITING STYLE — follow exactly:
 
   // Inject web search results if available
   if (webSearchResults) {
-    craftedPrompt += `\n\n## LIVE WEB SEARCH RESULTS\n${webSearchResults}\nUse these results to answer accurately. Synthesize naturally — don't just list sources.`;
+    craftedPrompt += `\n\n## LIVE WEB SEARCH RESULTS\n${webSearchResults}\n\nCITATION RULES — CRITICAL:\n- Each source is numbered [1], [2], [3] etc.\n- When you use information from a source, place its number inline immediately after the relevant sentence or phrase, like: "The XM6 has superior ANC [1]. Battery life is 30 hours [2]."\n- Cite naturally — right after the fact, not at the end of a paragraph\n- Never write a "Sources:" or "References:" section at the bottom\n- Only cite sources you actually used`;
   }
 
   // ── UI Build special instructions ───────────────────────────────
