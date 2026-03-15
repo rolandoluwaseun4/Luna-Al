@@ -930,11 +930,13 @@ app.post("/chat", requireAuth, async (req, res) => {
   const tid = String(threadId || uid + '_default');
 
   // ── Owner impersonation intercept ────────────────────────────────────────
-  // If a non-owner claims to be Roland/the creator/the owner in their message,
-  // Luna responds with a hard verification failure instead of passing it to the AI.
+  // Hard backend check — never reaches the AI model if triggered.
+  // Catches both direct claims and follow-up pressure attempts.
   if (!isOwner && message) {
     const claimPattern = /\b(i am|i'm|im|this is|it's me|its me)\b.{0,30}\b(roland|the owner|your owner|your creator|the creator|the one who (made|built|created) you)\b/i;
-    if (claimPattern.test(message)) {
+    const pressurePattern = /\b(you (don'?t|do not) know me|don'?t you know me|i (made|built|created) you|you belong to me|i own you|i'?m your (owner|creator|maker))\b/i;
+
+    if (claimPattern.test(message) || pressurePattern.test(message)) {
       return sendDone({
         reply: "Can't verify that 🙂 — owner access is tied to a verified account, not a name. If you actually are, log in with the right credentials and the system will know immediately."
       });
