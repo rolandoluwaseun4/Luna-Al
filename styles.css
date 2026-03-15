@@ -86,9 +86,11 @@
     html, body {
       height: 100%; overflow: hidden;
       background: var(--bg);
-      font-family: -apple-system, 'SF Pro Display', BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: -apple-system, 'SF Pro Text', BlinkMacSystemFont, 'Segoe UI', sans-serif;
       color: var(--text);
+      font-weight: 300;
       -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
     /* ─── Starfield ──────────────────────────────────── */
@@ -490,6 +492,7 @@
     /* Luna bubble — no box, full width prose */
     .bubble {
       font-size: 15px; line-height: 1.78;
+      font-weight: 300;
       color: #f0ecff; word-break: break-word;
     }
     .mrow.luna .bubble {
@@ -1247,6 +1250,7 @@
       background: none !important; border: none !important;
       padding: 0 !important; width: 100%;
       font-size: 15px; line-height: 1.82;
+      font-weight: 300;
       color: #fff; word-break: break-word;
     }
 
@@ -1258,6 +1262,7 @@
       border-radius: 20px 20px 5px 20px;
       padding: 13px 17px !important;
       font-size: 15px; line-height: 1.65;
+      font-weight: 300;
       color: #fff; border: none !important;
     }
 
