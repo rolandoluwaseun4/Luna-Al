@@ -562,8 +562,7 @@
     if(micBtn){ micBtn.style.display=hasText?'none':'flex'; }
     chatSend.style.display=hasText?'flex':'none';
   });
-  // Enter key creates new line naturally (textarea default behaviour)
-  // Send only happens via the send button — no keyboard shortcut on mobile
+  // Enter creates new line (textarea default) — send only via button
   chatSend.addEventListener('click',send);
 
   /* ── Voice: Speech-to-Text (mic button) ── */
@@ -629,85 +628,48 @@
   }
   function ts(){return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
   function renderMarkdown(text) {
-    if (!text) return '';
+    // Escape HTML first
+    let t = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-    // ── Step 1: Extract code blocks FIRST (before any escaping) ──────────
-    // Placeholders keep code content safe from all downstream regex passes.
-    const codeBlocks = [];
-    let t = text.replace(/```([\w]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-      const escaped = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      const cls = lang ? ` class="language-${lang}"` : '';
-      codeBlocks.push(`<pre><code${cls}>${escaped}</code></pre>`);
-      return `\x00CB${codeBlocks.length - 1}\x00`;
+    // Code blocks (before anything else)
+    t = t.replace(/```[\w]*\n?([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+
+    // Headers
+    t = t.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+    t = t.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+    t = t.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+
+    // Bold and italic
+    t = t.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');
+    t = t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    t = t.replace(/\*(.+?)\*/g,'<em>$1</em>');
+
+    // Inline code
+    t = t.replace(/`([^`]+)`/g,'<code>$1</code>');
+
+    // Blockquote
+    t = t.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
+
+    // Numbered lists — group consecutive items
+    t = t.replace(/^(\d+\. .+)(\n\d+\. .+)*/gm, (match) => {
+      const items = match.split('\n').map(l => '<li>'+l.replace(/^\d+\. /,'')+'</li>').join('');
+      return '<ol>'+items+'</ol>';
     });
 
-    // ── Step 2: Extract inline code ───────────────────────────────────────
-    const inlineCodes = [];
-    t = t.replace(/`([^`\n]+)`/g, (_, code) => {
-      const escaped = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      inlineCodes.push(`<code>${escaped}</code>`);
-      return `\x00IC${inlineCodes.length - 1}\x00`;
+    // Bullet lists — group consecutive items
+    t = t.replace(/^([-*•] .+)(\n[-*•] .+)*/gm, (match) => {
+      const items = match.split('\n').map(l => '<li>'+l.replace(/^[-*•] /,'')+'</li>').join('');
+      return '<ul>'+items+'</ul>';
     });
 
-    // ── Step 3: Escape remaining HTML ─────────────────────────────────────
-    t = t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-    // ── Step 4: Tables ────────────────────────────────────────────────────
-    // Matches: header row | separator row | body rows
-    t = t.replace(/^(\|.+\|)\s*\n\|[-| :]+\|\s*\n((?:\|.+\|\s*\n?)*)/gm, (match) => {
-      const rows = match.trim().split('\n').filter(r => r.trim());
-      const headerCells = rows[0].split('|').slice(1,-1)
-        .map(c => `<th>${c.trim()}</th>`).join('');
-      const bodyRows = rows.slice(2).map(row => {
-        const cells = row.split('|').slice(1,-1)
-          .map(c => `<td>${c.trim()}</td>`).join('');
-        return `<tr>${cells}</tr>`;
-      }).join('');
-      return `<table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>\n`;
-    });
-
-    // ── Step 5: Headers ───────────────────────────────────────────────────
-    t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-    t = t.replace(/^## (.+)$/gm,  '<h2>$1</h2>');
-    t = t.replace(/^# (.+)$/gm,   '<h1>$1</h1>');
-
-    // ── Step 6: Horizontal rule ───────────────────────────────────────────
-    t = t.replace(/^---+$/gm, '<hr>');
-
-    // ── Step 7: Bold, italic ──────────────────────────────────────────────
-    t = t.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-    t = t.replace(/\*\*(.+?)\*\*/g,     '<strong>$1</strong>');
-    t = t.replace(/\*(.+?)\*/g,         '<em>$1</em>');
-
-    // ── Step 8: Blockquote ────────────────────────────────────────────────
-    t = t.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-
-    // ── Step 9: Numbered lists ────────────────────────────────────────────
-    t = t.replace(/(?:^\d+\. .+\n?)+/gm, match => {
-      const items = match.trim().split('\n')
-        .map(l => '<li>' + l.replace(/^\d+\.\s+/, '') + '</li>').join('');
-      return `<ol>${items}</ol>\n`;
-    });
-
-    // ── Step 10: Bullet lists (-, *, •) ──────────────────────────────────
-    t = t.replace(/(?:^[-*•] .+\n?)+/gm, match => {
-      const items = match.trim().split('\n')
-        .map(l => '<li>' + l.replace(/^[-*•]\s+/, '') + '</li>').join('');
-      return `<ul>${items}</ul>\n`;
-    });
-
-    // ── Step 11: Paragraphs ───────────────────────────────────────────────
-    t = t.split(/\n{2,}/).map(block => {
+    // Paragraphs — split by double newline
+    t = t.split('\n\n').map(block => {
       block = block.trim();
       if (!block) return '';
-      // Never wrap already-block HTML elements
-      if (/^<(h[1-6]|ul|ol|pre|blockquote|table|hr|\x00CB)/.test(block)) return block;
-      return '<p>' + block.replace(/\n/g, '<br>') + '</p>';
+      // Don't wrap already-block elements
+      if (/^<(h[1-3]|ul|ol|pre|blockquote)/.test(block)) return block;
+      return '<p>' + block.replace(/\n/g,'<br>') + '</p>';
     }).join('');
-
-    // ── Step 12: Restore placeholders ─────────────────────────────────────
-    t = t.replace(/\x00CB(\d+)\x00/g,  (_, i) => codeBlocks[+i]);
-    t = t.replace(/\x00IC(\d+)\x00/g,  (_, i) => inlineCodes[+i]);
 
     return t;
   }
