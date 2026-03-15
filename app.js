@@ -562,7 +562,8 @@
     if(micBtn){ micBtn.style.display=hasText?'none':'flex'; }
     chatSend.style.display=hasText?'flex':'none';
   });
-  chatInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.shiftKey){e.preventDefault();if(!chatSend.disabled)send();}});
+  // Enter key creates new line naturally (textarea default behaviour)
+  // Send only happens via the send button — no keyboard shortcut on mobile
   chatSend.addEventListener('click',send);
 
   /* ── Voice: Speech-to-Text (mic button) ── */
