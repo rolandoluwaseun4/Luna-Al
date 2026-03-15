@@ -9,7 +9,6 @@ const bcrypt = require('bcryptjs');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const helmet = require('helmet');
-const { initNotifications, sendReplyNotification } = require('./notifications');
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected'))
@@ -930,6 +929,18 @@ app.post("/chat", requireAuth, async (req, res) => {
   const isOwner = req.user.role === 'owner';
   const tid = String(threadId || uid + '_default');
 
+  // ── Owner impersonation intercept ────────────────────────────────────────
+  // If a non-owner claims to be Roland/the creator/the owner in their message,
+  // Luna responds with a hard verification failure instead of passing it to the AI.
+  if (!isOwner && message) {
+    const claimPattern = /\b(i am|i'm|im|this is|it's me|its me)\b.{0,30}\b(roland|the owner|your owner|your creator|the creator|the one who (made|built|created) you)\b/i;
+    if (claimPattern.test(message)) {
+      return sendDone({
+        reply: "Can't verify that 🙂 — owner access is tied to a verified account, not a name. If you actually are, log in with the right credentials and the system will know immediately."
+      });
+    }
+  }
+
   // ── "post to channel:" command (owner only) ──────────
   if (isOwner && message && message.toLowerCase().startsWith('post to channel:')) {
     const postText = message.slice('post to channel:'.length).trim();
@@ -1178,9 +1189,6 @@ app.post("/chat", requireAuth, async (req, res) => {
     // ── Async memory extraction (fire and forget) ─────────────
     extractAndSaveMemories(uid, message, fullReply).catch(() => {});
 
-    // ── Reply push notification (fire and forget) ──────────────
-    sendReplyNotification(uid, fullReply).catch(() => {});
-
   } catch (error) {
     console.error("AI Error:", error.message);
     if (!res.headersSent) sendError("AI failed to respond");
@@ -1255,6 +1263,25 @@ app.get('/shared/:threadId', async (req, res) => {
 });
 
 // ── Push notification subscription ───────────────────────────
+const pushSubSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  subscription: { type: mongoose.Schema.Types.Mixed, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+const PushSub = mongoose.model('PushSub', pushSubSchema);
+
+app.post('/push/subscribe', requireAuth, async (req, res) => {
+  try {
+    const uid = String(req.user.id);
+    const { subscription } = req.body;
+    if (!subscription) return res.status(400).json({ error: 'No subscription provided' });
+    await PushSub.findOneAndUpdate({ userId: uid }, { userId: uid, subscription }, { upsert: true, new: true });
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: 'Could not save subscription' });
+  }
+});
+
 // ── List all threads for a user ───────────────────────────────────────────────
 app.get("/threads/:userId", requireAuth, async (req, res) => {
   const uid = String(req.params.userId).replace(/[^a-zA-Z0-9_\-]/g, '').substring(0, 64);
@@ -1641,8 +1668,60 @@ if (process.env.TWITTER_API_KEY) scheduleDailyTweet();
 
 app.get("/", (req, res) => res.json({ status: "Luna is running ✅" }));
 
-// ── Notifications (daily morning push, reply push, reminders) ────────────────
-initNotifications(app, requireAuth);
+// ── Daily push notifications ──────────────────────────────────
+const webpush = (() => { try { return require('web-push'); } catch(e) { return null; } })();
+
+if (webpush && process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    'mailto:' + (process.env.OWNER_EMAIL || 'admin@luna.ai'),
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+
+  const dailyMessages = [
+    "Good morning. What are we building today?",
+    "New day. What's on your mind?",
+    "Morning. I'm here whenever you need to think something through.",
+    "Start your day with a clear head. What do you want to figure out today?",
+    "I've been thinking. What are you working on right now?",
+    "Every great thing starts with a conversation. Let's talk.",
+    "You've got ideas worth building. Let's work on them.",
+  ];
+
+  async function sendDailyPushNotifications() {
+    if (!webpush) return;
+    const subs = await PushSub.find({}).lean().catch(() => []);
+    const msg = dailyMessages[Math.floor(Math.random() * dailyMessages.length)];
+    console.log(`📲 Sending daily push to ${subs.length} subscribers`);
+    for (const sub of subs) {
+      try {
+        await webpush.sendNotification(sub.subscription, JSON.stringify({
+          title: 'Luna',
+          body: msg,
+          icon: 'https://rolandoluwaseun4.github.io/Luna-Al/icon-192.png',
+          url: 'https://rolandoluwaseun4.github.io/Luna-Al/'
+        }));
+      } catch(e) {
+        if (e.statusCode === 410) await PushSub.findByIdAndDelete(sub._id); // expired
+      }
+    }
+  }
+
+  // Schedule at 8am daily
+  function scheduleDailyPush() {
+    const now = new Date();
+    const next = new Date();
+    next.setHours(8, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    const delay = next - now;
+    console.log(`📲 Next push notification in ${Math.round(delay / 60000)} minutes`);
+    setTimeout(async () => {
+      await sendDailyPushNotifications();
+      scheduleDailyPush();
+    }, delay);
+  }
+  scheduleDailyPush();
+}
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
