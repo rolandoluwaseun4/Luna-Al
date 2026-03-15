@@ -19,18 +19,6 @@
       .source-info { overflow: hidden; }
       .source-domain { font-size: 10px; color: rgba(255,255,255,0.35); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .source-title { font-size: 11px; color: rgba(255,255,255,0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-      /* Inline source chips */
-      .src-chip {
-        display: inline-flex; align-items: center; gap: 4px;
-        padding: 1px 7px 1px 4px; border-radius: 20px;
-        background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
-        text-decoration: none; vertical-align: middle;
-        font-size: 11px; color: rgba(255,255,255,0.55);
-        transition: background .15s; white-space: nowrap;
-        margin: 0 1px;
-      }
-      .src-chip:hover { background: rgba(255,255,255,0.13); color: rgba(255,255,255,0.85); }
-      .src-chip img { width: 12px; height: 12px; border-radius: 2px; object-fit: contain; }
     `;
     document.head.appendChild(s);
   })();
@@ -574,7 +562,7 @@
     if(micBtn){ micBtn.style.display=hasText?'none':'flex'; }
     chatSend.style.display=hasText?'flex':'none';
   });
-  chatInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!chatSend.disabled)send();}});
+  chatInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.shiftKey){e.preventDefault();if(!chatSend.disabled)send();}});
   chatSend.addEventListener('click',send);
 
   /* ── Voice: Speech-to-Text (mic button) ── */
@@ -721,22 +709,6 @@
     t = t.replace(/\x00IC(\d+)\x00/g,  (_, i) => inlineCodes[+i]);
 
     return t;
-  }
-
-  // Inject inline source chips for [1], [2] citations
-  function injectSourceChips(html, sources) {
-    if (!sources || !sources.length) return html;
-    // Build lookup by index
-    const map = {};
-    sources.forEach(s => { map[s.index] = s; });
-    // Replace [1], [2] etc. with chip HTML
-    return html.replace(/\[(\d+)\]/g, (match, num) => {
-      const s = map[parseInt(num)];
-      if (!s) return match;
-      return `<a class="src-chip" href="${s.url}" target="_blank" rel="noopener">` +
-        `<img src="${s.favicon}" onerror="this.style.display='none'" alt=""/>` +
-        `${s.domain}</a>`;
-    });
   }
 
   // Render KaTeX math in an element after content is set
@@ -901,9 +873,7 @@
           const shortText=text.replace(/```[\s\S]*?```/g,'').trim().substring(0,200);
           replyDiv.innerHTML=(shortText?renderMarkdown(shortText)+'<br><br>':'')+buildArtifactCard(text,artifactInfo);
         } else {
-          let html = renderMarkdown(text);
-          if(sources && sources.length) html = injectSourceChips(html, sources);
-          replyDiv.innerHTML = html;
+          replyDiv.innerHTML=renderMarkdown(text);
           renderMath(replyDiv);
         }
         bubbleEl.appendChild(replyDiv);
