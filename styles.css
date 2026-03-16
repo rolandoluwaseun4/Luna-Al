@@ -399,7 +399,13 @@
       font-size: 27px; font-weight: 700; text-align: left;
       margin-bottom: 10px; line-height: 1.2; letter-spacing: -0.3px; width: 100%;
     }
-    .home-title .accent { color: var(--accent); letter-spacing: 1px; }
+    .home-title .accent {
+      background: linear-gradient(135deg, #7c3aed 0%, #a855f7 45%, #ec4899 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 1px;
+    }
     .home-sub {
       font-size: 14px; color: var(--text-dim);
       text-align: left; line-height: 1.65; margin-bottom: 40px; max-width: 340px;
@@ -660,8 +666,7 @@
     #chat-input {
       flex: 1; background: none; border: none; outline: none;
       color: var(--text); font-size: 15px;
-      resize: none; max-height: 160px; line-height: 1.6; padding: 3px 0;
-      overflow-y: auto;
+      resize: none; max-height: 90px; line-height: 1.5; padding: 3px 0;
     }
     #chat-input::placeholder { color: var(--text-dim); }
     .clear-chat-btn {
@@ -845,43 +850,6 @@
     .install-btn { width: 100%; padding: 13px; margin-top: 10px; background: rgba(255,255,255,.05); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 14px; cursor: pointer; }
 
     /* ─── ARTIFACT VIEWER ────────────────────────────── */
-    /* ─── EXPAND TEXTAREA OVERLAY ────────────────────── */
-    .expand-overlay {
-      position: fixed; inset: 0; z-index: 500;
-      background: var(--bg);
-      display: none; flex-direction: column;
-    }
-    .expand-overlay.open { display: flex; }
-    .expand-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 18px; border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .expand-title { font-size: 15px; font-weight: 600; color: var(--text); }
-    .expand-close {
-      width: 34px; height: 34px; border-radius: 50%;
-      background: rgba(255,255,255,0.08); border: none;
-      color: var(--text); cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .expand-close svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.5; }
-    .expand-textarea {
-      flex: 1; background: none; border: none; outline: none;
-      color: var(--text); font-size: 15px; line-height: 1.7;
-      padding: 18px 20px; resize: none;
-      font-family: inherit;
-    }
-    .expand-textarea::placeholder { color: var(--text-dim); }
-    .expand-footer {
-      padding: 12px 16px 32px; border-top: 1px solid var(--border);
-      display: flex; justify-content: flex-end; flex-shrink: 0;
-    }
-    .expand-send {
-      padding: 12px 28px; background: var(--accent); border: none;
-      border-radius: 100px; color: #fff; font-size: 15px;
-      font-weight: 600; cursor: pointer;
-    }
-
     .artifact-overlay { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.82); display: none; align-items: flex-end; }
     .artifact-overlay.open { display: flex; }
     .artifact-sheet { width: 100%; max-height: 85vh; background: var(--sidebar-bg); border-radius: 22px 22px 0 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; }
@@ -1363,15 +1331,6 @@
     }
     .mic-btn:hover { color: #fff; }
     .mic-btn svg { width: 18px; height: 18px; }
-    /* Expand button — same style as mic */
-    .expand-btn {
-      width: 32px; height: 32px; border-radius: 50%; border: none;
-      background: none; color: rgba(255,255,255,0.45);
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; transition: color .15s;
-    }
-    .expand-btn:hover { color: #fff; }
-    .expand-btn svg { width: 14px; height: 14px; }
     /* Mic active: pulsing red while listening */
     .mic-btn.mic-listening {
       color: #ff453a;
