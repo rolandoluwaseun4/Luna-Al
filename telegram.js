@@ -1383,7 +1383,7 @@ const pushSubSchema = new mongoose.Schema({
   subscription: { type: mongoose.Schema.Types.Mixed, required: true },
   createdAt: { type: Date, default: Date.now }
 });
-const PushSub = mongoose.model('PushSub', pushSubSchema);
+const PushSub = mongoose.models.PushSub || mongoose.model("PushSub", PushSubSchema);
 
 app.post('/push/subscribe', requireAuth, async (req, res) => {
   try {
