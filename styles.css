@@ -1523,3 +1523,298 @@
     .plus-menu-item:hover { background: rgba(255,255,255,0.07); }
 
 
+
+    /* ═══════════════════════════════════════════════════════════
+       LIQUID GLASS — Apple-style water surface treatment
+       Shapes, layout, colors unchanged — only surfaces affected.
+       Uses: layered backdrop-filter, inner highlight, soft glow,
+       subtle refraction border, wet-glass shimmer.
+    ═══════════════════════════════════════════════════════════ */
+
+    /* ── Shared liquid glass mixin values ── */
+    :root {
+      --glass-blur:        blur(24px) saturate(180%);
+      --glass-blur-heavy:  blur(40px) saturate(200%);
+      --glass-surface:     rgba(255,255,255,0.06);
+      --glass-surface-2:   rgba(255,255,255,0.04);
+      --glass-border:      rgba(255,255,255,0.14);
+      --glass-border-top:  rgba(255,255,255,0.28);
+      --glass-shine:       rgba(255,255,255,0.10);
+      --glass-shadow:      0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
+      --glass-inset:       inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.15);
+    }
+
+    /* ── NAVBAR ── */
+    .navbar {
+      background: rgba(0,0,0,0.55) !important;
+      backdrop-filter: var(--glass-blur-heavy) !important;
+      -webkit-backdrop-filter: var(--glass-blur-heavy) !important;
+      border-bottom: 1px solid rgba(255,255,255,0.10) !important;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.06), 0 4px 24px rgba(0,0,0,0.4) !important;
+    }
+
+    /* ── HAMBURGER + NAV BUTTONS ── */
+    .hamburger,
+    .nav-new-btn {
+      background: var(--glass-surface) !important;
+      backdrop-filter: blur(12px) !important;
+      -webkit-backdrop-filter: blur(12px) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 2px 8px rgba(0,0,0,0.3) !important;
+    }
+
+    /* ── SIDEBAR DRAWER ── */
+    .drawer-panel {
+      background: rgba(0,0,0,0.65) !important;
+      backdrop-filter: var(--glass-blur-heavy) !important;
+      -webkit-backdrop-filter: var(--glass-blur-heavy) !important;
+      border-right: 1px solid var(--glass-border) !important;
+      box-shadow: 2px 0 40px rgba(0,0,0,0.5) !important;
+    }
+
+    /* ── SIDEBAR SEARCH ── */
+    .sb-search {
+      background: rgba(255,255,255,0.07) !important;
+      backdrop-filter: blur(12px) !important;
+      -webkit-backdrop-filter: blur(12px) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset) !important;
+    }
+
+    /* ── STARTER CARDS ── */
+    .starter-card {
+      background: var(--glass-surface) !important;
+      backdrop-filter: blur(16px) !important;
+      -webkit-backdrop-filter: blur(16px) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 4px 16px rgba(0,0,0,0.3) !important;
+      transition: all .25s ease !important;
+    }
+    .starter-card:hover {
+      background: rgba(255,255,255,0.10) !important;
+      box-shadow: var(--glass-inset), 0 8px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.18) !important;
+      transform: translateY(-2px) !important;
+    }
+
+    /* ── USER BUBBLE ── */
+    .mrow.user .bubble {
+      background: rgba(120,58,220,0.28) !important;
+      backdrop-filter: blur(20px) saturate(160%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+      border: 1px solid rgba(168,100,255,0.25) !important;
+      box-shadow:
+        inset 0 1px 0 rgba(200,150,255,0.25),
+        inset 0 -1px 0 rgba(80,20,180,0.2),
+        0 4px 20px rgba(100,40,200,0.25) !important;
+    }
+
+    /* ── MESSAGE ACTION BUTTONS ── */
+    .mac {
+      background: rgba(255,255,255,0.05) !important;
+      backdrop-filter: blur(10px) !important;
+      -webkit-backdrop-filter: blur(10px) !important;
+      border: 1px solid rgba(255,255,255,0.10) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.12) !important;
+    }
+    .mac:hover {
+      background: rgba(255,255,255,0.10) !important;
+      border-color: rgba(255,255,255,0.18) !important;
+    }
+
+    /* ── TYPING INDICATOR ── */
+    .typing-bubble {
+      background: rgba(255,255,255,0.06) !important;
+      backdrop-filter: blur(16px) !important;
+      -webkit-backdrop-filter: blur(16px) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset) !important;
+    }
+
+    /* ── MODEL / AGENT CHIPS ── */
+    .bar-chip {
+      background: rgba(255,255,255,0.07) !important;
+      backdrop-filter: blur(12px) !important;
+      -webkit-backdrop-filter: blur(12px) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.25) !important;
+    }
+    .bar-chip:hover, .bar-chip.active {
+      background: rgba(124,58,237,0.22) !important;
+      border-color: rgba(168,100,255,0.35) !important;
+      box-shadow: inset 0 1px 0 rgba(200,150,255,0.2), 0 2px 12px rgba(100,40,200,0.3) !important;
+    }
+
+    /* ── CHAT INPUT PILL ── */
+    .chat-row {
+      background: rgba(255,255,255,0.07) !important;
+      backdrop-filter: blur(24px) saturate(160%) !important;
+      -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 4px 24px rgba(0,0,0,0.35) !important;
+    }
+    .chat-row:focus-within {
+      background: rgba(255,255,255,0.09) !important;
+      border-color: rgba(168,100,255,0.35) !important;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.20),
+        inset 0 -1px 0 rgba(0,0,0,0.15),
+        0 0 0 3px rgba(124,58,237,0.12),
+        0 4px 24px rgba(0,0,0,0.35) !important;
+    }
+
+    /* ── PLUS / MIC BUTTONS ── */
+    .plus-btn {
+      background: rgba(255,255,255,0.08) !important;
+      backdrop-filter: blur(10px) !important;
+      -webkit-backdrop-filter: blur(10px) !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.15) !important;
+    }
+    .plus-btn:hover {
+      background: rgba(255,255,255,0.13) !important;
+    }
+
+    /* ── SEND BUTTON ── */
+    .csend {
+      background: rgba(124,58,237,0.90) !important;
+      backdrop-filter: blur(10px) !important;
+      -webkit-backdrop-filter: blur(10px) !important;
+      box-shadow:
+        inset 0 1px 0 rgba(200,150,255,0.35),
+        inset 0 -1px 0 rgba(60,10,140,0.4),
+        0 4px 16px rgba(100,40,200,0.45) !important;
+      border: 1px solid rgba(180,120,255,0.3) !important;
+    }
+    .csend:not(:disabled):hover {
+      background: rgba(140,70,250,0.95) !important;
+      box-shadow:
+        inset 0 1px 0 rgba(220,170,255,0.4),
+        0 6px 24px rgba(100,40,200,0.55) !important;
+    }
+
+    /* ── MODEL SELECTOR ── */
+    .model-selector {
+      background: rgba(10,6,20,0.75) !important;
+      backdrop-filter: var(--glass-blur-heavy) !important;
+      -webkit-backdrop-filter: var(--glass-blur-heavy) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 16px 48px rgba(0,0,0,0.6) !important;
+    }
+    .model-option:hover {
+      background: rgba(255,255,255,0.07) !important;
+    }
+    .model-option.active-model {
+      background: rgba(124,58,237,0.18) !important;
+      border-color: rgba(168,100,255,0.4) !important;
+    }
+
+    /* ── PLUS MENU ── */
+    .plus-menu {
+      background: rgba(10,6,20,0.75) !important;
+      backdrop-filter: var(--glass-blur-heavy) !important;
+      -webkit-backdrop-filter: var(--glass-blur-heavy) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 16px 48px rgba(0,0,0,0.6) !important;
+    }
+    .plus-menu-item:hover {
+      background: rgba(255,255,255,0.07) !important;
+    }
+    .plus-menu-icon {
+      background: rgba(124,58,237,0.18) !important;
+      border: 1px solid rgba(168,100,255,0.2) !important;
+      box-shadow: inset 0 1px 0 rgba(200,150,255,0.15) !important;
+    }
+
+    /* ── APP CARDS ── */
+    .app-card {
+      background: var(--glass-surface) !important;
+      backdrop-filter: blur(16px) !important;
+      -webkit-backdrop-filter: blur(16px) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 4px 16px rgba(0,0,0,0.3) !important;
+    }
+    .app-card:hover {
+      background: rgba(124,58,237,0.14) !important;
+      border-color: rgba(168,100,255,0.3) !important;
+      box-shadow: var(--glass-inset), 0 8px 32px rgba(100,40,200,0.2) !important;
+    }
+
+    /* ── SETTINGS SECTIONS ── */
+    .settings-section {
+      background: rgba(255,255,255,0.04) !important;
+      backdrop-filter: blur(20px) !important;
+      -webkit-backdrop-filter: blur(20px) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 4px 16px rgba(0,0,0,0.25) !important;
+    }
+    .settings-row {
+      background: transparent !important;
+    }
+
+    /* ── SCROLL BTN ── */
+    .scroll-btn {
+      background: rgba(0,0,0,0.55) !important;
+      backdrop-filter: blur(16px) !important;
+      -webkit-backdrop-filter: blur(16px) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 4px 16px rgba(0,0,0,0.4) !important;
+    }
+
+    /* ── EXPAND OVERLAY HEADER + FOOTER ── */
+    .expand-header,
+    .expand-footer {
+      background: rgba(255,255,255,0.03) !important;
+      backdrop-filter: blur(20px) !important;
+      -webkit-backdrop-filter: blur(20px) !important;
+    }
+    .expand-close {
+      background: rgba(255,255,255,0.08) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.15) !important;
+    }
+    .expand-send {
+      background: rgba(124,58,237,0.90) !important;
+      box-shadow:
+        inset 0 1px 0 rgba(200,150,255,0.3),
+        0 4px 16px rgba(100,40,200,0.4) !important;
+      border: 1px solid rgba(180,120,255,0.25) !important;
+    }
+
+    /* ── HOME INPUT PILL ── */
+    .home-input-pill {
+      background: rgba(255,255,255,0.07) !important;
+      backdrop-filter: blur(24px) saturate(160%) !important;
+      -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 4px 24px rgba(0,0,0,0.35) !important;
+    }
+
+    /* ── TOAST ── */
+    .toast {
+      background: rgba(10,6,20,0.80) !important;
+      backdrop-filter: var(--glass-blur) !important;
+      -webkit-backdrop-filter: var(--glass-blur) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 8px 32px rgba(0,0,0,0.5) !important;
+    }
+
+    /* ── SHARE SHEET + FEEDBACK + ARTIFACT ── */
+    .share-panel,
+    .feedback-box,
+    .artifact-sheet {
+      background: rgba(10,6,20,0.80) !important;
+      backdrop-filter: var(--glass-blur-heavy) !important;
+      -webkit-backdrop-filter: var(--glass-blur-heavy) !important;
+      border-top: 1px solid var(--glass-border-top) !important;
+      box-shadow: var(--glass-inset), 0 -8px 40px rgba(0,0,0,0.5) !important;
+    }
+
+    /* ── PROFILE DROPDOWN ── */
+    .profile-dropdown {
+      background: rgba(10,6,20,0.85) !important;
+      backdrop-filter: var(--glass-blur) !important;
+      -webkit-backdrop-filter: var(--glass-blur) !important;
+      border: 1px solid var(--glass-border) !important;
+      box-shadow: var(--glass-inset), 0 8px 32px rgba(0,0,0,0.5) !important;
+    }
+
