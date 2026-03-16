@@ -1200,102 +1200,206 @@
       .home-body { max-width: 620px; }
     }
 
+
     /* ═══════════════════════════════════════════════════
-       REDESIGN v2 — ChatGPT-style
-       Purple kept only for: user bubble + send button.
+       REDESIGN v3 — Intentional. Confident. Clean.
+       Inspired by premium AI apps like Nova.
+       No blur gimmicks. Depth through contrast.
     ═══════════════════════════════════════════════════ */
 
-    /* ── Global token reset: pure black ── */
+    /* ── 1. GLOBAL TOKENS ── */
     :root {
-      --bg: #000000;
-      --nav-bg: #000000;
-      --sidebar-bg: #000000;
-      --surface: rgba(255,255,255,0.00);
-      --border: rgba(255,255,255,0.10);
-      --text: #ffffff;
-      --text-dim: rgba(255,255,255,0.40);
-      --text-mid: rgba(255,255,255,0.60);
-      --luna-bubble: transparent;
-      --user-bubble: rgba(120,58,220,0.35);
+      --bg:           #000000;
+      --bg-card:      #141414;
+      --bg-card-2:    #1c1c1e;
+      --bg-input:     #1a1a1a;
+      --nav-bg:       #000000;
+      --sidebar-bg:   #000000;
+      --surface:      rgba(255,255,255,0.04);
+      --border:       rgba(255,255,255,0.09);
+      --border-light: rgba(255,255,255,0.06);
+      --accent:       #7c3aed;
+      --accent-soft:  rgba(124,58,237,0.15);
+      --accent-glow:  rgba(124,58,237,0.3);
+      --text:         #ffffff;
+      --text-mid:     rgba(255,255,255,0.60);
+      --text-dim:     rgba(255,255,255,0.35);
+      --user-bubble:  rgba(110,48,210,0.40);
+      --luna-bubble:  transparent;
+      --error:        #ff453a;
+      --radius-card:  16px;
+      --radius-pill:  100px;
     }
 
-
-    /* ── 1. NAVBAR ── */
-    .navbar {
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border);
+    /* ── 2. BODY & TYPOGRAPHY ── */
+    html, body {
+      font-family: -apple-system, 'SF Pro Text', BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-weight: 400;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
       background: var(--bg);
+      color: var(--text);
     }
-    /* Hamburger → dark circle */
+
+    /* Hide starfield — pure black is the background */
+    #starfield { display: none; }
+
+    /* ── 3. NAVBAR ── */
+    .navbar {
+      padding: 12px 16px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border-light);
+      backdrop-filter: none !important;
+    }
+
     .hamburger {
-      width: 36px; height: 36px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.08);
-      border: none !important;
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border) !important;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       gap: 4px; padding: 0; cursor: pointer;
+      transition: background .15s;
     }
+    .hamburger:hover { background: rgba(255,255,255,0.12); }
     .hamburger span {
-      display: block; width: 16px; height: 1.5px;
-      background: #fff; border-radius: 2px; transition: all .3s;
+      display: block; width: 14px; height: 1.5px;
+      background: rgba(255,255,255,0.80); border-radius: 2px; transition: all .3s;
     }
     .hamburger.open span:nth-child(1) { transform: rotate(45deg) translate(4px,4px); }
     .hamburger.open span:nth-child(2) { opacity: 0; }
     .hamburger.open span:nth-child(3) { transform: rotate(-45deg) translate(4px,-4px); }
 
-    /* Brand: green dot + "Luna" */
-    .nav-brand { font-size: 16px; font-weight: 700; gap: 7px; letter-spacing: -0.2px; display: none !important; }
-    .nav-logo { display: none !important; }
-    .nav-online-dot {
-      width: 9px; height: 9px; border-radius: 50%;
-      background: #22c55e; flex-shrink: 0;
-    }
+    .nav-brand { display: none !important; }
+    .nav-logo  { display: none !important; }
 
-    /* Right buttons → grouped pill container */
     .navbar > div:last-child {
-      display: flex; align-items: center; gap: 0;
-      background: rgba(255,255,255,0.08);
-      border-radius: 100px; padding: 4px 8px; gap: 4px;
+      display: flex; align-items: center; gap: 4px;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      padding: 4px 6px;
     }
     .nav-new-btn {
       width: 30px; height: 30px; border-radius: 50%;
       background: none; border: none !important;
-      color: #fff; display: flex; align-items: center; justify-content: center;
+      color: var(--text-mid);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: color .15s;
     }
-    .nav-new-btn:hover { background: rgba(255,255,255,0.12); }
-    .nav-new-btn svg { width: 16px; height: 16px; stroke-width: 2; }
+    .nav-new-btn:hover { color: var(--text); }
+    .nav-new-btn svg { width: 15px; height: 15px; stroke-width: 2; }
 
-    /* ── 2. MESSAGES ── */
-    .messages { gap: 0; padding: 6px 0 4px; }
+    /* ── 4. HOME SCREEN ── */
+    #home-screen { background: var(--bg); }
 
-    /* ── 3. LUNA MESSAGES — plain text, no avatar, no label ── */
+    .home-inner {
+      padding: 32px 22px 0;
+    }
+
+    .luna-orb-wrap { margin-bottom: 28px; }
+
+    .luna-orb {
+      width: 64px; height: 64px; border-radius: 18px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.08),
+                  0 8px 24px rgba(0,0,0,0.5);
+    }
+
+    .home-title {
+      font-size: 28px; font-weight: 700;
+      letter-spacing: -0.5px; line-height: 1.25;
+      margin-bottom: 10px;
+    }
+    .home-title .accent {
+      background: linear-gradient(135deg, #7c3aed 0%, #a855f7 50%, #ec4899 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .home-sub {
+      font-size: 14px; color: var(--text-dim);
+      line-height: 1.65; margin-bottom: 28px;
+      font-weight: 400;
+    }
+
+    /* Starter cards */
+    .starter-grid { gap: 10px; }
+
+    .starter-card {
+      background: var(--bg-card) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius-card) !important;
+      padding: 16px !important;
+      font-size: 13.5px; font-weight: 500;
+      color: var(--text-mid) !important;
+      line-height: 1.5;
+      transition: background .2s, border-color .2s !important;
+      backdrop-filter: none !important;
+      box-shadow: none !important;
+    }
+    .starter-card:hover {
+      background: #1e1e1e !important;
+      border-color: rgba(255,255,255,0.14) !important;
+      color: var(--text) !important;
+      transform: none !important;
+    }
+
+    /* Home input */
+    .home-input-outer {
+      background: linear-gradient(to top, #000 70%, transparent);
+    }
+    .home-input-pill {
+      background: var(--bg-card) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius-pill) !important;
+      padding: 10px 10px 10px 20px !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      transition: border-color .2s;
+    }
+    .home-input-pill:focus-within {
+      border-color: rgba(124,58,237,0.45) !important;
+    }
+    #home-input {
+      font-size: 15px; font-weight: 400;
+      color: var(--text);
+    }
+    #home-input::placeholder { color: var(--text-dim); }
+
+    .home-send {
+      background: var(--accent) !important;
+      box-shadow: 0 0 0 0 transparent !important;
+    }
+
+    /* ── 5. MESSAGES ── */
+    .messages { gap: 0; padding: 8px 0 4px; }
+
     .mrow.luna {
       flex-direction: column !important;
-      align-items: flex-start;
-      gap: 0;
-      padding: 20px 20px 6px;
-      border-top: 1px solid rgba(255,255,255,0.06);
+      align-items: flex-start; gap: 0;
+      padding: 22px 20px 8px;
+      border-top: 1px solid var(--border-light);
       width: 100%;
     }
     .mrow.luna:first-child { border-top: none; }
-    /* Hide avatar completely */
-    .mrow.luna .msg-avatar.luna-av { display: none !important; }
-    /* Hide "Luna" label */
-    .mrow.luna .luna-msg-label { display: none !important; }
-    /* Luna text: plain white prose */
-    .mrow.luna .mbody {
-      width: 100%; display: flex; flex-direction: column; gap: 4px;
+    .mrow.luna .msg-avatar.luna-av  { display: none !important; }
+    .mrow.luna .luna-msg-label      { display: none !important; }
+    .mrow.luna .mbody { width: 100%; display: flex; flex-direction: column; gap: 4px; }
+
+    /* Luna text */
+    .bubble {
+      font-size: 15px; line-height: 1.80;
+      font-weight: 400; color: #f0f0f0;
+      word-break: break-word;
     }
     .mrow.luna .bubble {
       background: none !important; border: none !important;
       padding: 0 !important; width: 100%;
-      font-size: 15px; line-height: 1.82;
-      color: #fff; word-break: break-word;
+      font-size: 15px; line-height: 1.80; color: #f0f0f0;
     }
 
-    /* ── 4. USER BUBBLE — keep purple ── */
-    .mrow.user { padding: 10px 16px 4px; }
+    /* User bubble */
+    .mrow.user { padding: 12px 16px 4px; }
     .mrow.user .mbody { max-width: 80%; }
     .mrow.user .bubble {
       background: var(--user-bubble) !important;
@@ -1303,223 +1407,452 @@
       padding: 13px 17px !important;
       font-size: 15px; line-height: 1.65;
       color: #fff; border: none !important;
+      font-weight: 400;
     }
 
-    /* ── 5. MESSAGE ACTIONS — bare icons, no boxes ── */
-    .msg-actions {
-      display: flex; gap: 14px; margin-top: 10px;
-      opacity: 0; transition: opacity .2s;
+    /* ── 6. MARKDOWN in bubbles ── */
+    .mrow.luna .bubble h2 {
+      font-size: 17px; font-weight: 700;
+      color: #fff; margin: 22px 0 8px;
+      letter-spacing: -0.2px;
     }
+    .mrow.luna .bubble h3 {
+      font-size: 15px; font-weight: 700;
+      color: #fff; margin: 18px 0 6px;
+    }
+    .mrow.luna .bubble h2:first-child,
+    .mrow.luna .bubble h3:first-child { margin-top: 0; }
+    .mrow.luna .bubble strong { font-weight: 650; color: #fff; }
+    .mrow.luna .bubble em { font-style: italic; color: rgba(255,255,255,0.75); }
+    .mrow.luna .bubble code {
+      background: rgba(255,255,255,0.08);
+      padding: 2px 7px; border-radius: 5px;
+      font-family: 'SF Mono','Fira Code',monospace;
+      font-size: 13px; color: #c4a8ff;
+    }
+    .mrow.luna .bubble pre {
+      background: #111;
+      border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px;
+      overflow-x: auto; margin: 16px 0;
+      font-size: 13px; color: #c4a8ff; line-height: 1.6;
+    }
+    .mrow.luna .bubble pre code {
+      background: none; padding: 0; font-size: inherit; color: inherit;
+    }
+    .mrow.luna .bubble ul {
+      list-style: none; padding-left: 0;
+      margin: 10px 0 16px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .mrow.luna .bubble ol {
+      list-style: none; counter-reset: luna-ol;
+      padding-left: 0; margin: 10px 0 16px;
+      display: block;
+    }
+    .mrow.luna .bubble ul > li {
+      color: rgba(255,255,255,0.88); line-height: 1.65;
+      padding-left: 18px; position: relative;
+    }
+    .mrow.luna .bubble ul > li::before {
+      content: '•'; position: absolute; left: 2px; top: 0;
+      color: rgba(180,160,255,0.6); line-height: 1.65;
+    }
+    .mrow.luna .bubble ol > li {
+      color: rgba(255,255,255,0.88); line-height: 1.65;
+      padding-left: 24px; position: relative;
+      counter-increment: luna-ol; margin-bottom: 8px;
+    }
+    .mrow.luna .bubble ol > li::before {
+      content: counter(luna-ol) '.';
+      position: absolute; left: 0; top: 0;
+      color: rgba(180,160,255,0.6);
+      font-size: 13px; font-weight: 600; line-height: 1.65;
+    }
+    .mrow.luna .bubble p { margin-bottom: 12px; line-height: 1.80; }
+    .mrow.luna .bubble p:last-child { margin-bottom: 0; }
+    .mrow.luna .bubble blockquote {
+      border-left: 3px solid var(--accent);
+      padding: 10px 16px; margin: 14px 0;
+      background: rgba(124,58,237,0.08);
+      border-radius: 0 8px 8px 0;
+      font-style: italic; color: rgba(255,255,255,0.75);
+    }
+    .mrow.luna .bubble hr {
+      border: none; border-top: 1px solid var(--border); margin: 18px 0;
+    }
+    .mrow.luna .bubble table {
+      width: 100%; border-collapse: collapse;
+      margin: 16px 0; font-size: 13.5px;
+      overflow-x: auto; display: block;
+    }
+    .mrow.luna .bubble thead th {
+      background: rgba(124,58,237,0.15);
+      color: #fff; font-weight: 600;
+      padding: 10px 14px; text-align: left;
+      border-bottom: 2px solid rgba(124,58,237,0.35);
+      white-space: nowrap;
+    }
+    .mrow.luna .bubble tbody tr { border-bottom: 1px solid var(--border-light); }
+    .mrow.luna .bubble tbody tr:last-child { border-bottom: none; }
+    .mrow.luna .bubble tbody td {
+      padding: 10px 14px; color: rgba(255,255,255,0.85);
+      vertical-align: top; line-height: 1.5;
+    }
+    .mrow.luna .bubble tbody tr:nth-child(even) { background: rgba(255,255,255,0.025); }
+    .mrow.user .bubble p { margin-bottom: 4px; }
+    .mrow.user .bubble p:last-child { margin-bottom: 0; }
+
+    /* ── 7. MESSAGE ACTIONS ── */
+    .msg-actions { display: flex; gap: 14px; margin-top: 10px; opacity: 0; transition: opacity .2s; }
     .mrow:hover .msg-actions { opacity: 1; }
     .mac {
       width: auto; height: auto; border-radius: 0;
       background: none !important; border: none !important;
-      color: rgba(255,255,255,0.45);
-      padding: 2px; transition: color .15s;
+      color: rgba(255,255,255,0.38);
+      padding: 2px; cursor: pointer; transition: color .15s;
     }
-    .mac:hover { background: none !important; color: #fff; }
-    .mac svg { width: 17px; height: 17px; stroke-width: 1.8; }
+    .mac:hover { color: rgba(255,255,255,0.80) !important; }
+    .mac svg { width: 16px; height: 16px; stroke-width: 1.8; }
 
-    /* ── 6. TYPING INDICATOR ── */
-    .typing-row { padding: 16px 20px 8px; gap: 8px; }
-    .typing-row .msg-avatar.luna-av { display: none !important; }
-    .typing-bubble {
-      background: none; border: none;
-      padding: 0; display: flex; gap: 5px; align-items: center;
-    }
-    .dot { background: rgba(255,255,255,0.5); width: 5px; height: 5px; }
-
-    /* ── 7. CHAT BAR ── */
-    .chat-bar { padding: 8px 14px 28px; background: var(--bg); }
-    .bar-chip {
-      padding: 6px 13px; border-radius: 20px;
-      background: rgba(255,255,255,0.08); border: none;
-      font-size: 12.5px; font-weight: 500; color: var(--text-mid);
-    }
-    .bar-chip:hover, .bar-chip.active {
-      background: rgba(255,255,255,0.14); color: #fff; border: none;
-    }
-    /* Input pill */
-    .chat-row {
-      background: rgba(255,255,255,0.08);
-      border: none; border-radius: 100px;
-      padding: 8px 8px 8px 16px; gap: 8px;
-      transition: background .2s;
-    }
-    .chat-row:focus-within { background: rgba(255,255,255,0.11); }
-    /* Plus btn */
-    .plus-btn {
-      width: 30px; height: 30px; border-radius: 50%;
-      background: none; border: none;
-      color: rgba(255,255,255,0.6); flex-shrink: 0;
-    }
-    .plus-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
-    .plus-btn svg { width: 18px; height: 18px; stroke-width: 2.5; }
-    /* Input text */
-    #chat-input { font-size: 15px; color: #fff; }
-    #chat-input::placeholder { color: rgba(255,255,255,0.35); }
-    /* Clear btn hidden */
-    .clear-chat-btn { display: none !important; }
-    .model-arrow-btn { display: none !important; }
-    /* Send button — keep purple */
-    .csend {
-      width: 36px; height: 36px; border-radius: 50%;
-      background: var(--accent); flex-shrink: 0;
-    }
-    .csend:disabled { opacity: .28; }
-    .csend svg { width: 15px; height: 15px; stroke-width: 2.2; }
-    /* Mic button — same size, no bg */
-    .mic-btn {
-      width: 36px; height: 36px; border-radius: 50%; border: none;
-      background: none; color: rgba(255,255,255,0.55);
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; transition: color .15s;
-    }
-    .mic-btn:hover { color: #fff; }
-    .mic-btn svg { width: 18px; height: 18px; }
-    /* Mic active: pulsing red while listening */
-    .mic-btn.mic-listening {
-      color: #ff453a;
-      animation: micPulse 1s ease-in-out infinite;
-    }
-    @keyframes micPulse {
-      0%,100%{ opacity:1; transform:scale(1); }
-      50%{ opacity:0.6; transform:scale(0.88); }
-    }
-    /* Speaker active while reading */
+    /* Speaker active */
     .mac-speaking {
       color: var(--accent) !important;
       animation: speakerPulse 1.2s ease-in-out infinite;
     }
-    @keyframes speakerPulse {
-      0%,100%{ opacity:1; }
-      50%{ opacity:0.45; }
+    @keyframes speakerPulse { 0%,100%{opacity:1;} 50%{opacity:0.45;} }
+
+    /* ── 8. TYPING INDICATOR ── */
+    .typing-row { padding: 16px 20px 8px; gap: 8px; }
+    .typing-row .msg-avatar.luna-av { display: none !important; }
+    .typing-bubble {
+      background: none; border: none;
+      padding: 0; display: flex; gap: 6px; align-items: center;
+    }
+    .dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: rgba(255,255,255,0.40);
     }
 
-    /* ── 8. SIDEBAR ── */
-    .drawer-panel { background: #000; border-right: 1px solid rgba(255,255,255,0.07); }
-    .sb-top { padding: 16px 14px 10px; gap: 10px; }
-    .sb-search {
-      flex: 1; background: rgba(255,255,255,0.10);
-      border-radius: 100px; padding: 10px 16px;
+    /* ── 9. CHAT BAR ── */
+    .chat-bar { padding: 8px 14px 28px; background: var(--bg); }
+
+    /* Chips */
+    .bar-chips { padding: 0 2px 9px; gap: 6px; }
+    .bar-chip {
+      padding: 6px 14px; border-radius: var(--radius-pill);
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      font-size: 12.5px; font-weight: 500;
+      color: var(--text-mid);
+      transition: background .15s, color .15s;
+    }
+    .bar-chip svg { width: 12px; height: 12px; stroke-width: 2; }
+    .bar-chip:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+    .bar-chip.active {
+      background: rgba(124,58,237,0.18);
+      color: #c4a8ff;
+      border-color: rgba(124,58,237,0.35);
+    }
+
+    /* Input pill */
+    .chat-row {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      padding: 8px 8px 8px 16px; gap: 8px;
+      transition: border-color .2s;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+    }
+    .chat-row:focus-within { border-color: rgba(124,58,237,0.45); }
+
+    .plus-btn {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: none; border: none;
+      color: var(--text-dim); flex-shrink: 0;
+      cursor: pointer; transition: color .15s;
+    }
+    .plus-btn:hover { color: var(--text); }
+    .plus-btn svg { width: 18px; height: 18px; stroke-width: 2.5; }
+
+    #chat-input {
+      font-size: 15px; font-weight: 400; color: var(--text);
+      max-height: 160px; overflow-y: auto;
+    }
+    #chat-input::placeholder { color: var(--text-dim); }
+
+    .clear-chat-btn  { display: none !important; }
+    .model-arrow-btn { display: none !important; }
+    .manus-btn       { display: none !important; }
+
+    /* Send button */
+    .csend {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--accent); flex-shrink: 0;
+      box-shadow: 0 2px 12px rgba(124,58,237,0.4);
       border: none;
     }
-    .sb-search input { font-size: 15px; }
-    .sb-edit {
-      width: 36px; height: 36px; border-radius: 50%;
-      background: rgba(255,255,255,0.08); color: #fff;
-    }
-    .sb-edit:hover { background: rgba(255,255,255,0.14); }
-    .sb-item { font-size: 15px; font-weight: 500; color: #fff; padding: 12px 12px; border-radius: 8px; }
-    .sb-item:hover { background: rgba(255,255,255,0.07); }
-    .sb-item svg { color: rgba(255,255,255,0.7); width: 20px; height: 20px; }
-    .sb-thread {
-      padding: 10px 12px; border-radius: 6px;
-      font-size: 14px; color: rgba(255,255,255,0.85); font-weight: 400;
-    }
-    .sb-thread:hover { background: rgba(255,255,255,0.06); }
-    .sb-thread.active-thread { background: rgba(255,255,255,0.09); }
-    .sb-profile {
-      border-top: 1px solid rgba(255,255,255,0.08);
-      padding: 14px 14px;
-    }
-    .sb-avatar {
-      width: 36px; height: 36px; border-radius: 50%;
-      background: rgba(255,255,255,0.15);
-      font-size: 14px; font-weight: 700;
-    }
-    .sb-profile-name { font-size: 15px; font-weight: 500; }
-    .sb-empty-hist { color: rgba(255,255,255,0.3); }
+    .csend:disabled { opacity: .25; box-shadow: none; }
+    .csend svg { width: 15px; height: 15px; stroke-width: 2.2; }
+    .csend.stop-mode { background: var(--error) !important; }
 
-    /* ── 9. SETTINGS — ChatGPT grouped card style ── */
-    .settings-scroll { padding: 16px 14px 40px; background: #000; }
+    /* Mic */
+    .mic-btn {
+      width: 34px; height: 34px; border-radius: 50%; border: none;
+      background: none; color: var(--text-dim);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: color .15s;
+    }
+    .mic-btn:hover { color: var(--text); }
+    .mic-btn svg { width: 17px; height: 17px; }
+    .mic-btn.mic-listening { color: var(--error); animation: micPulse 1s ease-in-out infinite; }
+    @keyframes micPulse { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:.6;transform:scale(.88);} }
+
+    /* Expand */
+    .expand-btn {
+      width: 30px; height: 30px; border-radius: 50%; border: none;
+      background: none; color: var(--text-dim);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: color .15s;
+    }
+    .expand-btn:hover { color: var(--text); }
+    .expand-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+    /* ── 10. EXPAND OVERLAY ── */
+    .expand-overlay {
+      position: fixed; inset: 0; z-index: 500;
+      background: var(--bg);
+      display: none; flex-direction: column;
+    }
+    .expand-overlay.open { display: flex; }
+    .expand-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
+      flex-shrink: 0; background: var(--bg);
+    }
+    .expand-title { font-size: 15px; font-weight: 600; color: var(--text); }
+    .expand-close {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--bg-card-2); border: 1px solid var(--border);
+      color: var(--text); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .expand-close svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.5; }
+    .expand-textarea {
+      flex: 1; background: none; border: none; outline: none;
+      color: var(--text); font-size: 15px; line-height: 1.7;
+      padding: 20px 20px; resize: none; font-family: inherit; font-weight: 400;
+    }
+    .expand-textarea::placeholder { color: var(--text-dim); }
+    .expand-footer {
+      padding: 12px 16px 32px; border-top: 1px solid var(--border);
+      display: flex; justify-content: flex-end; flex-shrink: 0;
+      background: var(--bg);
+    }
+    .expand-send {
+      padding: 12px 28px; background: var(--accent); border: none;
+      border-radius: var(--radius-pill); color: #fff; font-size: 15px;
+      font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+
+    /* ── 11. SCROLL BUTTON ── */
+    .scroll-btn {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--bg-card-2);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+    .scroll-btn svg { width: 14px; height: 14px; stroke-width: 2.5; }
+
+    /* ── 12. SIDEBAR ── */
+    .drawer-panel {
+      background: #050505;
+      border-right: 1px solid var(--border-light);
+      box-shadow: none !important; backdrop-filter: none !important;
+    }
+    .sb-top { padding: 16px 14px 10px; gap: 10px; }
+    .sb-search {
+      flex: 1; background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill); padding: 10px 16px;
+    }
+    .sb-search input { font-size: 14px; font-weight: 400; }
+    .sb-edit {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      color: var(--text-mid);
+    }
+    .sb-edit:hover { background: rgba(255,255,255,0.10); color: var(--text); }
+    .sb-item {
+      font-size: 14.5px; font-weight: 500; color: var(--text);
+      padding: 11px 12px; border-radius: 9px;
+    }
+    .sb-item:hover { background: var(--bg-card); }
+    .sb-item svg { color: var(--text-mid); width: 19px; height: 19px; }
+    .sb-thread {
+      padding: 9px 12px; border-radius: 8px;
+      font-size: 13.5px; color: var(--text-mid); font-weight: 400;
+    }
+    .sb-thread:hover { background: var(--bg-card); color: var(--text); }
+    .sb-thread.active-thread { background: rgba(124,58,237,0.12); color: var(--text); }
+    .sb-profile { border-top: 1px solid var(--border-light); padding: 14px; }
+    .sb-avatar {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: rgba(124,58,237,0.25);
+      font-size: 14px; font-weight: 700;
+      border: 1px solid rgba(124,58,237,0.3);
+    }
+    .sb-profile-name { font-size: 14.5px; font-weight: 500; }
+    .sb-empty-hist { color: var(--text-dim); font-size: 13px; }
+
+    /* ── 13. SETTINGS ── */
+    .settings-scroll { padding: 20px 16px 48px; background: var(--bg); }
     .settings-section {
       background: none; border: none; border-radius: 0;
-      padding: 0; margin-bottom: 24px;
+      padding: 0; margin-bottom: 28px;
     }
     .settings-section-title {
-      font-size: 12px; font-weight: 500;
-      color: rgba(255,255,255,0.40);
-      text-transform: none; letter-spacing: 0;
+      font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--text-dim);
       margin-bottom: 8px; padding: 0 4px;
     }
-    /* Each settings-row becomes a grouped card row */
     .settings-row {
-      background: #1c1c1e;
-      padding: 14px 16px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: var(--bg-card-2);
+      padding: 15px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
       display: flex; align-items: center;
       justify-content: space-between; gap: 12px;
     }
-    /* First row: top rounded corners; last row: bottom rounded, no border */
-    .settings-section .settings-row:first-of-type { border-radius: 12px 12px 0 0; }
-    .settings-section .settings-row:last-of-type  { border-radius: 0 0 12px 12px; border-bottom: none; }
-    .settings-section .settings-row:only-of-type  { border-radius: 12px; border-bottom: none; }
-    .settings-row-info h4 { font-size: 15px; font-weight: 400; color: #fff; }
-    .settings-row-info p { font-size: 13px; color: rgba(255,255,255,0.4); margin-top: 2px; }
-    /* Input rows inside settings */
+    .settings-section .settings-row:first-of-type { border-radius: 14px 14px 0 0; }
+    .settings-section .settings-row:last-of-type  { border-radius: 0 0 14px 14px; border-bottom: none; }
+    .settings-section .settings-row:only-of-type  { border-radius: 14px; border-bottom: none; }
+    .settings-row-info h4 { font-size: 15px; font-weight: 400; color: var(--text); }
+    .settings-row-info p  { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
     .settings-section .settings-row[style*="flex-direction:column"] {
-      background: #1c1c1e; flex-direction: column;
-      align-items: flex-start; padding: 14px 16px; gap: 10px;
+      flex-direction: column; align-items: flex-start;
+      padding: 15px 16px; gap: 10px;
     }
     .settings-input {
-      background: rgba(255,255,255,0.08);
-      border: none; border-radius: 10px;
-      color: #fff; font-size: 14px;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid var(--border); border-radius: 10px;
+      color: var(--text); font-size: 14px; font-weight: 400;
     }
-    .settings-input:focus { border: 1px solid var(--accent); }
-    /* Personality grid buttons */
+    .settings-input:focus { border-color: var(--accent); outline: none; }
     .personality-btn {
-      background: #2c2c2e; border: 1px solid transparent;
-      color: rgba(255,255,255,0.7);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      color: var(--text-mid); font-weight: 400;
     }
-    .personality-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(124,58,237,0.12); }
-    /* Save/logout/install buttons */
+    .personality-btn.active {
+      border-color: var(--accent); color: #c4a8ff;
+      background: rgba(124,58,237,0.12);
+    }
     .save-profile-btn {
       width: 100%; padding: 14px; margin-top: 8px;
       background: var(--accent); border: none;
-      border-radius: 12px; color: #fff; font-size: 15px; font-weight: 600;
-      cursor: pointer;
+      border-radius: 12px; color: #fff;
+      font-size: 15px; font-weight: 600; cursor: pointer;
     }
     .logout-btn {
       width: 100%; padding: 14px; margin-top: 0;
-      background: #1c1c1e; border: none;
-      border-radius: 12px; color: #ff453a;
+      background: var(--bg-card-2); border: none;
+      border-radius: 12px; color: var(--error);
       font-size: 15px; font-weight: 400; cursor: pointer;
       display: flex; align-items: center; justify-content: center; gap: 10px;
     }
     .install-btn {
       width: 100%; padding: 14px; margin-top: 8px;
-      background: rgba(255,255,255,0.08); border: none;
-      border-radius: 12px; color: #fff; font-size: 15px; cursor: pointer;
+      background: var(--bg-card-2); border: 1px solid var(--border);
+      border-radius: 12px; color: var(--text);
+      font-size: 15px; cursor: pointer;
     }
-    /* Screen header for settings */
-    .screen-hdr { background: #000; border-bottom: 1px solid rgba(255,255,255,0.08); }
-    .back-btn { background: rgba(255,255,255,0.10); border-radius: 50%; border: none; }
+    .screen-hdr {
+      background: var(--bg);
+      border-bottom: 1px solid var(--border-light);
+    }
+    .back-btn {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+    }
     .screen-hdr-title { font-size: 17px; font-weight: 600; }
 
-    /* ── 10. SCROLL BTN ── */
-    .scroll-btn {
-      width: 32px; height: 32px; border-radius: 50%;
-      border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.8);
+    /* ── 14. APP CARDS ── */
+    .app-card {
+      background: var(--bg-card) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius-card) !important;
+      padding: 18px 15px !important;
+      box-shadow: none !important; backdrop-filter: none !important;
+      transition: background .2s, border-color .2s !important;
     }
-    .scroll-btn svg { width: 15px; height: 15px; stroke-width: 2.2; }
+    .app-card:hover {
+      background: #1a1a1a !important;
+      border-color: rgba(255,255,255,0.14) !important;
+      transform: none !important;
+    }
+    .app-icon {
+      background: rgba(124,58,237,0.12) !important;
+      border: 1px solid rgba(124,58,237,0.2) !important;
+    }
 
-    /* ── 11. MANUS BAR ── */
-    .manus-btn { display: none !important; }
+    /* ── 15. TOAST ── */
+    .toast {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      backdrop-filter: none !important;
+    }
 
-    /* ── 12. HIDE STARFIELD (clean black bg) ── */
-    #starfield { display: none; }
+    /* ── 16. MODEL SELECTOR + PLUS MENU ── */
+    .model-selector {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+      backdrop-filter: none !important;
+    }
+    .model-option { color: var(--text); font-weight: 400; }
+    .model-option:hover { background: rgba(255,255,255,0.07); }
+    .model-option.active-model {
+      background: rgba(124,58,237,0.15);
+      border-color: rgba(124,58,237,0.4);
+    }
+    .plus-menu {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+      backdrop-filter: none !important;
+    }
+    .plus-menu-item:hover { background: rgba(255,255,255,0.06); }
+    .plus-menu-icon {
+      background: rgba(124,58,237,0.12) !important;
+      border: 1px solid rgba(124,58,237,0.2) !important;
+      box-shadow: none !important;
+    }
 
-    /* ── 13. TOAST ── */
-    .toast { background: #1c1c1e; border-color: rgba(255,255,255,0.12); }
+    /* ── 17. SHARE SHEET + FEEDBACK ── */
+    .share-panel, .feedback-box, .artifact-sheet {
+      background: var(--bg-card-2);
+      border-top: 1px solid var(--border);
+      backdrop-filter: none !important;
+    }
+    .profile-dropdown {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      backdrop-filter: none !important;
+    }
+    .pd-item:hover { background: rgba(255,255,255,0.06); }
 
-    /* ── 14. MODEL SELECTOR + PLUS MENU ── */
-    .model-selector { background: #1c1c1e; border-color: rgba(255,255,255,0.1); }
-    .model-option { color: #fff; }
-    .model-option:hover { background: rgba(255,255,255,0.08); }
-    .model-option.active-model { border-color: var(--accent); background: rgba(124,58,237,0.12); }
-    .plus-menu { background: #1c1c1e; border-color: rgba(255,255,255,0.1); }
-    .plus-menu-item:hover { background: rgba(255,255,255,0.07); }
-
+    /* ── 18. AUTH SCREEN ── */
+    .auth-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+    }
+    .auth-input {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      color: var(--text); font-weight: 400;
+    }
+    .auth-input:focus { border-color: var(--accent); }
 
