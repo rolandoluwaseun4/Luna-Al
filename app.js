@@ -545,7 +545,7 @@
   }
   function clearImage(){selectedImageBase64=null;document.getElementById('img-upload').value='';document.getElementById('img-preview-bar').style.display='none';}
   homeInput.addEventListener('input',()=>{homeSend.disabled=!homeInput.value.trim();});
-  // Enter creates new line — send only via button
+  homeInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!homeSend.disabled)startChat(homeInput.value.trim());}});
   homeSend.addEventListener('click',()=>{if(homeInput.value.trim())startChat(homeInput.value.trim());});
   messagesEl.addEventListener('scroll',()=>{
     const btn=document.getElementById('scroll-btn');
@@ -554,16 +554,44 @@
   });
   chatInput.addEventListener('input',()=>{
     chatInput.style.height='auto';
-    chatInput.style.height=Math.min(chatInput.scrollHeight,90)+'px';
+    chatInput.style.height=Math.min(chatInput.scrollHeight,160)+'px';
     const hasText=!!chatInput.value.trim()||!!selectedImageBase64||!!selectedVideoBase64;
     chatSend.disabled=!hasText||busy;
-    // swap mic ↔ send
     const micBtn=document.getElementById('mic-btn');
+    const expandBtn=document.getElementById('expand-btn');
     if(micBtn){ micBtn.style.display=hasText?'none':'flex'; }
+    if(expandBtn){ expandBtn.style.display=hasText?'flex':'none'; }
     chatSend.style.display=hasText?'flex':'none';
   });
   // Enter creates new line (textarea default) — send only via button
   chatSend.addEventListener('click',send);
+
+  // ── Expand overlay ──────────────────────────────────────────────────────
+  window.openExpandOverlay = function() {
+    const overlay = document.getElementById('expand-overlay');
+    const expandTA = document.getElementById('expand-textarea');
+    if (!overlay || !expandTA) return;
+    expandTA.value = chatInput.value;
+    overlay.classList.add('open');
+    expandTA.focus();
+    expandTA.selectionStart = expandTA.selectionEnd = expandTA.value.length;
+  };
+  window.closeExpandOverlay = function() {
+    const overlay = document.getElementById('expand-overlay');
+    const expandTA = document.getElementById('expand-textarea');
+    if (!overlay || !expandTA) return;
+    chatInput.value = expandTA.value;
+    chatInput.dispatchEvent(new Event('input'));
+    overlay.classList.remove('open');
+  };
+  window.sendFromExpand = function() {
+    const expandTA = document.getElementById('expand-textarea');
+    if (!expandTA) return;
+    chatInput.value = expandTA.value;
+    chatInput.dispatchEvent(new Event('input'));
+    document.getElementById('expand-overlay')?.classList.remove('open');
+    if (!chatSend.disabled) send();
+  };
 
   /* ── Voice: Speech-to-Text (mic button) ── */
   (function initSTT(){
@@ -716,6 +744,7 @@
     chatInput.value='';chatInput.style.height='auto';chatSend.disabled=true;
     chatSend.style.display='none';
     const _m=document.getElementById('mic-btn');if(_m)_m.style.display='flex';
+    const _e=document.getElementById('expand-btn');if(_e)_e.style.display='none';
     clearImage();clearVideo();
     const row=document.createElement('div');row.className='mrow user';
     const av='<div class="msg-avatar user-av">'+(isOwner?'R':'G')+'</div>';
