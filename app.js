@@ -545,7 +545,7 @@
   }
   function clearImage(){selectedImageBase64=null;document.getElementById('img-upload').value='';document.getElementById('img-preview-bar').style.display='none';}
   homeInput.addEventListener('input',()=>{homeSend.disabled=!homeInput.value.trim();});
-  homeInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!homeSend.disabled)startChat(homeInput.value.trim());}});
+  // Enter creates new line — send only via button
   homeSend.addEventListener('click',()=>{if(homeInput.value.trim())startChat(homeInput.value.trim());});
   messagesEl.addEventListener('scroll',()=>{
     const btn=document.getElementById('scroll-btn');
