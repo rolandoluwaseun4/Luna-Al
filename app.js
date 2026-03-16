@@ -1,4 +1,7 @@
 
+  // Mark as visited so landing page skips to app on return visits
+  try { localStorage.setItem('luna_visited', '1'); } catch(e) {}
+
   // ── Sources panel CSS ─────────────────────────────────────
   (function(){
     const s = document.createElement('style');
