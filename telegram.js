@@ -9,6 +9,41 @@ const bcrypt = require('bcryptjs');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const helmet = require('helmet');
+const crypto = require('crypto');
+const { initNotifications, sendReplyNotification } = require('./notifications');
+
+// ── Resend email client ───────────────────────────────────────
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+async function sendEmail({ to, subject, html }) {
+  if (!RESEND_API_KEY) { console.warn('[Email] RESEND_API_KEY not set — skipping'); return; }
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: 'Luna AI <onboarding@resend.dev>', to, subject, html })
+    });
+    if (!res.ok) console.warn('[Email] Resend error:', await res.text());
+    else console.log(`[Email] Sent to ${to}: ${subject}`);
+  } catch (err) { console.warn('[Email] Failed:', err.message); }
+}
+
+// ── Guest fingerprint schema ──────────────────────────────────
+// Tracks anonymous guests by hashed IP+UA to prevent limit resets via refresh
+const guestFingerprintSchema = new mongoose.Schema({
+  fingerprint:   { type: String, required: true, unique: true },
+  dailyMessages: { type: Number, default: 0 },
+  dailyImages:   { type: Number, default: 0 },
+  lastReset:     { type: Date, default: null },
+  firstSeen:     { type: Date, default: Date.now },
+  lastSeen:      { type: Date, default: Date.now },
+});
+const GuestFingerprint = mongoose.model('GuestFingerprint', guestFingerprintSchema);
+
+function getGuestFingerprint(req) {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const ua = req.headers['user-agent'] || 'unknown';
+  return crypto.createHash('sha256').update(ip + ua).digest('hex');
+}
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected'))
@@ -28,7 +63,13 @@ const accountSchema = new mongoose.Schema({
   dailyImages: { type: Number, default: 0 },
   dailyProMessages: { type: Number, default: 0 },
   dailyVideos: { type: Number, default: 0 },
-  lastReset: { type: Date, default: null }
+  lastReset: { type: Date, default: null },
+  // Email verification
+  emailVerified:      { type: Boolean, default: false },
+  emailVerifyToken:   { type: String, default: null },
+  emailVerifyExpires: { type: Date, default: null },
+  // Known login IPs — for suspicious login detection
+  knownIPs: { type: [String], default: [] },
 });
 const Account = mongoose.model('Account', accountSchema);
 
@@ -127,8 +168,47 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 
+// ── Refresh token store ───────────────────────────────────────
+const refreshTokenSchema = new mongoose.Schema({
+  userId:    { type: String, required: true },
+  token:     { type: String, required: true, unique: true },
+  expiresAt: { type: Date, required: true },
+  createdAt: { type: Date, default: Date.now },
+  // Device/session info for owner security
+  ip:        { type: String, default: 'unknown' },
+  userAgent: { type: String, default: 'unknown' },
+  device:    { type: String, default: 'unknown' }, // parsed friendly name
+  lastUsed:  { type: Date, default: Date.now },
+});
+refreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+const RefreshToken = mongoose.model('RefreshToken', refreshTokenSchema);
+
+// Access token: short-lived (7 days)
 function signToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+}
+
+// Parse a friendly device name from user-agent string
+function parseDevice(ua = '') {
+  if (!ua) return 'Unknown device';
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/iPad/i.test(ua)) return 'iPad';
+  if (/Android/i.test(ua)) return 'Android';
+  if (/Windows/i.test(ua)) return 'Windows PC';
+  if (/Macintosh/i.test(ua)) return 'Mac';
+  if (/Linux/i.test(ua)) return 'Linux';
+  return 'Unknown device';
+}
+
+// Refresh token: long-lived (30 days), stored in DB with device info
+async function createRefreshToken(userId, req = null) {
+  const token    = crypto.randomBytes(40).toString('hex');
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const ip       = req ? (req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim() : 'unknown';
+  const userAgent = req ? (req.headers['user-agent'] || 'unknown') : 'unknown';
+  const device   = parseDevice(userAgent);
+  await RefreshToken.create({ userId: String(userId), token, expiresAt, ip, userAgent, device, lastUsed: new Date() });
+  return token;
 }
 
 function verifyToken(token) {
@@ -147,10 +227,11 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// Auth rate limiter - strict to prevent brute force
+// Auth rate limiter — strict: 5 attempts per 15 min per IP
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 10,
-  message: { error: 'Too many attempts, try again in 15 minutes' }
+  windowMs: 15 * 60 * 1000, max: 5,
+  message: { error: 'Too many attempts — try again in 15 minutes' },
+  standardHeaders: true, legacyHeaders: false,
 });
 
 
@@ -315,15 +396,37 @@ function needsWebSearch(message) {
 }
 
 // ── Daily message limit ──────────────────────────────────────
-const DAILY_FREE_LIMIT = 20;
+const DAILY_FREE_LIMIT  = 20;
+const DAILY_GUEST_LIMIT = 10; // guests get fewer messages — fingerprint-tracked
 const DAILY_IMAGE_LIMIT = 5;
-const DAILY_PRO_LIMIT = 10;
+const DAILY_PRO_LIMIT   = 10;
 const DAILY_VIDEO_LIMIT = 1;
 
 // VIP users — unlimited access, no daily limits, full agent mode
 const VIP_EMAILS = [
   'oluwapelumip821@gmail.com',
 ];
+
+async function checkGuestLimit(fingerprint) {
+  if (!fingerprint) return { allowed: true };
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  let gf = await GuestFingerprint.findOne({ fingerprint });
+  if (!gf) {
+    gf = await GuestFingerprint.create({ fingerprint, dailyMessages: 0, lastSeen: now });
+  }
+  // Reset if new day
+  const lastReset = gf.lastReset ? new Date(gf.lastReset).toISOString().slice(0, 10) : null;
+  if (lastReset !== todayStr) {
+    await GuestFingerprint.findOneAndUpdate({ fingerprint }, { dailyMessages: 0, dailyImages: 0, lastReset: now });
+    gf.dailyMessages = 0; gf.dailyImages = 0;
+  }
+  if (gf.dailyMessages >= DAILY_GUEST_LIMIT) {
+    return { allowed: false, message: `You've used your ${DAILY_GUEST_LIMIT} free guest messages for today. Sign up free to get ${DAILY_FREE_LIMIT} messages daily.` };
+  }
+  await GuestFingerprint.findOneAndUpdate({ fingerprint }, { $inc: { dailyMessages: 1 }, lastSeen: now, lastReset: gf.lastReset || now });
+  return { allowed: true };
+}
 
 async function checkDailyLimit(account, type = 'message') {
   if (!account || account.role === 'owner') return { allowed: true };
@@ -927,7 +1030,17 @@ app.post("/chat", requireAuth, async (req, res) => {
   // ✅ userId always comes from verified JWT, never from client body
   const uid = String(req.user.id);
   const isOwner = req.user.role === 'owner';
+  const isGuest = req.user.role === 'guest';
   const tid = String(threadId || uid + '_default');
+
+  // ── Guest fingerprint daily limit ────────────────────────────
+  if (isGuest) {
+    const fingerprint = req.user.fingerprint || getGuestFingerprint(req);
+    const guestCheck = await checkGuestLimit(fingerprint);
+    if (!guestCheck.allowed) {
+      return sendDone({ reply: guestCheck.message });
+    }
+  }
 
   // ── Owner impersonation intercept ────────────────────────────────────────
   // Hard backend check — never reaches the AI model if triggered.
@@ -1431,18 +1544,49 @@ app.post('/auth/register', authLimiter, async (req, res) => {
     const exists = await Account.findOne({ $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }] });
     if (exists) return res.status(409).json({ error: exists.email === email.toLowerCase() ? 'Email already registered' : 'Username already taken' });
     const passwordHash = await bcrypt.hash(password, 12);
-    // Check if this is the owner account
     const isOwner = email.toLowerCase() === (process.env.OWNER_EMAIL || '').toLowerCase();
+
+    // Generate email verification token
+    const emailVerifyToken   = crypto.randomBytes(32).toString('hex');
+    const emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
     const account = new Account({
       username: username.toLowerCase(),
       email: email.toLowerCase(),
       passwordHash,
       displayName: displayName || username,
-      role: isOwner ? 'owner' : 'user'
+      role: isOwner ? 'owner' : 'user',
+      emailVerified: isOwner, // owner is auto-verified
+      emailVerifyToken: isOwner ? null : emailVerifyToken,
+      emailVerifyExpires: isOwner ? null : emailVerifyExpires,
     });
     await account.save();
-    const token = signToken({ id: account._id, username: account.username, role: account.role });
-    res.status(201).json({ token, user: { id: account._id, username: account.username, displayName: account.displayName, role: account.role } });
+
+    // Send verification email (fire and forget)
+    if (!isOwner) {
+      const verifyUrl = `${process.env.BACKEND_URL}/auth/verify-email?token=${emailVerifyToken}`;
+      sendEmail({
+        to: email.toLowerCase(),
+        subject: 'Verify your Luna AI account',
+        html: `
+          <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#000;color:#fff;border-radius:16px;">
+            <h2 style="font-size:24px;font-weight:700;margin-bottom:8px;">Welcome to Luna 🌙</h2>
+            <p style="color:rgba(255,255,255,0.65);margin-bottom:24px;">Click the button below to verify your email address. This link expires in 24 hours.</p>
+            <a href="${verifyUrl}" style="display:inline-block;padding:14px 28px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:100px;font-weight:600;font-size:15px;">Verify my email</a>
+            <p style="color:rgba(255,255,255,0.35);font-size:12px;margin-top:24px;">If you didn't create a Luna account, ignore this email.</p>
+          </div>
+        `
+      }).catch(() => {});
+    }
+
+    const accessToken  = signToken({ id: account._id, username: account.username, role: account.role });
+    const refreshToken = await createRefreshToken(account._id, req);
+    res.status(201).json({
+      token: accessToken,
+      refreshToken,
+      emailVerified: account.emailVerified,
+      user: { id: account._id, username: account.username, displayName: account.displayName, role: account.role }
+    });
   } catch (err) {
     console.error('Register error:', err.message);
     res.status(500).json({ error: 'Registration failed' });
@@ -1458,10 +1602,63 @@ app.post('/auth/login', authLimiter, async (req, res) => {
     if (!account) return res.status(401).json({ error: 'Invalid email or password' });
     const valid = await bcrypt.compare(password, account.passwordHash);
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
-    account.lastSeen = new Date();
+
+    const ip       = (req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+    const ua       = req.headers['user-agent'] || 'unknown';
+    const device   = parseDevice(ua);
+    const now      = new Date();
+    const timeStr  = now.toUTCString();
+
+    // ── Owner login alert ──────────────────────────────────────
+    if (account.role === 'owner') {
+      const isNewIP   = !account.knownIPs.includes(ip);
+      const suspicious = isNewIP && account.knownIPs.length > 0;
+
+      // Send alert email regardless — always notify owner of logins
+      const ownerEmail = process.env.OWNER_EMAIL;
+      if (ownerEmail) {
+        sendEmail({
+          to: ownerEmail,
+          subject: suspicious
+            ? '⚠️ New device login to your Luna account'
+            : '🔐 Luna owner account login',
+          html: `
+            <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#000;color:#fff;border-radius:16px;">
+              <h2 style="font-size:22px;font-weight:700;margin-bottom:6px;color:${suspicious ? '#f59e0b' : '#a855f7'};">
+                ${suspicious ? '⚠️ New device detected' : '🔐 Owner login'}
+              </h2>
+              <p style="color:rgba(255,255,255,0.55);margin-bottom:24px;">
+                ${suspicious ? 'Your Luna owner account was accessed from a new device or location.' : 'Your Luna owner account was just accessed.'}
+              </p>
+              <table style="width:100%;border-collapse:collapse;">
+                <tr><td style="padding:10px 0;color:rgba(255,255,255,0.4);font-size:13px;border-bottom:1px solid rgba(255,255,255,0.08);">Time</td><td style="padding:10px 0;font-size:13px;text-align:right;">${timeStr}</td></tr>
+                <tr><td style="padding:10px 0;color:rgba(255,255,255,0.4);font-size:13px;border-bottom:1px solid rgba(255,255,255,0.08);">Device</td><td style="padding:10px 0;font-size:13px;text-align:right;">${device}</td></tr>
+                <tr><td style="padding:10px 0;color:rgba(255,255,255,0.4);font-size:13px;border-bottom:1px solid rgba(255,255,255,0.08);">IP Address</td><td style="padding:10px 0;font-size:13px;text-align:right;">${ip}</td></tr>
+                <tr><td style="padding:10px 0;color:rgba(255,255,255,0.4);font-size:13px;">Status</td><td style="padding:10px 0;font-size:13px;text-align:right;color:${suspicious ? '#f59e0b' : '#22c55e'};">${suspicious ? '⚠️ New device' : '✓ Known device'}</td></tr>
+              </table>
+              ${suspicious ? `<div style="margin-top:20px;padding:16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;font-size:13px;color:rgba(255,255,255,0.75);">If this wasn't you, change your password immediately and revoke all sessions at <a href="${process.env.BACKEND_URL}/auth/sessions" style="color:#a855f7;">your sessions page</a>.</div>` : ''}
+            </div>`
+        }).catch(() => {});
+      }
+
+      // Add IP to known list if new
+      if (isNewIP) {
+        await Account.findByIdAndUpdate(account._id, {
+          $addToSet: { knownIPs: ip }
+        });
+      }
+    }
+
+    account.lastSeen = now;
     await account.save();
-    const token = signToken({ id: account._id, username: account.username, role: account.role });
-    res.json({ token, user: { id: account._id, username: account.username, displayName: account.displayName, role: account.role } });
+    const accessToken  = signToken({ id: account._id, username: account.username, role: account.role });
+    const refreshToken = await createRefreshToken(account._id, req);
+    res.json({
+      token: accessToken,
+      refreshToken,
+      emailVerified: account.emailVerified,
+      user: { id: account._id, username: account.username, displayName: account.displayName, role: account.role }
+    });
   } catch (err) {
     console.error('Login error:', err.message);
     res.status(500).json({ error: 'Login failed' });
@@ -1473,17 +1670,166 @@ app.get('/auth/me', requireAuth, async (req, res) => {
   try {
     const account = await Account.findById(req.user.id).select('-passwordHash');
     if (!account) return res.status(404).json({ error: 'User not found' });
-    res.json({ user: { id: account._id, username: account.username, displayName: account.displayName, role: account.role } });
+    res.json({ user: { id: account._id, username: account.username, displayName: account.displayName, role: account.role, emailVerified: account.emailVerified } });
   } catch (err) {
     res.status(500).json({ error: 'Could not fetch user' });
   }
 });
 
-// ── Guest token (no account needed) ──────────────────────────
+// ── Refresh access token ──────────────────────────────────────
+app.post('/auth/refresh', authLimiter, async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
+  try {
+    const stored = await RefreshToken.findOne({ token: refreshToken, expiresAt: { $gt: new Date() } });
+    if (!stored) return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    const account = await Account.findById(stored.userId).select('-passwordHash');
+    if (!account) return res.status(401).json({ error: 'Account not found' });
+    // Rotate: delete old, issue new
+    await RefreshToken.deleteOne({ _id: stored._id });
+    const newAccessToken  = signToken({ id: account._id, username: account.username, role: account.role });
+    const newRefreshToken = await createRefreshToken(account._id);
+    res.json({ token: newAccessToken, refreshToken: newRefreshToken });
+  } catch (err) {
+    console.error('Refresh error:', err.message);
+    res.status(500).json({ error: 'Could not refresh token' });
+  }
+});
+
+// ── Logout (invalidate refresh token) ────────────────────────
+app.post('/auth/logout', async (req, res) => {
+  const { refreshToken } = req.body;
+  if (refreshToken) {
+    await RefreshToken.deleteOne({ token: refreshToken }).catch(() => {});
+  }
+  res.json({ success: true });
+});
+
+// ── List active sessions (owner only) ────────────────────────
+app.get('/auth/sessions', requireAuth, async (req, res) => {
+  if (req.user.role !== 'owner') return res.status(403).json({ error: 'Owner only' });
+  try {
+    const sessions = await RefreshToken.find({
+      userId: String(req.user.id),
+      expiresAt: { $gt: new Date() }
+    }).sort({ lastUsed: -1 }).lean();
+
+    res.json({
+      sessions: sessions.map(s => ({
+        id: s._id,
+        device: s.device || 'Unknown device',
+        ip: s.ip || 'unknown',
+        createdAt: s.createdAt,
+        lastUsed: s.lastUsed,
+        expiresAt: s.expiresAt,
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load sessions' });
+  }
+});
+
+// ── Kill a specific session (owner only) ─────────────────────
+app.delete('/auth/sessions/:id', requireAuth, async (req, res) => {
+  if (req.user.role !== 'owner') return res.status(403).json({ error: 'Owner only' });
+  try {
+    await RefreshToken.findOneAndDelete({ _id: req.params.id, userId: String(req.user.id) });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not revoke session' });
+  }
+});
+
+// ── Kill ALL sessions except current (owner only) ─────────────
+app.delete('/auth/sessions', requireAuth, async (req, res) => {
+  if (req.user.role !== 'owner') return res.status(403).json({ error: 'Owner only' });
+  const { keepToken } = req.body; // pass current refreshToken to keep it
+  try {
+    const query = { userId: String(req.user.id) };
+    if (keepToken) {
+      const current = await RefreshToken.findOne({ token: keepToken });
+      if (current) query._id = { $ne: current._id };
+    }
+    await RefreshToken.deleteMany(query);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not revoke sessions' });
+  }
+});
+
+// ── Email verification ────────────────────────────────────────
+app.get('/auth/verify-email', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).send('<p>Invalid verification link.</p>');
+  try {
+    const account = await Account.findOne({
+      emailVerifyToken: token,
+      emailVerifyExpires: { $gt: new Date() }
+    });
+    if (!account) {
+      return res.status(400).send(`
+        <div style="font-family:sans-serif;text-align:center;padding:60px 24px;background:#000;color:#fff;min-height:100vh;">
+          <h2>Link expired or invalid</h2>
+          <p style="color:rgba(255,255,255,0.5);">Request a new verification email from the Luna app.</p>
+        </div>`);
+    }
+    account.emailVerified    = true;
+    account.emailVerifyToken   = null;
+    account.emailVerifyExpires = null;
+    await account.save();
+    res.send(`
+      <div style="font-family:sans-serif;text-align:center;padding:60px 24px;background:#000;color:#fff;min-height:100vh;">
+        <h2 style="font-size:28px;font-weight:700;">Email verified ✓</h2>
+        <p style="color:rgba(255,255,255,0.6);margin-top:8px;">Your Luna account is now fully verified.</p>
+        <a href="${process.env.FRONTEND_URL || 'https://rolandoluwaseun4.github.io/Luna-Al/app.html'}"
+           style="display:inline-block;margin-top:28px;padding:14px 28px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:100px;font-weight:600;">
+          Open Luna
+        </a>
+      </div>`);
+  } catch (err) {
+    res.status(500).send('<p>Verification failed. Please try again.</p>');
+  }
+});
+
+// ── Resend verification email ─────────────────────────────────
+app.post('/auth/resend-verification', requireAuth, authLimiter, async (req, res) => {
+  try {
+    const account = await Account.findById(req.user.id);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+    if (account.emailVerified) return res.json({ message: 'Already verified' });
+    const emailVerifyToken   = crypto.randomBytes(32).toString('hex');
+    const emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    account.emailVerifyToken   = emailVerifyToken;
+    account.emailVerifyExpires = emailVerifyExpires;
+    await account.save();
+    const verifyUrl = `${process.env.BACKEND_URL}/auth/verify-email?token=${emailVerifyToken}`;
+    await sendEmail({
+      to: account.email,
+      subject: 'Verify your Luna AI account',
+      html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#000;color:#fff;border-radius:16px;">
+        <h2 style="font-size:24px;font-weight:700;margin-bottom:8px;">Verify your email</h2>
+        <p style="color:rgba(255,255,255,0.65);margin-bottom:24px;">Click below to verify your Luna account. Link expires in 24 hours.</p>
+        <a href="${verifyUrl}" style="display:inline-block;padding:14px 28px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:100px;font-weight:600;">Verify my email</a>
+      </div>`
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not send verification email' });
+  }
+});
+
+// ── Guest token with fingerprint tracking ────────────────────
 app.post('/auth/guest', async (req, res) => {
   const { guestId } = req.body;
   const id = String(guestId || 'guest_' + Date.now()).replace(/[^a-zA-Z0-9_\-]/g,'').substring(0,64);
-  const token = signToken({ id, username: id, role: 'guest' });
+  const fingerprint = getGuestFingerprint(req);
+  // Ensure fingerprint record exists
+  await GuestFingerprint.findOneAndUpdate(
+    { fingerprint },
+    { $set: { lastSeen: new Date() }, $setOnInsert: { fingerprint, firstSeen: new Date() } },
+    { upsert: true }
+  ).catch(() => {});
+  const token = signToken({ id, username: id, role: 'guest', fingerprint });
   res.json({ token, user: { id, username: id, role: 'guest' } });
 });
 
@@ -1577,7 +1923,6 @@ app.get('/admin', adminLimiter, async (req, res) => {
 
 
 // ── Twitter/X Integration ─────────────────────────────────────
-const crypto = require('crypto');
 
 function twitterOAuthHeader(method, url, params, apiKey, apiSecret, accessToken, accessSecret) {
   const oauthParams = {
