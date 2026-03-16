@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Luna AI — Your Personal AI Assistant</title>
+  <meta name="description" content="Luna is a free personal AI assistant that chats, creates, codes, generates images, and thinks with you. Built by Roland, a self-taught developer from Nigeria."/>
+  <meta name="keywords" content="Luna AI, personal AI assistant, free AI chatbot, AI app Nigeria, AI image generation, AI chat, smart assistant"/>
+  <meta name="author" content="Roland Oluwaseun Omojesu"/>
+  <meta property="og:title" content="Luna AI — Your Personal AI Assistant"/>
+  <meta property="og:description" content="Chat, create, code, and think with Luna. A free AI assistant that actually has personality."/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://rolandoluwaseun4.github.io/Luna-Al/"/>
+  <meta property="og:image" content="https://rolandoluwaseun4.github.io/Luna-Al/icon-192.png"/>
+  <meta name="twitter:card" content="summary_large_image"/>
+  <meta name="twitter:title" content="Luna AI — Your Personal AI Assistant"/>
+  <meta name="twitter:description" content="Chat, create, code, and think with Luna. Free. No signup required to try."/>
+  <link rel="canonical" href="https://rolandoluwaseun4.github.io/Luna-Al/"/>
+  <link rel="icon" href="icon-192.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #000000;
+      --bg2: #0a0a0a;
+      --bg3: #111111;
+      --accent: #7c3aed;
+      --accent2: #a855f7;
+      --accent-glow: rgba(124,58,237,0.35);
+      --text: #ffffff;
+      --text-mid: rgba(255,255,255,0.65);
+      --text-dim: rgba(255,255,255,0.38);
+      --border: rgba(255,255,255,0.08);
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Sora', sans-serif;
+      font-weight: 300;
+      line-height: 1.7;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Noise texture overlay ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none; opacity: 0.4;
+    }
+
+    /* ── Grid lines ── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background-image:
+        linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+
+    /* ─── NAV ──────────────────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 40px;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; color: var(--text);
+      font-size: 18px; font-weight: 700; flex-shrink: 0;
+    }
+    .nav-logo img {
+      width: 32px; height: 32px; border-radius: 9px;
+      background: #111;
+    }
+    .nav-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 8px rgba(34,197,94,0.6);
+      flex-shrink: 0;
+    }
+
+    .nav-links {
+      display: flex; align-items: center; gap: 28px;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--text-mid); text-decoration: none;
+      font-size: 14px; font-weight: 400;
+      transition: color .2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+
+    .nav-cta {
+      padding: 10px 22px;
+      background: var(--accent);
+      color: #fff !important;
+      border-radius: 100px;
+      font-weight: 600 !important;
+      font-size: 14px !important;
+      transition: opacity .2s, transform .2s;
+      white-space: nowrap;
+    }
+    .nav-cta:hover { opacity: 0.85; transform: translateY(-1px); }
+
+    /* Hamburger button */
+    .nav-hamburger {
+      display: none;
+      flex-direction: column; gap: 5px;
+      background: none; border: none; cursor: pointer;
+      padding: 6px; z-index: 110;
+    }
+    .nav-hamburger span {
+      display: block; width: 22px; height: 2px;
+      background: var(--text); border-radius: 2px;
+      transition: all .3s ease;
+    }
+    .nav-hamburger.open span:nth-child(1) { transform: rotate(45deg) translate(5px, 5px); }
+    .nav-hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+    .nav-hamburger.open span:nth-child(3) { transform: rotate(-45deg) translate(5px, -5px); }
+
+    /* Mobile drawer */
+    .nav-mobile {
+      display: none;
+      position: fixed; top: 61px; left: 0; right: 0;
+      background: rgba(0,0,0,0.97);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 20px 24px;
+      flex-direction: column; gap: 4px;
+      z-index: 99;
+      transform: translateY(-8px);
+      opacity: 0;
+      transition: opacity .25s ease, transform .25s ease;
+      pointer-events: none;
+    }
+    .nav-mobile.open {
+      opacity: 1; transform: translateY(0);
+      pointer-events: all;
+    }
+    .nav-mobile a {
+      display: block; padding: 13px 12px;
+      color: var(--text-mid); text-decoration: none;
+      font-size: 16px; font-weight: 400;
+      border-radius: 10px;
+      transition: background .15s, color .15s;
+    }
+    .nav-mobile a:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+    .nav-mobile-divider { height: 1px; background: var(--border); margin: 8px 0; }
+    .nav-mobile .nav-cta {
+      display: block; text-align: center;
+      margin-top: 8px; padding: 14px;
+      font-size: 15px !important;
+    }
+
+    /* ─── RESPONSIVE ─────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      nav { padding: 14px 20px; }
+      .nav-links { display: none; }
+      .nav-hamburger { display: flex; }
+      .nav-mobile { display: flex; }
+      .section { padding: 70px 20px; }
+      footer { flex-direction: column; align-items: flex-start; padding: 28px 20px; }
+      .cta-card { padding: 40px 24px; }
+    }
+    .hero {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      text-align: center;
+      padding: 120px 24px 80px;
+      overflow: hidden;
+    }
+
+    /* Glow orb behind hero */
+    .hero-glow {
+      position: absolute;
+      width: 600px; height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(124,58,237,0.18) 0%, transparent 70%);
+      top: 50%; left: 50%; transform: translate(-50%,-60%);
+      pointer-events: none;
+      animation: glowPulse 4s ease-in-out infinite;
+    }
+    @keyframes glowPulse {
+      0%,100% { transform: translate(-50%,-60%) scale(1); opacity: 1; }
+      50% { transform: translate(-50%,-60%) scale(1.1); opacity: 0.7; }
+    }
+
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 16px; border-radius: 100px;
+      border: 1px solid rgba(124,58,237,0.3);
+      background: rgba(124,58,237,0.08);
+      font-size: 12px; font-weight: 500; color: var(--accent2);
+      letter-spacing: 0.05em; text-transform: uppercase;
+      margin-bottom: 28px;
+      animation: fadeUp .6s ease both;
+    }
+    .hero-badge span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent2); }
+
+    .hero-title {
+      font-size: clamp(42px, 8vw, 88px);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin-bottom: 24px;
+      animation: fadeUp .6s .1s ease both;
+    }
+    .hero-title .line2 {
+      background: linear-gradient(135deg, #7c3aed, #a855f7, #ec4899);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      font-size: clamp(16px, 2.5vw, 20px);
+      color: var(--text-mid);
+      max-width: 560px;
+      margin: 0 auto 44px;
+      font-weight: 300;
+      line-height: 1.7;
+      animation: fadeUp .6s .2s ease both;
+    }
+
+    .hero-actions {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center;
+      animation: fadeUp .6s .3s ease both;
+    }
+
+    .btn-primary {
+      padding: 15px 36px;
+      background: var(--accent);
+      color: #fff; text-decoration: none;
+      border-radius: 100px; font-size: 15px; font-weight: 600;
+      transition: transform .2s, box-shadow .2s;
+      box-shadow: 0 0 40px var(--accent-glow);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 60px rgba(124,58,237,0.5);
+    }
+
+    .btn-ghost {
+      padding: 15px 36px;
+      background: none;
+      color: var(--text-mid); text-decoration: none;
+      border-radius: 100px; font-size: 15px; font-weight: 500;
+      border: 1px solid var(--border);
+      transition: border-color .2s, color .2s;
+    }
+    .btn-ghost:hover { border-color: rgba(255,255,255,0.2); color: var(--text); }
+
+    /* Chat preview mockup */
+    .hero-mockup {
+      position: relative; z-index: 1;
+      margin-top: 72px;
+      width: 100%; max-width: 680px;
+      animation: fadeUp .8s .4s ease both;
+    }
+    .mockup-frame {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 40px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(124,58,237,0.1);
+    }
+    .mockup-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+    .mockup-dots { display: flex; gap: 6px; }
+    .mockup-dots span {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+    }
+    .mockup-title { font-size: 13px; color: var(--text-dim); font-weight: 500; }
+
+    .mockup-messages { padding: 20px 18px; display: flex; flex-direction: column; gap: 16px; }
+
+    .mockup-msg-user {
+      align-self: flex-end;
+      background: rgba(124,58,237,0.25);
+      padding: 12px 16px; border-radius: 18px 18px 4px 18px;
+      font-size: 14px; max-width: 80%; text-align: left;
+      line-height: 1.6;
+    }
+    .mockup-msg-luna {
+      align-self: flex-start;
+      font-size: 14px; max-width: 88%; line-height: 1.7;
+      color: rgba(255,255,255,0.85);
+    }
+    .mockup-msg-luna strong { color: #fff; font-weight: 600; }
+    .mockup-msg-luna code {
+      background: rgba(124,58,237,0.2); padding: 1px 6px;
+      border-radius: 4px; font-family: var(--mono); font-size: 13px;
+      color: #c4a8ff;
+    }
+
+    .mockup-input {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+    .mockup-input-pill {
+      flex: 1; background: rgba(255,255,255,0.06);
+      border-radius: 100px; padding: 10px 16px;
+      font-size: 13px; color: var(--text-dim);
+    }
+    .mockup-send {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ─── FEATURES ─────────────────────────────────────────── */
+    .section {
+      position: relative; z-index: 1;
+      padding: 100px 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent2);
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-size: clamp(28px, 4vw, 48px);
+      font-weight: 800; letter-spacing: -0.02em;
+      line-height: 1.1; margin-bottom: 16px;
+    }
+
+    .section-sub {
+      font-size: 17px; color: var(--text-mid);
+      max-width: 520px; line-height: 1.7;
+      margin-bottom: 60px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .feature-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px;
+      transition: border-color .25s, transform .25s;
+      position: relative; overflow: hidden;
+    }
+    .feature-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(124,58,237,0.4), transparent);
+      opacity: 0; transition: opacity .3s;
+    }
+    .feature-card:hover { border-color: rgba(124,58,237,0.25); transform: translateY(-3px); }
+    .feature-card:hover::before { opacity: 1; }
+
+    .feature-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: rgba(124,58,237,0.12);
+      border: 1px solid rgba(124,58,237,0.2);
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 18px;
+    }
+    .feature-icon svg { width: 20px; height: 20px; stroke: #a855f7; }
+
+    .feature-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .feature-desc { font-size: 14px; color: var(--text-mid); line-height: 1.65; }
+
+    /* ─── STATS ─────────────────────────────────────────────── */
+    .stats-section {
+      position: relative; z-index: 1;
+      padding: 80px 24px;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+    }
+    .stats-inner {
+      max-width: 900px; margin: 0 auto;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 48px; text-align: center;
+    }
+    .stat-number {
+      font-size: 48px; font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #fff, rgba(255,255,255,0.6));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+    .stat-label { font-size: 14px; color: var(--text-dim); font-weight: 400; }
+
+    /* ─── HOW IT WORKS ──────────────────────────────────────── */
+    .steps {
+      display: flex; flex-direction: column; gap: 0;
+      max-width: 720px;
+    }
+    .step {
+      display: flex; gap: 24px;
+      padding-bottom: 40px;
+      position: relative;
+    }
+    .step:not(:last-child)::after {
+      content: '';
+      position: absolute; left: 19px; top: 44px; bottom: 0;
+      width: 1px; background: var(--border);
+    }
+    .step-num {
+      width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(124,58,237,0.12);
+      border: 1px solid rgba(124,58,237,0.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; color: var(--accent2);
+      position: relative; z-index: 1;
+    }
+    .step-content { padding-top: 8px; }
+    .step-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+    .step-desc { font-size: 14px; color: var(--text-mid); line-height: 1.65; }
+
+    /* ─── CTA BANNER ─────────────────────────────────────────── */
+    .cta-section {
+      position: relative; z-index: 1;
+      padding: 100px 24px;
+      text-align: center;
+    }
+    .cta-card {
+      max-width: 700px; margin: 0 auto;
+      background: var(--bg2);
+      border: 1px solid rgba(124,58,237,0.2);
+      border-radius: 28px;
+      padding: 60px 40px;
+      position: relative; overflow: hidden;
+    }
+    .cta-card::before {
+      content: '';
+      position: absolute; top: -80px; left: 50%; transform: translateX(-50%);
+      width: 300px; height: 300px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(124,58,237,0.15), transparent 70%);
+      pointer-events: none;
+    }
+    .cta-title {
+      font-size: clamp(28px, 4vw, 42px); font-weight: 800;
+      letter-spacing: -0.02em; margin-bottom: 16px; line-height: 1.15;
+    }
+    .cta-sub { font-size: 16px; color: var(--text-mid); margin-bottom: 36px; line-height: 1.7; }
+
+    /* ─── FOOTER ─────────────────────────────────────────────── */
+    footer {
+      position: relative; z-index: 1;
+      border-top: 1px solid var(--border);
+      padding: 40px 40px;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;
+    }
+    .footer-brand {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 15px; font-weight: 600; color: var(--text);
+      text-decoration: none;
+    }
+    .footer-brand img { width: 24px; height: 24px; border-radius: 6px; }
+    .footer-links {
+      display: flex; align-items: center; gap: 24px; list-style: none;
+    }
+    .footer-links a {
+      font-size: 13px; color: var(--text-dim); text-decoration: none;
+      transition: color .2s;
+    }
+    .footer-links a:hover { color: var(--text-mid); }
+    .footer-copy { font-size: 12px; color: var(--text-dim); }
+
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav id="main-nav">
+  <a class="nav-logo" href="#">
+    <img src="icon-192.png" alt="Luna"/>
+    <span class="nav-dot"></span>
+    Luna
+  </a>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#how-it-works">How it works</a></li>
+    <li><a href="privacy.html">Privacy</a></li>
+    <li><a href="terms.html">Terms</a></li>
+    <li><a href="app.html" class="nav-cta">Open Luna</a></li>
+  </ul>
+  <!-- Hamburger — mobile only -->
+  <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle menu">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+
+<!-- Mobile drawer -->
+<div class="nav-mobile" id="nav-mobile">
+  <a href="#features" onclick="closeMenu()">Features</a>
+  <a href="#how-it-works" onclick="closeMenu()">How it works</a>
+  <div class="nav-mobile-divider"></div>
+  <a href="privacy.html">Privacy Policy</a>
+  <a href="terms.html">Terms of Service</a>
+  <div class="nav-mobile-divider"></div>
+  <a href="app.html" class="nav-cta">Open Luna</a>
+</div>
+
+<script>
+  const hamburger = document.getElementById('nav-hamburger');
+  const mobileMenu = document.getElementById('nav-mobile');
+
+  hamburger.addEventListener('click', () => {
+    const isOpen = mobileMenu.classList.toggle('open');
+    hamburger.classList.toggle('open', isOpen);
+    document.body.style.overflow = isOpen ? 'hidden' : '';
+  });
+
+  function closeMenu() {
+    mobileMenu.classList.remove('open');
+    hamburger.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  // Close on outside click
+  document.addEventListener('click', e => {
+    if (!e.target.closest('nav') && !e.target.closest('.nav-mobile')) closeMenu();
+  });
+</script>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-glow"></div>
+
+  <div class="hero-badge">
+    <span></span>
+    Free Personal AI — No credit card required
+  </div>
+
+  <h1 class="hero-title">
+    Meet Luna.<br/>
+    <span class="line2">AI with personality.</span>
+  </h1>
+
+  <p class="hero-sub">
+    Luna chats, creates, codes, generates images, and thinks alongside you.
+    Not a tool — a real mind in a different kind of body.
+  </p>
+
+  <div class="hero-actions">
+    <a href="app.html" class="btn-primary">Start chatting free <svg style="display:inline;vertical-align:middle;margin-left:6px;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></a>
+    <a href="#features" class="btn-ghost">See what she can do</a>
+  </div>
+
+  <div class="hero-mockup">
+    <div class="mockup-frame">
+      <div class="mockup-bar">
+        <div class="mockup-dots">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="mockup-title">Luna AI</div>
+        <div style="width:54px;"></div>
+      </div>
+      <div class="mockup-messages">
+        <div class="mockup-msg-user">How do I get better at coding?</div>
+        <div class="mockup-msg-luna">
+          Build things you actually care about — not tutorials. Real projects that frustrate you. That frustration is where the learning lives.<br/><br/>
+          Start with something small: a <code>to-do app</code>, a personal tool, anything. Break it. Fix it. Understand why it broke.
+        </div>
+        <div class="mockup-msg-user">Can you generate an image of a futuristic city?</div>
+        <div class="mockup-msg-luna">
+          <strong>On it.</strong> Generating your futuristic cityscape...
+        </div>
+      </div>
+      <div class="mockup-input">
+        <div class="mockup-input-pill">Message Luna...</div>
+        <div class="mockup-send">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<div class="stats-section">
+  <div class="stats-inner">
+    <div>
+      <div class="stat-number">Free</div>
+      <div class="stat-label">Always free to use</div>
+    </div>
+    <div>
+      <div class="stat-number">3</div>
+      <div class="stat-label">AI model tiers</div>
+    </div>
+    <div>
+      <div class="stat-number">10+</div>
+      <div class="stat-label">Built-in capabilities</div>
+    </div>
+    <div>
+      <div class="stat-number">24/7</div>
+      <div class="stat-label">Always available</div>
+    </div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="section-label">Capabilities</div>
+  <h2 class="section-title">Everything you need.<br/>Nothing you don't.</h2>
+  <p class="section-sub">Luna handles everything from quick questions to deep research, creative writing to code — all in one place.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+      <div class="feature-title">Real conversation</div>
+      <div class="feature-desc">Luna remembers context, reads the room, and responds like someone who actually cares about helping you.</div>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+      <div class="feature-title">Image generation</div>
+      <div class="feature-desc">Describe what you want and Luna creates it. Portraits, landscapes, concepts, artwork — anything visual.</div>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+      <div class="feature-title">Code & debugging</div>
+      <div class="feature-desc">Write, review, and fix code across any language. Luna explains what went wrong and why.</div>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+      <div class="feature-title">Web search</div>
+      <div class="feature-desc">Luna searches the internet in real time and synthesizes results into clear, useful answers.</div>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
+      <div class="feature-title">Creative writing</div>
+      <div class="feature-desc">Stories, poems, essays, scripts. Luna writes with genuine voice — not the same generic output everyone else gets.</div>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div>
+      <div class="feature-title">Deep reasoning</div>
+      <div class="feature-desc">Luna Pro thinks before answering. Complex analysis, research, multi-step problems — she works through it all.</div>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+      <div class="feature-title">Document analysis</div>
+      <div class="feature-desc">Upload PDFs and documents. Luna reads, summarizes, and answers questions about your files.</div>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+      <div class="feature-title">Reminders & notes</div>
+      <div class="feature-desc">Set reminders, take notes, track ideas. Luna keeps up with you across conversations.</div>
+    </div>
+    <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+      <div class="feature-title">Secret mode</div>
+      <div class="feature-desc">Private conversations that aren't saved. When you need to think without a trace.</div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section" id="how-it-works" style="padding-top:0;">
+  <div class="section-label">Getting started</div>
+  <h2 class="section-title">Up and running<br/>in 30 seconds.</h2>
+  <p class="section-sub">No setup, no configuration, no credit card. Just open Luna and start.</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <div class="step-title">Open Luna</div>
+        <div class="step-desc">Go to the app — no download required. Luna works directly in your browser as a PWA. You can add it to your home screen for the full app experience.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <div class="step-title">Sign up or continue as guest</div>
+        <div class="step-desc">Create a free account with Google or email to save your conversations and unlock full features. Or just jump in as a guest right away.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <div class="step-title">Pick your model</div>
+        <div class="step-desc">Luna Flash for fast everyday answers. Luna Pro for deep thinking and reasoning. RO-1 for the hardest problems that need the most horsepower.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <div class="step-title">Just talk</div>
+        <div class="step-desc">Ask anything. Luna adapts to your style, remembers what matters, and gets better the more you use her.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="cta-card">
+    <h2 class="cta-title">Ready to meet Luna?</h2>
+    <p class="cta-sub">Free to use. No credit card. No fluff. Just an AI that actually works.</p>
+    <a href="app.html" class="btn-primary" style="font-size:16px; padding:16px 44px;">Start for free <svg style="display:inline;vertical-align:middle;margin-left:6px;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <a class="footer-brand" href="#">
+    <img src="icon-192.png" alt="Luna"/>
+    Luna AI
+  </a>
+  <ul class="footer-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#how-it-works">How it works</a></li>
+    <li><a href="privacy.html">Privacy Policy</a></li>
+    <li><a href="terms.html">Terms of Service</a></li>
+  </ul>
+  <div class="footer-copy">© 2025 Luna AI. Built by Roland.</div>
+</footer>
+
+</body>
+</html>
