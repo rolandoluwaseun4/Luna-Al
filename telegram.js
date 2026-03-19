@@ -765,7 +765,25 @@ app.use(cors({
   allowedHeaders: ['Content-Type','Authorization']
 }));
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-app.use(express.json({ limit: '2mb' }));
+
+// ── Request size limits — prevent payload attacks ─────────────
+app.use(express.json({ limit: '100kb' }));        // was 2mb — no route needs more than 100kb of JSON
+app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+
+// ── Request logger — see every hit, method, IP, status ────────
+app.use((req, res, next) => {
+  const start = Date.now();
+  const ip = (req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    const level = res.statusCode >= 500 ? 'ERROR' :
+                  res.statusCode >= 400 ? 'WARN'  : 'INFO';
+    // Flag suspicious patterns
+    const suspicious = res.statusCode === 401 || res.statusCode === 403 || res.statusCode === 429;
+    console.log(`[${level}]${suspicious ? ' [SUSPICIOUS]' : ''} ${req.method} ${req.path} ${res.statusCode} ${ms}ms — ${ip}`);
+  });
+  next();
+});
 
 // Input sanitization
 // Prompt injection patterns — attempts to override system prompt
@@ -1306,7 +1324,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error("AI Error:", error.message);
-    if (!res.headersSent) sendError("AI failed to respond");
+    if (!res.headersSent) sendError("Luna couldn't respond. Please try again.");
   }
 });
 
@@ -1383,7 +1401,7 @@ const pushSubSchema = new mongoose.Schema({
   subscription: { type: mongoose.Schema.Types.Mixed, required: true },
   createdAt: { type: Date, default: Date.now }
 });
-const PushSub = mongoose.models.PushSub || mongoose.model("PushSub", PushSubSchema);
+const PushSub = mongoose.model('PushSub', pushSubSchema);
 
 app.post('/push/subscribe', requireAuth, async (req, res) => {
   try {
@@ -1589,7 +1607,7 @@ app.post('/auth/register', authLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error('Register error:', err.message);
-    res.status(500).json({ error: 'Registration failed' });
+    res.status(500).json({ error: 'Registration failed. Please try again.' });
   }
 });
 
@@ -1661,7 +1679,7 @@ app.post('/auth/login', authLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error('Login error:', err.message);
-    res.status(500).json({ error: 'Login failed' });
+    res.status(500).json({ error: 'Login failed. Please try again.' });
   }
 });
 
@@ -1834,7 +1852,11 @@ app.post('/auth/guest', async (req, res) => {
 });
 
 // ── Admin Dashboard ───────────────────────────────────────────
-const adminLimiter = rateLimit({ windowMs: 15*60*1000, max: 20, message: 'Too many attempts' });
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 5,
+  message: 'Too many attempts',
+  standardHeaders: true, legacyHeaders: false,
+});
 
 app.get('/admin', adminLimiter, async (req, res) => {
   const key = req.query.key;
@@ -2072,3 +2094,17 @@ if (webpush && process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
+
+// ── Global error handler — never leak stack traces to client ──
+app.use((err, req, res, next) => {
+  const ip = (req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+  console.error(`[ERROR] Unhandled — ${req.method} ${req.path} — ${ip}:`, err.message);
+  // Never send internal error details to client
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Something went wrong. Please try again.' });
+});
+
+// ── 404 handler ───────────────────────────────────────────────
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
