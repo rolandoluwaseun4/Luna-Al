@@ -311,6 +311,9 @@
           <button class="clear-chat-btn" onclick="clearChat()" title="Clear chat">
             <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
           </button>
+          <button class="voice-mode-btn" id="voice-mode-btn" title="Voice conversation" onclick="toggleVoiceMode()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
           <button class="mic-btn" id="mic-btn" title="Voice input">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
           </button>
@@ -318,6 +321,26 @@
             <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- VOICE CONVERSATION OVERLAY -->
+    <div class="voice-overlay" id="voice-overlay">
+      <div class="voice-overlay-inner">
+        <button class="voice-close-btn" onclick="stopVoiceMode()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <div class="voice-orb" id="voice-orb">
+          <div class="voice-orb-ring r1"></div>
+          <div class="voice-orb-ring r2"></div>
+          <div class="voice-orb-ring r3"></div>
+          <div class="voice-orb-core">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+          </div>
+        </div>
+        <div class="voice-state-label" id="voice-state-label">Tap to speak</div>
+        <div class="voice-transcript" id="voice-transcript"></div>
+        <div class="voice-hint">Say "Hey Luna" anytime to start</div>
       </div>
     </div>
 
@@ -595,5 +618,6 @@
 
 
 <script src="app.js"></script>
+<script src="voice.js"></script>
 </body>
 </html>

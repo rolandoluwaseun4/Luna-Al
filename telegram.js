@@ -2081,6 +2081,54 @@ if (webpush && process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   scheduleDailyPush();
 }
 
+// ── ElevenLabs TTS proxy ──────────────────────────────────────
+app.post('/voice/speak', requireAuth, async (req, res) => {
+  const { text } = req.body;
+  if (!text || typeof text !== 'string') return res.status(400).json({ error: 'Text required' });
+  if (text.length > 500) return res.status(400).json({ error: 'Text too long' });
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'Voice not configured' });
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/DXFkLCBUTmvXpp2QwZjA/stream', {
+      method: 'POST',
+      headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_turbo_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true }
+      })
+    });
+    if (!r.ok) { console.error('[Voice] ElevenLabs error:', await r.text()); return res.status(502).json({ error: 'Voice generation failed' }); }
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    r.body.pipe(res);
+  } catch(e) {
+    console.error('[Voice] TTS error:', e.message);
+    res.status(500).json({ error: 'Voice service unavailable' });
+  }
+});
+
+// ── ElevenLabs read-aloud for individual messages ─────────────
+app.post('/voice/read', requireAuth, async (req, res) => {
+  const { text } = req.body;
+  if (!text || typeof text !== 'string') return res.status(400).json({ error: 'Text required' });
+  if (text.length > 1000) return res.status(400).json({ error: 'Text too long' });
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'Voice not configured' });
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/DXFkLCBUTmvXpp2QwZjA/stream', {
+      method: 'POST',
+      headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
+      body: JSON.stringify({ text, model_id: 'eleven_turbo_v2', voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
+    });
+    if (!r.ok) return res.status(502).json({ error: 'Voice generation failed' });
+    res.setHeader('Content-Type', 'audio/mpeg');
+    r.body.pipe(res);
+  } catch(e) {
+    res.status(500).json({ error: 'Voice service unavailable' });
+  }
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
 

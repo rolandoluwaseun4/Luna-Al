@@ -1037,6 +1037,12 @@
               // Agent mode sends reply in done payload (no delta chunks) — use it directly
               if(!fullText && json.reply) fullText = json.reply;
               if(!streamStopped) finalizeMessage(fullText, json.document, json.sources||[]);
+              // Resolve voice mode promise if active
+              if (typeof window._voiceResolve === 'function') {
+                const resolve = window._voiceResolve;
+                window._voiceResolve = null;
+                resolve(fullText);
+              }
             }
           }catch(e){}
         }
@@ -1903,9 +1909,14 @@
       const matches = (id === name + '-screen') || (id === name);
       el.classList.toggle('active', matches);
     });
-    // Show share button only when in chat with an active thread
     const shareBtn=document.getElementById('share-chat-btn');
     if(shareBtn) shareBtn.style.display=(name==='chat' && currentThreadId)?'flex':'none';
+    // Voice mode only active on chat screen
+    if (name === 'chat') {
+      if (typeof onChatScreenActive === 'function') onChatScreenActive();
+    } else {
+      if (typeof onChatScreenInactive === 'function') onChatScreenInactive();
+    }
   }
 
   // goHistory defined above
@@ -2085,3 +2096,19 @@
   }
 
   if('serviceWorker' in navigator){navigator.serviceWorker.register('/Luna-Al/sw.js').catch(function(){});}
+
+  // ── Init voice mode ───────────────────────────────────────
+  window._lunaToken = authToken;
+  if (typeof initVoiceMode === 'function') {
+    initVoiceMode({
+      backend: BACKEND_URL,
+      sendMessageFn: async (text) => {
+        return new Promise((resolve) => {
+          window._voiceResolve = resolve;
+          chatInput.value = text;
+          chatInput.dispatchEvent(new Event('input'));
+          send();
+        });
+      }
+    });
+  }
