@@ -11,6 +11,7 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const helmet = require('helmet');
 const crypto = require('crypto');
 const { initNotifications, sendReplyNotification } = require('./notifications');
+const { initWhatsApp } = require('./whatsapp');
 
 // ── Resend email client ───────────────────────────────────────
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
@@ -2128,6 +2129,9 @@ app.post('/voice/read', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Voice service unavailable' });
   }
 });
+
+// ── WhatsApp Content Manager ──────────────────────────────────
+initWhatsApp(app, requireAuth);
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
