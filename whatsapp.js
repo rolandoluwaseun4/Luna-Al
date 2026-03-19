@@ -216,9 +216,21 @@ function clearSchedule() {
 // ── Routes ────────────────────────────────────────────────────
 function registerRoutes(app, requireAuth) {
 
+  // Simple key auth for browser-accessible routes
+  function ownerKeyAuth(req, res, next) {
+    const key = req.query.key || req.headers['x-admin-key'];
+    if (!process.env.ADMIN_KEY || key !== process.env.ADMIN_KEY) {
+      return res.status(401).send(`
+        <div style="font-family:sans-serif;text-align:center;padding:60px;background:#000;color:#fff;min-height:100vh;">
+          <h2>Access denied</h2>
+          <p style="color:rgba(255,255,255,0.5);">Add ?key=YOUR_ADMIN_KEY to the URL</p>
+        </div>`);
+    }
+    next();
+  }
+
   // QR code page
-  app.get('/whatsapp/qr', requireAuth, async (req, res) => {
-    if (req.user.role !== 'owner') return res.status(403).send('Owner only');
+  app.get('/whatsapp/qr', ownerKeyAuth, async (req, res) => {
 
     if (waReady) {
       return res.send(`
@@ -278,9 +290,8 @@ function registerRoutes(app, requireAuth) {
   });
 
   // List and select groups
-  app.get('/whatsapp/groups', requireAuth, async (req, res) => {
-    if (req.user.role !== 'owner') return res.status(403).send('Owner only');
-    if (!waReady) return res.redirect('/whatsapp/qr');
+  app.get('/whatsapp/groups', ownerKeyAuth, async (req, res) => {
+    if (!waReady) return res.redirect(`/whatsapp/qr?key=${req.query.key || ''}`);
 
     try {
       const groups = await sock.groupFetchAllParticipating();
@@ -318,10 +329,11 @@ function registerRoutes(app, requireAuth) {
           </form>
           <div class="ok" id="ok">Saved!</div>
           <script>
+            const KEY = new URLSearchParams(location.search).get('key') || '';
             document.getElementById('f').onsubmit = async(e) => {
               e.preventDefault();
               const checked = [...document.querySelectorAll('input[name=groups]:checked')].map(i=>i.value);
-              const r = await fetch('/whatsapp/groups',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('luna-token')},body:JSON.stringify({groups:checked})});
+              const r = await fetch('/whatsapp/groups?key='+KEY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({groups:checked})});
               if(r.ok) document.getElementById('ok').style.display='block';
             };
           </script>
@@ -332,8 +344,7 @@ function registerRoutes(app, requireAuth) {
   });
 
   // Save group selection
-  app.post('/whatsapp/groups', requireAuth, (req, res) => {
-    if (req.user.role !== 'owner') return res.status(403).json({ error: 'Owner only' });
+  app.post('/whatsapp/groups', ownerKeyAuth, (req, res) => {
     const { groups } = req.body;
     if (!Array.isArray(groups)) return res.status(400).json({ error: 'Invalid' });
     selectedGroups = groups;
