@@ -2144,16 +2144,37 @@
 
   // ── Init voice mode ───────────────────────────────────────
   window._lunaToken = authToken;
+  // Expose voice config for voice.js to pick up after it loads
+  window._voiceConfig = {
+    backend: BACKEND_URL,
+    sendMessageFn: async (text) => {
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          window._voiceResolve = null;
+          reject(new Error('Response timeout'));
+        }, 30000);
+
+        window._voiceResolve = (reply) => {
+          clearTimeout(timeout);
+          resolve(reply);
+        };
+
+        if (!document.getElementById('chat-screen')?.classList.contains('active')) {
+          showScreen('chat');
+        }
+
+        // Force reset busy state so send() doesn't silently return
+        busy = false;
+        chatSend.disabled = false;
+
+        chatInput.value = text;
+        chatInput.dispatchEvent(new Event('input'));
+        setTimeout(() => send(), 80);
+      });
+    }
+  };
+
+  // Init voice if already loaded
   if (typeof initVoiceMode === 'function') {
-    initVoiceMode({
-      backend: BACKEND_URL,
-      sendMessageFn: async (text) => {
-        return new Promise((resolve) => {
-          window._voiceResolve = resolve;
-          chatInput.value = text;
-          chatInput.dispatchEvent(new Event('input'));
-          send();
-        });
-      }
-    });
+    initVoiceMode(window._voiceConfig);
   }

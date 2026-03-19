@@ -322,3 +322,8 @@ window.stopVoiceMode        = stopVoiceMode;
 window.orbTapped            = orbTapped;
 window.onChatScreenActive   = onChatScreenActive;
 window.onChatScreenInactive = onChatScreenInactive;
+
+// Self-init using config already set by app.js
+if (window._voiceConfig) {
+  initVoiceMode(window._voiceConfig);
+}
