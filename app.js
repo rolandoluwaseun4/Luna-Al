@@ -406,7 +406,7 @@
     showScreen('history');
   }
   function goHome(){showScreen('home');}
-  function goSettings(){const tog=document.getElementById('dark-toggle');if(tog)tog.checked=document.documentElement.getAttribute('data-theme')==='dark';showScreen('settings');loadProfile();loadMemories();loadNotifState();}
+  function goSettings(){const tog=document.getElementById('dark-toggle');if(tog)tog.checked=localStorage.getItem('luna-theme')==='light';showScreen('settings');loadProfile();loadMemories();loadNotifState();}
   function goSaved(){showScreen('saved');}
   async function clearChat(){
     if(!confirm('Clear all messages? This cannot be undone.'))return;
@@ -538,7 +538,22 @@
     document.getElementById('drawer').classList.remove('open');
     document.getElementById('hamburger').classList.remove('open');
   }
-  function applyTheme(dark){ /* dark mode only */ }
+  function applyTheme(light) {
+    document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+    localStorage.setItem('luna-theme', light ? 'light' : 'dark');
+    const tog = document.getElementById('dark-toggle');
+    if (tog) tog.checked = light;
+  }
+
+  window.toggleTheme = function(checked) {
+    applyTheme(checked);
+  };
+
+  // Apply saved theme on load
+  (function() {
+    const saved = localStorage.getItem('luna-theme');
+    if (saved === 'light') applyTheme(true);
+  })();
   document.documentElement.setAttribute('data-theme','dark');
   function previewImage(event){
     const file=event.target.files[0];if(!file)return;

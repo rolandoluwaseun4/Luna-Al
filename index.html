@@ -8,16 +8,6 @@
   <meta name="theme-color" content="#050308"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <!-- Returning visitor fast-pass: skip landing, go straight to app -->
-  <script>
-    (function(){
-      try {
-        if (localStorage.getItem('luna_visited')) {
-          window.location.replace('app.html');
-        }
-      } catch(e) {}
-    })();
-  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
@@ -222,7 +212,7 @@
       <div class="home-spacer"></div>
       <div class="home-input-outer">
         <div class="home-input-pill">
-          <textarea id="home-input" placeholder="Ask Luna anything..." rows="1" enterkeyhint="enter"></textarea>
+          <textarea id="home-input" placeholder="Ask Luna anything..." rows="1"></textarea>
           <button class="home-send" id="home-send" disabled>
             <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
           </button>
@@ -317,10 +307,7 @@
           <button class="plus-btn" id="plus-btn" onclick="togglePlusMenu(event)" title="More options">
             <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
-          <textarea id="chat-input" placeholder="Message Luna..." rows="1" enterkeyhint="enter"></textarea>
-          <button class="expand-btn" id="expand-btn" onclick="openExpandOverlay()" title="Expand" style="display:none;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-          </button>
+          <textarea id="chat-input" placeholder="Message Luna..." rows="1"></textarea>
           <button class="clear-chat-btn" onclick="clearChat()" title="Clear chat">
             <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
           </button>
@@ -334,19 +321,7 @@
       </div>
     </div>
 
-    <!-- EXPAND TEXTAREA OVERLAY -->
-    <div class="expand-overlay" id="expand-overlay">
-      <div class="expand-header">
-        <span class="expand-title">Write message</span>
-        <button class="expand-close" onclick="closeExpandOverlay()">
-          <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <textarea class="expand-textarea" id="expand-textarea" placeholder="Message Luna..." enterkeyhint="enter"></textarea>
-      <div class="expand-footer">
-        <button class="expand-send" onclick="sendFromExpand()">Send</button>
-      </div>
-    </div>
+    <!-- IMAGES SCREEN -->
     <div class="screen" id="images-screen">
       <div class="screen-hdr">
         <button class="back-btn" onclick="goHome()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
@@ -432,7 +407,15 @@
       <div class="settings-scroll">
         <div class="settings-section">
           <div class="settings-section-title">Appearance</div>
-          
+          <div class="settings-row">
+            <div class="settings-row-info"><h4>Light Mode</h4><p>Switch between dark and light theme</p></div>
+            <label class="toggle">
+              <input type="checkbox" id="dark-toggle" onchange="toggleTheme(this.checked)"/>
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+        </div>
         <div class="settings-section">
           <div class="settings-section-title">Personalize Luna</div>
           <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:12px;"><div class="settings-row-info"><h4>Your Name</h4><p>Luna will address you by name</p></div><input class="settings-input" id="profile-name" placeholder="e.g. Alex" maxlength="30"/></div>
@@ -487,18 +470,6 @@
           <div class="settings-section-title">About</div>
           <div class="settings-row"><div class="settings-row-info"><h4>Luna AI</h4><p>Personal AI assistant built by Roland</p></div></div>
           <div class="settings-row"><div class="settings-row-info"><h4>Version</h4><p>2.0.0</p></div></div>
-          <div class="settings-row" style="cursor:pointer;" onclick="window.open('index.html','_blank')">
-            <div class="settings-row-info"><h4>About Luna</h4><p>Learn more about what Luna can do</p></div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          </div>
-          <div class="settings-row" style="cursor:pointer;" onclick="window.open('privacy.html','_blank')">
-            <div class="settings-row-info"><h4>Privacy Policy</h4><p>How we handle your data</p></div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          </div>
-          <div class="settings-row" style="cursor:pointer;" onclick="window.open('terms.html','_blank')">
-            <div class="settings-row-info"><h4>Terms of Service</h4><p>Rules for using Luna</p></div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          </div>
         </div>
       </div>
     </div>
