@@ -1609,35 +1609,80 @@
   }
 
   let ttsUtterance = null;
-  function readAloud(enc, btn) {
+  let ttsAudio = null;
+
+  async function readAloud(enc, btn) {
     const text = decodeURIComponent(enc);
-    // If already speaking, cancel
+
+    // If already playing — stop it
+    if (ttsAudio) {
+      ttsAudio.pause();
+      ttsAudio = null;
+      document.querySelectorAll('.mac-speaking').forEach(b => b.classList.remove('mac-speaking'));
+      return;
+    }
     if (ttsUtterance) {
       window.speechSynthesis.cancel();
       ttsUtterance = null;
-      document.querySelectorAll('.mac-speaking').forEach(b=>b.classList.remove('mac-speaking'));
+      document.querySelectorAll('.mac-speaking').forEach(b => b.classList.remove('mac-speaking'));
       return;
     }
-    ttsUtterance = new SpeechSynthesisUtterance(text);
-    // Pick a natural voice if available
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(v=>v.lang.startsWith('en')&&!v.name.includes('Google')&&v.localService)
-                   || voices.find(v=>v.lang.startsWith('en'))
-                   || voices[0];
-    if(preferred) ttsUtterance.voice = preferred;
-    ttsUtterance.rate = 1.0;
-    ttsUtterance.pitch = 1.05;
-    if(btn){ btn.classList.add('mac-speaking'); }
-    ttsUtterance.onend = () => {
-      ttsUtterance = null;
-      document.querySelectorAll('.mac-speaking').forEach(b=>b.classList.remove('mac-speaking'));
-    };
-    ttsUtterance.onerror = () => {
-      ttsUtterance = null;
-      document.querySelectorAll('.mac-speaking').forEach(b=>b.classList.remove('mac-speaking'));
-    };
-    window.speechSynthesis.speak(ttsUtterance);
-    haptic('light');
+
+    if (btn) btn.classList.add('mac-speaking');
+
+    // Strip markdown for cleaner speech
+    const clean = text
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
+      .replace(/`(.*?)`/g, '$1')
+      .replace(/#{1,6}\s/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/\n{2,}/g, '. ')
+      .replace(/\n/g, ' ')
+      .trim()
+      .slice(0, 1000);
+
+    // Try ElevenLabs first
+    try {
+      const res = await fetch(BACKEND_URL + '/voice/read', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ text: clean })
+      });
+
+      if (!res.ok) throw new Error('ElevenLabs failed');
+
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      ttsAudio   = new Audio(url);
+      ttsAudio.playbackRate = 1.05;
+
+      ttsAudio.onended = ttsAudio.onerror = () => {
+        URL.revokeObjectURL(url);
+        ttsAudio = null;
+        document.querySelectorAll('.mac-speaking').forEach(b => b.classList.remove('mac-speaking'));
+      };
+
+      await ttsAudio.play();
+      haptic('light');
+
+    } catch(e) {
+      // Fallback to browser TTS
+      ttsUtterance = new SpeechSynthesisUtterance(clean);
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = voices.find(v => v.lang.startsWith('en') && v.localService)
+                     || voices.find(v => v.lang.startsWith('en'))
+                     || voices[0];
+      if (preferred) ttsUtterance.voice = preferred;
+      ttsUtterance.rate  = 1.0;
+      ttsUtterance.pitch = 1.05;
+      ttsUtterance.onend = ttsUtterance.onerror = () => {
+        ttsUtterance = null;
+        document.querySelectorAll('.mac-speaking').forEach(b => b.classList.remove('mac-speaking'));
+      };
+      window.speechSynthesis.speak(ttsUtterance);
+      haptic('light');
+    }
   }
 
   function likeMac(btn, enc) {

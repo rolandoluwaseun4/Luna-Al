@@ -16,15 +16,16 @@ const ELEVENLABS_VOICE_ID = 'DXFkLCBUTmvXpp2QwZjA';
 const ELEVENLABS_MODEL    = 'eleven_turbo_v2'; // fastest, lowest latency
 
 // ── State ─────────────────────────────────────────────────────
-let voiceModeActive   = false;  // full voice conversation mode on/off
-let isListening       = false;  // mic currently open
-let isSpeaking        = false;  // Luna currently speaking
-let wakeWordActive    = false;  // background wake word listener running
-let currentAudio      = null;   // current HTMLAudioElement playing
-let recognition       = null;   // SpeechRecognition instance
-let wakeRecognition   = null;   // separate instance for wake word
-let voiceBtn          = null;   // the voice mode button in UI
-let onSendMessage     = null;   // callback to send message through Luna's chat
+let voiceModeActive   = false;
+let isListening       = false;
+let isSpeaking        = false;
+let wakeWordActive    = false;
+let currentAudio      = null;
+let recognition       = null;
+let wakeRecognition   = null;
+let voiceBtn          = null;
+let onSendMessage     = null;
+let tooQuickRestarts  = 0; // tracks rapid restarts to throttle
 
 const WAKE_WORDS = ['hey luna', 'hey, luna', 'ok luna', 'okay luna'];
 
@@ -53,7 +54,8 @@ function toggleVoiceMode() {
 
 function startVoiceMode() {
   if (!checkSpeechSupport()) return;
-  voiceModeActive = true;
+  voiceModeActive  = true;
+  tooQuickRestarts = 0;
   updateVoiceBtn(true);
   showVoiceOverlay(true);
   startListening();
@@ -85,14 +87,19 @@ function startListening() {
   recognition.maxAlternatives = 1;
 
   isListening = true;
-  setVoiceState('listening');
+  // Only update UI state if not already showing listening — prevents flicker on restart
+  const overlay = document.getElementById('voice-overlay');
+  if (overlay && overlay.dataset.state !== 'listening') {
+    setVoiceState('listening');
+  }
+  setVoiceTranscript('');
 
   recognition.onresult = (e) => {
+    tooQuickRestarts = 0; // got speech — reset
     const transcript = Array.from(e.results)
       .map(r => r[0].transcript)
       .join('');
 
-    // Show what user is saying in overlay
     setVoiceTranscript(transcript);
 
     if (e.results[e.results.length - 1].isFinal) {
@@ -106,24 +113,24 @@ function startListening() {
   };
 
   recognition.onerror = (e) => {
-    if (e.error === 'no-speech') {
-      // Restart listening if no speech detected
-      if (voiceModeActive && !isSpeaking) {
-        setTimeout(() => startListening(), 500);
-      }
+    if (e.error === 'not-allowed') {
+      showVoiceOverlay(false);
+      stopVoiceMode();
       return;
     }
+    // Ignore no-speech — just restart quietly
+    if (e.error === 'no-speech') return;
     console.warn('[Voice] STT error:', e.error);
-    setVoiceState('idle');
-    if (voiceModeActive) setTimeout(() => startListening(), 1000);
   };
 
   recognition.onend = () => {
     isListening = false;
-    if (voiceModeActive && !isSpeaking) {
-      // Auto-restart listening after Luna speaks
-      setTimeout(() => startListening(), 300);
-    }
+    if (!voiceModeActive || isSpeaking) return;
+    tooQuickRestarts++;
+    const delay = tooQuickRestarts > 3 ? 2500 : 800;
+    setTimeout(() => {
+      if (voiceModeActive && !isSpeaking) startListening();
+    }, delay);
   };
 
   try {
