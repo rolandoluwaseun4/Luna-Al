@@ -6,8 +6,6 @@
     "express": "^5.2.1",
     "web-push": "^3.6.7",
     "express-rate-limit": "^7.0.0",
-    "whatsapp-web.js": "^1.26.0",
-   "qrcode": "^1.5.4",
     "groq-sdk": "^0.37.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.0",
@@ -17,7 +15,10 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "@google/generative-ai": "^0.21.0",
-    "openai": "^4.98.0"
+    "openai": "^4.98.0",
+    "qrcode": "^1.5.4",
+    "@whiskeysockets/baileys": "^6.7.9",
+    "pino": "^9.0.0"
   },
   "scripts": {
     "start": "node telegram.js"
