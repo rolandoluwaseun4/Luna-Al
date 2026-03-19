@@ -2177,3 +2177,22 @@
     [data-theme="light"] .history-expr  { color: #000; }
     [data-theme="light"] .history-result { color: rgba(0,0,0,0.45); }
 
+
+    /* ── Light mode gradient fixes ── */
+    [data-theme="light"] .home-input-outer {
+      background: linear-gradient(to top, #f2f2f7 70%, transparent);
+    }
+    [data-theme="light"] .chat-bar {
+      background: #f2f2f7;
+    }
+
+    /* ── Light mode logo fix ── */
+    [data-theme="light"] .orb-scene ellipse {
+      stroke: #7c3aed;
+      opacity: 0.7;
+    }
+    [data-theme="light"] .luna-orb {
+      background: rgba(124,58,237,0.08);
+      border-radius: 20px;
+      padding: 8px;
+    }
