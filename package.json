@@ -6,6 +6,8 @@
     "express": "^5.2.1",
     "web-push": "^3.6.7",
     "express-rate-limit": "^7.0.0",
+    "whatsapp-web.js": "^1.26.0",
+   "qrcode": "^1.5.4",
     "groq-sdk": "^0.37.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.0",
