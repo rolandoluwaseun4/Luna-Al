@@ -327,7 +327,7 @@
         <button class="voice-close-btn" onclick="stopVoiceMode()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
-        <div class="voice-orb" id="voice-orb">
+        <div class="voice-orb" id="voice-orb" onclick="orbTapped()">
           <div class="voice-orb-ring r1"></div>
           <div class="voice-orb-ring r2"></div>
           <div class="voice-orb-ring r3"></div>
@@ -337,7 +337,7 @@
         </div>
         <div class="voice-state-label" id="voice-state-label">Tap to speak</div>
         <div class="voice-transcript" id="voice-transcript"></div>
-        <div class="voice-hint">Say "Hey Luna" anytime to start</div>
+        <div class="voice-hint" id="voice-hint">Tap the orb to start talking</div>
       </div>
     </div>
 
