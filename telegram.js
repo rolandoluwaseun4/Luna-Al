@@ -1396,24 +1396,13 @@ app.get('/shared/:threadId', async (req, res) => {
 });
 
 // ── Push notification subscription ───────────────────────────
+// PushSub model is defined in notifications.js — use existing model if already compiled
 const pushSubSchema = new mongoose.Schema({
   userId: { type: String, required: true },
   subscription: { type: mongoose.Schema.Types.Mixed, required: true },
   createdAt: { type: Date, default: Date.now }
 });
-const PushSub = mongoose.model('PushSub', pushSubSchema);
-
-app.post('/push/subscribe', requireAuth, async (req, res) => {
-  try {
-    const uid = String(req.user.id);
-    const { subscription } = req.body;
-    if (!subscription) return res.status(400).json({ error: 'No subscription provided' });
-    await PushSub.findOneAndUpdate({ userId: uid }, { userId: uid, subscription }, { upsert: true, new: true });
-    res.json({ success: true });
-  } catch(e) {
-    res.status(500).json({ error: 'Could not save subscription' });
-  }
-});
+const PushSub = mongoose.models.PushSub || mongoose.model('PushSub', pushSubSchema);
 
 // ── List all threads for a user ───────────────────────────────────────────────
 app.get("/threads/:userId", requireAuth, async (req, res) => {
