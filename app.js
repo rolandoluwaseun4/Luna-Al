@@ -99,6 +99,34 @@
     const a = document.createElement('a'); a.href=src; a.download='luna-image.png'; a.click();
   }
 
+  // Open image fullscreen from chat — enables pinch zoom inside lightbox
+  function openImageLightbox(url) {
+    const lb = document.getElementById('image-lightbox');
+    if (!lb) return;
+    document.getElementById('image-lightbox-img').src = url;
+    document.getElementById('image-lightbox-img').dataset.url = url;
+    lb.classList.add('open');
+    // Temporarily allow zoom for this lightbox
+    const vp = document.querySelector('meta[name=viewport]');
+    if (vp) vp.content = 'width=device-width, initial-scale=1.0';
+  }
+  function closeImageLightbox() {
+    const lb = document.getElementById('image-lightbox');
+    if (lb) lb.classList.remove('open');
+    // Restore no-zoom
+    const vp = document.querySelector('meta[name=viewport]');
+    if (vp) vp.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+  }
+  function downloadImage(url) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'luna-image.png';
+    a.click();
+  }
+  window.openImageLightbox = openImageLightbox;
+  window.closeImageLightbox = closeImageLightbox;
+  window.downloadImage = downloadImage;
+
   function launchApp(mode){
     const prompts={
       story:'Write me a creative short story about: ',
@@ -741,7 +769,7 @@
     const row=document.createElement('div');row.className='mrow '+role;
     const esc=text?renderMarkdown(text):'';
     const av=role==='luna'?'<div class="msg-avatar luna-av"><img src="icon-192.png" alt="L"/></div>':'<div class="msg-avatar user-av">'+(isOwner?'R':'G')+'</div>';
-    const img=imgUrl?'<a href="'+imgUrl+'" download="luna-image.png"><img class="gen-image" src="'+imgUrl+'" alt="image"/></a><div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Tap to download</div>':'';
+    const img=imgUrl?`<div class="gen-image-wrap"><img class="gen-image" src="${imgUrl}" alt="image" onclick="openImageLightbox('${imgUrl}')"/><button class="gen-download-btn" onclick="downloadImage('${imgUrl}')" title="Download image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button></div>`:'';
     const copyBtn=role==='luna'&&text?'<button class="copy-btn" onclick="copyMsg(this,\''+encodeURIComponent(text)+'\')"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</button>':'';
     const lunaLabel=role==='luna'?'<span class="luna-msg-label">Luna</span>':'';
     row.innerHTML=av+'<div class="mbody">'+lunaLabel+(esc?'<div class="bubble">'+esc+'</div>':'')+img+copyBtn+'<div class="mtime">'+ts()+'</div></div>';
