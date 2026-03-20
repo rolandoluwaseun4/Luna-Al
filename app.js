@@ -99,7 +99,7 @@
     const a = document.createElement('a'); a.href=src; a.download='luna-image.png'; a.click();
   }
 
-  // Open image fullscreen from chat — enables pinch zoom inside lightbox
+  // Chat image lightbox — ChatGPT style, swipe down to dismiss
   function openImageLightbox(url) {
     const lb = document.getElementById('image-lightbox');
     if (!lb) return;
@@ -107,50 +107,53 @@
     img.src = url;
     img.dataset.url = url;
     img.style.transform = '';
+    img.style.opacity = '';
     img.style.transition = '';
+    lb.style.background = '';
     lb.classList.add('open');
     const vp = document.querySelector('meta[name=viewport]');
     if (vp) vp.content = 'width=device-width, initial-scale=1.0';
 
     // Swipe down to dismiss
-    let startY = 0, startX = 0, dragging = false;
-    img.addEventListener('touchstart', (e) => {
-      if (e.touches.length > 1) return; // ignore pinch
+    let startY = 0, dragging = false;
+    function onTouchStart(e) {
+      if (e.touches.length > 1) return;
       startY = e.touches[0].clientY;
-      startX = e.touches[0].clientX;
       dragging = true;
       img.style.transition = 'none';
-    }, { passive: true });
-
-    img.addEventListener('touchmove', (e) => {
+    }
+    function onTouchMove(e) {
       if (!dragging || e.touches.length > 1) return;
       const dy = e.touches[0].clientY - startY;
-      const dx = e.touches[0].clientX - startX;
-      if (Math.abs(dy) < Math.abs(dx)) return; // horizontal swipe — ignore
-      if (dy < 0) return; // only allow downward
+      if (dy < 0) return;
       const scale = Math.max(0.7, 1 - dy / 500);
       img.style.transform = `translateY(${dy}px) scale(${scale})`;
       lb.style.background = `rgba(0,0,0,${Math.max(0.3, 1 - dy / 300)})`;
-    }, { passive: true });
-
-    img.addEventListener('touchend', (e) => {
+    }
+    function onTouchEnd(e) {
       if (!dragging) return;
       dragging = false;
       const dy = e.changedTouches[0].clientY - startY;
       if (dy > 120) {
-        // Swiped far enough — dismiss
         img.style.transition = 'transform 0.25s ease, opacity 0.25s ease';
         img.style.transform = `translateY(100vh) scale(0.7)`;
         img.style.opacity = '0';
         setTimeout(() => closeImageLightbox(), 250);
       } else {
-        // Snap back
         img.style.transition = 'transform 0.3s ease';
         img.style.transform = '';
         lb.style.background = '';
       }
-    });
+    }
+    img.removeEventListener('touchstart', img._ts);
+    img.removeEventListener('touchmove', img._tm);
+    img.removeEventListener('touchend', img._te);
+    img._ts = onTouchStart; img._tm = onTouchMove; img._te = onTouchEnd;
+    img.addEventListener('touchstart', onTouchStart, { passive: true });
+    img.addEventListener('touchmove', onTouchMove, { passive: true });
+    img.addEventListener('touchend', onTouchEnd);
   }
+
   function closeImageLightbox() {
     const lb = document.getElementById('image-lightbox');
     const img = document.getElementById('image-lightbox-img');
@@ -159,12 +162,12 @@
     const vp = document.querySelector('meta[name=viewport]');
     if (vp) vp.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
   }
+
   function downloadImage(url) {
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'luna-image.png';
-    a.click();
+    a.href = url; a.download = 'luna-image.png'; a.click();
   }
+
   async function shareImage(url) {
     if (navigator.share) {
       try {
@@ -173,17 +176,17 @@
         const file = new File([blob], 'luna-image.png', { type: blob.type });
         await navigator.share({ files: [file], title: 'Luna AI Image' });
       } catch(e) {
-        // Fallback — copy URL
         navigator.clipboard.writeText(url).then(() => showToast('Image URL copied'));
       }
     } else {
       navigator.clipboard.writeText(url).then(() => showToast('Image URL copied'));
     }
   }
-  window.openImageLightbox = openImageLightbox;
+
+  window.openImageLightbox  = openImageLightbox;
   window.closeImageLightbox = closeImageLightbox;
-  window.downloadImage = downloadImage;
-  window.shareImage = shareImage;
+  window.downloadImage      = downloadImage;
+  window.shareImage         = shareImage;
 
   function launchApp(mode){
     const prompts={
@@ -828,7 +831,7 @@
     const row=document.createElement('div');row.className='mrow '+role;
     const esc=text?renderMarkdown(text):'';
     const av=role==='luna'?'<div class="msg-avatar luna-av"><img src="icon-192.png" alt="L"/></div>':'<div class="msg-avatar user-av">'+(isOwner?'R':'G')+'</div>';
-    const img=imgUrl?`<div class="gen-image-wrap"><img class="gen-image" src="${imgUrl}" alt="image" onclick="openImageLightbox('${imgUrl}')"/><button class="gen-download-btn" onclick="downloadImage('${imgUrl}')" title="Download image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button></div>`:'';
+    const img=imgUrl?`<div class="gen-image-wrap"><img class="gen-image" src="${imgUrl}" alt="image" onclick="openImageLightbox('${imgUrl}')"/><button class="gen-download-btn" onclick="downloadImage('${imgUrl}')" title="Save image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button></div>`:'';
     const copyBtn=role==='luna'&&text?'<button class="copy-btn" onclick="copyMsg(this,\''+encodeURIComponent(text)+'\')"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</button>':'';
     const lunaLabel=role==='luna'?'<span class="luna-msg-label">Luna</span>':'';
     row.innerHTML=av+'<div class="mbody">'+lunaLabel+(esc?'<div class="bubble">'+esc+'</div>':'')+img+copyBtn+'<div class="mtime">'+ts()+'</div></div>';

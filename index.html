@@ -546,17 +546,7 @@
   </div>
 </div>
 
-<!-- LIGHTBOX -->
-<div class="lightbox" id="lightbox" onclick="closeLightbox()">
-  <button class="lightbox-close" onclick="closeLightbox()">×</button>
-  <img id="lightbox-img" src="" alt=""/>
-  <div class="lightbox-actions">
-    <button class="lightbox-btn" onclick="downloadLightboxImage();event.stopPropagation()">Download</button>
-    <button class="lightbox-btn" onclick="closeLightbox()">Close</button>
-  </div>
-</div>
-
-<!-- IMAGE LIGHTBOX (chat generated images — supports pinch zoom) -->
+<!-- IMAGE LIGHTBOX -->
 <div class="image-lightbox" id="image-lightbox">
   <div class="image-lightbox-topbar">
     <button class="image-lightbox-close" onclick="closeImageLightbox()">
@@ -574,6 +564,16 @@
     </div>
   </div>
   <img id="image-lightbox-img" src="" alt="" onclick="event.stopPropagation()"/>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">×</button>
+  <img id="lightbox-img" src="" alt=""/>
+  <div class="lightbox-actions">
+    <button class="lightbox-btn" onclick="downloadLightboxImage();event.stopPropagation()">Download</button>
+    <button class="lightbox-btn" onclick="closeLightbox()">Close</button>
+  </div>
 </div>
 
 <!-- TOAST -->

@@ -1937,3 +1937,54 @@
       display: none !important;
     }
 
+
+    /* ── Generated image in chat ── */
+    .gen-image-wrap { position: relative; display: inline-block; max-width: 100%; }
+    .gen-image { max-width: 260px; border-radius: 12px; cursor: pointer; display: block; }
+    .gen-download-btn {
+      position: absolute; bottom: 8px; right: 8px;
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(0,0,0,0.55); border: none;
+      color: #fff; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(8px);
+    }
+    .gen-download-btn svg { width: 16px; height: 16px; }
+
+    /* ── Image lightbox (ChatGPT style) ── */
+    .image-lightbox {
+      position: fixed; inset: 0; z-index: 900;
+      background: #000;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+    .image-lightbox.open { display: flex; }
+    .image-lightbox-topbar {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 52px 16px 12px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+      z-index: 10;
+    }
+    .image-lightbox-close {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(255,255,255,0.15); border: none;
+      color: #fff; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .image-lightbox-actions { display: flex; gap: 10px; }
+    .image-lightbox-actions button {
+      padding: 8px 18px; border-radius: 100px;
+      border: 1.5px solid rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.12);
+      color: #fff; font-size: 14px; font-weight: 500;
+      cursor: pointer; display: flex; align-items: center; gap: 6px;
+    }
+    .image-lightbox-actions .btn-save {
+      background: #fff; color: #000; border-color: #fff; font-weight: 600;
+    }
+    .image-lightbox img {
+      max-width: 100%; max-height: 100vh;
+      object-fit: contain; touch-action: pinch-zoom;
+    }
+
