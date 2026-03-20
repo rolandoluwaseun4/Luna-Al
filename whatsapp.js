@@ -24,7 +24,9 @@ let waReady        = false;
 let currentQR      = null;
 let selectedGroups = [];
 let scheduleTimers = [];
-let postSchedule   = { hours: [8, 19] }; // 8am and 7pm
+let postSchedule   = { hours: [8, 19] };
+let qrListeners    = [];
+let readyListeners = []; // 8am and 7pm
 
 // ── Content ───────────────────────────────────────────────────
 const STATUS_POSTS = [
@@ -81,13 +83,17 @@ async function connectBaileys() {
     if (qr) {
       currentQR = qr;
       waReady   = false;
-      console.log('[WhatsApp] QR ready — visit /whatsapp/qr to scan');
+      console.log('[WhatsApp] QR ready');
+      qrListeners.forEach(l => { try { l(qr); } catch(e) {} });
     }
 
     if (connection === 'open') {
       waReady   = true;
       currentQR = null;
       console.log('[WhatsApp] Connected');
+      readyListeners.forEach(l => { try { l(); } catch(e) {} });
+      qrListeners    = [];
+      readyListeners = [];
       loadGroups();
       schedulePostings();
     }
@@ -245,74 +251,122 @@ function registerRoutes(app, requireAuth) {
     // Clear session files
     try { fs.rmSync('/tmp/wa-session', { recursive: true, force: true }); } catch(e) {}
     console.log('[WhatsApp] Session cleared — starting fresh');
-    // Start fresh after a short delay
-    setTimeout(connectBaileys, 2000);
+    setTimeout(connectBaileys, 3000);
+    res.setHeader('Cache-Control', 'no-store');
     res.send(`
       <div style="font-family:sans-serif;text-align:center;padding:60px;background:#000;color:#fff;min-height:100vh;">
         <h2>Session cleared</h2>
         <p style="color:rgba(255,255,255,0.5);">Generating fresh QR code in a few seconds...</p>
-        <script>setTimeout(()=>location.href='/whatsapp/qr?key=${req.query.key||''}', 5000);</script>
+        <script>setTimeout(()=>location.href='/whatsapp/qr?key=${req.query.key||''}', 6000);</script>
       </div>`);
   });
 
-  // QR code page
+  // SSE endpoint — pushes QR the moment it's ready
+  app.get('/whatsapp/qr-stream', ownerKeyAuth, (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    // If QR already available, send immediately
+    if (currentQR) {
+      res.write(`data: ${JSON.stringify({ qr: currentQR })}\n\n`);
+    }
+    if (waReady) {
+      res.write(`data: ${JSON.stringify({ connected: true })}\n\n`);
+      return res.end();
+    }
+
+    // Listen for new QR events
+    const onQR = (qr) => {
+      res.write(`data: ${JSON.stringify({ qr })}\n\n`);
+    };
+    const onReady = () => {
+      res.write(`data: ${JSON.stringify({ connected: true })}\n\n`);
+      res.end();
+    };
+
+    qrListeners.push(onQR);
+    readyListeners.push(onReady);
+
+    req.on('close', () => {
+      qrListeners = qrListeners.filter(l => l !== onQR);
+      readyListeners = readyListeners.filter(l => l !== onReady);
+    });
+  });
+
+  // QR code page — uses SSE to get QR in real time
   app.get('/whatsapp/qr', ownerKeyAuth, async (req, res) => {
+    const key = req.query.key || '';
+    res.setHeader('Cache-Control', 'no-store');
 
     if (waReady) {
       return res.send(`
         <div style="font-family:sans-serif;text-align:center;padding:60px;background:#000;color:#fff;min-height:100vh;">
           <h2 style="color:#22c55e;">WhatsApp Connected</h2>
           <p style="color:rgba(255,255,255,0.5);">Luna is connected to your WhatsApp.</p>
-          <a href="/whatsapp/groups" style="display:inline-block;margin-top:20px;padding:12px 28px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:100px;">Manage Groups</a>
+          <a href="/whatsapp/groups?key=${key}" style="display:inline-block;margin-top:20px;padding:12px 28px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:100px;">Manage Groups</a>
         </div>`);
     }
 
-    if (!currentQR) {
-      return res.send(`
-        <div style="font-family:sans-serif;text-align:center;padding:60px;background:#000;color:#fff;min-height:100vh;">
-          <h2>Waiting for QR...</h2>
-          <p style="color:rgba(255,255,255,0.5);">Refresh in a few seconds.</p>
-          <script>setTimeout(()=>location.reload(), 3000);</script>
-        </div>`);
-    }
-
-    try {
-      let QRCode;
-      try { QRCode = require('qrcode'); } catch(e) {}
-      if (!QRCode) return res.send(`<pre style="background:#000;color:#fff;padding:20px;">${currentQR}</pre>`);
-
-      const qrImage = await QRCode.toDataURL(currentQR);
-      res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta name="viewport" content="width=device-width,initial-scale=1"/>
-          <title>Luna WhatsApp</title>
-          <style>
-            body{margin:0;background:#000;color:#fff;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;box-sizing:border-box;}
-            h2{font-size:22px;margin-bottom:8px;}
-            p{color:rgba(255,255,255,0.5);font-size:14px;margin-bottom:28px;text-align:center;}
-            img{width:260px;height:260px;border-radius:16px;background:#fff;padding:12px;}
-            .steps{margin-top:28px;text-align:left;max-width:280px;}
-            .step{display:flex;gap:12px;margin-bottom:12px;font-size:14px;color:rgba(255,255,255,0.65);}
-            .num{width:22px;height:22px;border-radius:50%;background:#7c3aed;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
-          </style>
-        </head>
-        <body>
-          <h2>Connect Luna to WhatsApp</h2>
-          <p>Scan this QR code with your WhatsApp</p>
-          <img src="${qrImage}" alt="QR"/>
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width,initial-scale=1"/>
+        <title>Luna WhatsApp</title>
+        <style>
+          body{margin:0;background:#000;color:#fff;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;box-sizing:border-box;text-align:center;}
+          h2{font-size:22px;margin-bottom:8px;}
+          p{color:rgba(255,255,255,0.5);font-size:14px;margin-bottom:28px;}
+          #qr-wrap{display:none;flex-direction:column;align-items:center;gap:20px;}
+          #qr-img{width:260px;height:260px;border-radius:16px;background:#fff;padding:12px;}
+          #status{color:rgba(255,255,255,0.5);font-size:14px;}
+          .steps{text-align:left;max-width:280px;}
+          .step{display:flex;gap:12px;margin-bottom:12px;font-size:14px;color:rgba(255,255,255,0.65);}
+          .num{width:22px;height:22px;border-radius:50%;background:#7c3aed;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
+          .connected{color:#22c55e;font-size:20px;font-weight:600;display:none;}
+        </style>
+      </head>
+      <body>
+        <h2>Connect Luna to WhatsApp</h2>
+        <p id="status">Waiting for QR code...</p>
+        <div id="qr-wrap">
+          <img id="qr-img" alt="QR Code"/>
           <div class="steps">
             <div class="step"><div class="num">1</div><span>Open WhatsApp on your phone</span></div>
-            <div class="step"><div class="num">2</div><span>Tap the three dots → Linked Devices</span></div>
-            <div class="step"><div class="num">3</div><span>Tap "Link a Device" and scan</span></div>
+            <div class="step"><div class="num">2</div><span>Tap three dots → Linked Devices → Link a Device</span></div>
+            <div class="step"><div class="num">3</div><span>Point WhatsApp camera at this QR code</span></div>
           </div>
-          <script>setTimeout(()=>location.reload(), 20000);</script>
-        </body>
-        </html>`);
-    } catch(e) {
-      res.status(500).send('QR error: ' + e.message);
-    }
+        </div>
+        <div class="connected" id="connected">Connected! Redirecting...</div>
+        <script>
+          const key = '${key}';
+          const es = new EventSource('/whatsapp/qr-stream?key=' + key);
+          es.onmessage = async (e) => {
+            const data = JSON.parse(e.data);
+            if (data.connected) {
+              document.getElementById('status').style.display = 'none';
+              document.getElementById('qr-wrap').style.display = 'none';
+              document.getElementById('connected').style.display = 'block';
+              es.close();
+              setTimeout(() => location.href = '/whatsapp/groups?key=' + key, 2000);
+            }
+            if (data.qr) {
+              // Convert QR string to image using QRCode API
+              const img = document.getElementById('qr-img');
+              img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=' + encodeURIComponent(data.qr);
+              document.getElementById('status').textContent = 'Scan this QR with WhatsApp';
+              document.getElementById('qr-wrap').style.display = 'flex';
+            }
+          };
+          es.onerror = () => {
+            document.getElementById('status').textContent = 'Connection lost. Refreshing...';
+            setTimeout(() => location.reload(), 3000);
+          };
+        </script>
+      </body>
+      </html>`);
   });
 
   // List and select groups
