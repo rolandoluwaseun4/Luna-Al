@@ -639,8 +639,9 @@
   (function() {
     const saved = localStorage.getItem('luna-theme');
     if (saved === 'light') applyTheme(true);
+    else applyTheme(false);
   })();
-  document.documentElement.setAttribute('data-theme','dark');
+
   function previewImage(event){
     const file=event.target.files[0];if(!file)return;
     const reader=new FileReader();

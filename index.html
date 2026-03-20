@@ -321,26 +321,6 @@
       </div>
     </div>
 
-    <!-- VOICE CONVERSATION OVERLAY -->
-    <div class="voice-overlay" id="voice-overlay">
-      <div class="voice-overlay-inner">
-        <button class="voice-close-btn" onclick="stopVoiceMode()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-        <div class="voice-orb" id="voice-orb" onclick="orbTapped()">
-          <div class="voice-orb-ring r1"></div>
-          <div class="voice-orb-ring r2"></div>
-          <div class="voice-orb-ring r3"></div>
-          <div class="voice-orb-core">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-          </div>
-        </div>
-        <div class="voice-state-label" id="voice-state-label">Tap to speak</div>
-        <div class="voice-transcript" id="voice-transcript"></div>
-        <div class="voice-hint" id="voice-hint">Tap the orb to start talking</div>
-      </div>
-    </div>
-
     <!-- IMAGES SCREEN -->
     <div class="screen" id="images-screen">
       <div class="screen-hdr">
@@ -543,6 +523,26 @@
   </div>
   <div class="plus-menu-item" onclick="closePlusMenu();toggleSecretMode()">
     <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></div>Secret Mode
+  </div>
+</div>
+
+<!-- VOICE CONVERSATION OVERLAY -->
+<div class="voice-overlay" id="voice-overlay">
+  <div class="voice-overlay-inner">
+    <button class="voice-close-btn" onclick="stopVoiceMode()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="voice-orb" id="voice-orb" onclick="orbTapped()">
+      <div class="voice-orb-ring r1"></div>
+      <div class="voice-orb-ring r2"></div>
+      <div class="voice-orb-ring r3"></div>
+      <div class="voice-orb-core">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+      </div>
+    </div>
+    <div class="voice-state-label" id="voice-state-label">Tap to speak</div>
+    <div class="voice-transcript" id="voice-transcript"></div>
+    <div class="voice-hint" id="voice-hint">Tap the orb to start talking</div>
   </div>
 </div>
 
