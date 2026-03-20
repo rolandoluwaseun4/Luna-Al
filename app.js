@@ -123,9 +123,25 @@
     a.download = 'luna-image.png';
     a.click();
   }
+  async function shareImage(url) {
+    if (navigator.share) {
+      try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const file = new File([blob], 'luna-image.png', { type: blob.type });
+        await navigator.share({ files: [file], title: 'Luna AI Image' });
+      } catch(e) {
+        // Fallback — copy URL
+        navigator.clipboard.writeText(url).then(() => showToast('Image URL copied'));
+      }
+    } else {
+      navigator.clipboard.writeText(url).then(() => showToast('Image URL copied'));
+    }
+  }
   window.openImageLightbox = openImageLightbox;
   window.closeImageLightbox = closeImageLightbox;
   window.downloadImage = downloadImage;
+  window.shareImage = shareImage;
 
   function launchApp(mode){
     const prompts={
