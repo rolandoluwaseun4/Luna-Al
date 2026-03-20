@@ -229,6 +229,21 @@ function registerRoutes(app, requireAuth) {
     next();
   }
 
+  // Clear session and restart (forces fresh QR)
+  app.get('/whatsapp/reset', ownerKeyAuth, async (req, res) => {
+    if (sock) { try { await sock.end(); } catch(e) {} sock = null; }
+    waReady = false; currentQR = null;
+    try { fs.rmSync('/tmp/wa-session', { recursive: true, force: true }); } catch(e) {}
+    console.log('[WhatsApp] Session cleared — reconnecting');
+    setTimeout(connectBaileys, 1000);
+    res.send(`
+      <div style="font-family:sans-serif;text-align:center;padding:60px;background:#000;color:#fff;min-height:100vh;">
+        <h2>Session cleared</h2>
+        <p style="color:rgba(255,255,255,0.5);">Generating fresh QR code...</p>
+        <script>setTimeout(()=>location.href='/whatsapp/qr?key=${req.query.key||''}', 4000);</script>
+      </div>`);
+  });
+
   // QR code page
   app.get('/whatsapp/qr', ownerKeyAuth, async (req, res) => {
 
