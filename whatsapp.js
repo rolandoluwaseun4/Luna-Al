@@ -95,17 +95,19 @@ async function connectBaileys() {
     if (connection === 'close') {
       waReady = false;
       const code = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = code !== DisconnectReason?.loggedOut;
       console.log('[WhatsApp] Disconnected, code:', code);
       clearSchedule();
-      if (shouldReconnect) {
-        console.log('[WhatsApp] Reconnecting...');
-        setTimeout(connectBaileys, 5000);
-      } else {
-        // Logged out — clear session
-        try { fs.rmSync('/tmp/wa-session', { recursive: true }); } catch(e) {}
-        console.log('[WhatsApp] Logged out — rescan QR');
-        setTimeout(connectBaileys, 2000);
+
+      if (code === 405 || code === 401 || code === 403) {
+        // Auth rejected — clear session and wait for manual reset
+        console.log('[WhatsApp] Auth rejected — clearing session. Visit /whatsapp/reset to reconnect.');
+        try { fs.rmSync('/tmp/wa-session', { recursive: true, force: true }); } catch(e) {}
+        sock = null;
+        // Do NOT auto-reconnect — wait for user to visit /whatsapp/reset
+      } else if (code !== 428) {
+        // Other errors — reconnect after delay
+        console.log('[WhatsApp] Reconnecting in 10s...');
+        setTimeout(connectBaileys, 10000);
       }
     }
   });
@@ -231,16 +233,25 @@ function registerRoutes(app, requireAuth) {
 
   // Clear session and restart (forces fresh QR)
   app.get('/whatsapp/reset', ownerKeyAuth, async (req, res) => {
-    if (sock) { try { await sock.end(); } catch(e) {} sock = null; }
-    waReady = false; currentQR = null;
+    // Kill existing socket first
+    if (sock) {
+      try { sock.ev.removeAllListeners(); } catch(e) {}
+      try { await sock.end(); } catch(e) {}
+      sock = null;
+    }
+    waReady = false;
+    currentQR = null;
+    clearSchedule();
+    // Clear session files
     try { fs.rmSync('/tmp/wa-session', { recursive: true, force: true }); } catch(e) {}
-    console.log('[WhatsApp] Session cleared — reconnecting');
-    setTimeout(connectBaileys, 1000);
+    console.log('[WhatsApp] Session cleared — starting fresh');
+    // Start fresh after a short delay
+    setTimeout(connectBaileys, 2000);
     res.send(`
       <div style="font-family:sans-serif;text-align:center;padding:60px;background:#000;color:#fff;min-height:100vh;">
         <h2>Session cleared</h2>
-        <p style="color:rgba(255,255,255,0.5);">Generating fresh QR code...</p>
-        <script>setTimeout(()=>location.href='/whatsapp/qr?key=${req.query.key||''}', 4000);</script>
+        <p style="color:rgba(255,255,255,0.5);">Generating fresh QR code in a few seconds...</p>
+        <script>setTimeout(()=>location.href='/whatsapp/qr?key=${req.query.key||''}', 5000);</script>
       </div>`);
   });
 
