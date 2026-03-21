@@ -461,15 +461,18 @@
     loadAvatarFromStorage();
     if(authToken && currentUser && currentUser.role!=='guest') loadSidebarThreads();
     initModelSelector();
-    showScreen('home');
-    // Show onboarding for first-time users
-    const onboardKey = 'luna-onboarded-' + (currentUser?.id || 'guest');
-    if (!localStorage.getItem(onboardKey)) {
-      localStorage.setItem(onboardKey, '1');
-      setTimeout(() => showOnboarding(), 600);
-    }
-    // Check if opened via shared chat link
+    // Go straight to chat — home is now index.html
+    showScreen('chat');
+    // Check if opened via shared chat link or thread
     setTimeout(() => checkSharedThread(), 300);
+    // Handle prefill from Create/Explore
+    const prefill = localStorage.getItem('luna-prefill');
+    if (prefill) {
+      localStorage.removeItem('luna-prefill');
+      chatInput.value = prefill;
+      chatInput.dispatchEvent(new Event('input'));
+      chatInput.focus();
+    }
   }
   function logout(){localStorage.removeItem('luna-token');localStorage.removeItem('luna-user');authToken=null;currentUser=null;isOwner=false;location.reload();}
   function toggleEye(id){const inp=document.getElementById(id);if(inp)inp.type=inp.type==='password'?'text':'password';}
@@ -497,7 +500,7 @@
   function closeHistoryDetail(){
     showScreen('history');
   }
-  function goHome(){showScreen('home');}
+  function goHome(){ window.location.href = 'index.html'; }
   function goSettings(){const tog=document.getElementById('dark-toggle');if(tog)tog.checked=localStorage.getItem('luna-theme')==='light';showScreen('settings');loadProfile();loadMemories();loadNotifState();}
   function goSaved(){showScreen('saved');}
   async function clearChat(){
@@ -2234,24 +2237,13 @@
 
   if('serviceWorker' in navigator){navigator.serviceWorker.register('/Luna-Al/sw.js').catch(function(){});}
 
-  // ── Handle prefill from Create/Explore pages ──────────────
-  const prefill = localStorage.getItem('luna-prefill');
-  if (prefill) {
-    localStorage.removeItem('luna-prefill');
-    chatInput.value = prefill;
-    chatInput.dispatchEvent(new Event('input'));
-    showScreen('chat');
-    chatInput.focus();
-  }
-
-  // ── Tab bar for app.html (chat) — tabs hidden on chat ─────
+  // ── Tab bar for app.html (chat is full screen, tabs hidden) ──
   const tabsLink = document.createElement('link');
   tabsLink.rel = 'stylesheet'; tabsLink.href = 'tabs.css';
   document.head.appendChild(tabsLink);
   const tabsScript = document.createElement('script');
   tabsScript.src = 'tabs.js';
   document.body.appendChild(tabsScript);
-  // Hide tabs immediately since chat is full screen
   tabsScript.onload = () => {
     const bar = document.getElementById('tab-bar');
     if (bar) bar.classList.add('hidden');
