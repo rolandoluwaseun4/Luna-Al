@@ -2111,3 +2111,13 @@
     .voice-overlay.open { pointer-events: all; }
     .voice-overlay:not(.open) .voice-overlay-inner { display: none !important; }
 
+
+    /* ── Luna avatar light mode fix ── */
+    [data-theme="light"] .msg-avatar.luna-av img {
+      background: #e8e8ed;
+      border-radius: 50%;
+    }
+    [data-theme="light"] .typing-row .msg-avatar.luna-av {
+      opacity: 0.7;
+    }
+

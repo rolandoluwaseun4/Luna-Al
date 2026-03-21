@@ -313,7 +313,7 @@ function setVoiceTranscript(text) {
 }
 
 function updateVoiceBtn(active) {
-  const btn = document.getElementById('voice-mode-btn');
+  const btn = document.getElementById('mic-btn');
   if (btn) btn.classList.toggle('voice-mode-active', active);
 }
 
