@@ -12,9 +12,10 @@
   const token = localStorage.getItem(TOKEN_KEY);
   const user  = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
 
-  // Pages that require login — redirect to chat (app.html) if no token
-  const requiresAuth = !window.location.pathname.endsWith('app.html');
-  if (requiresAuth && !token) {
+  // Only redirect to login on new pages (index, create, explore, profile)
+  // app.html handles its own auth internally
+  const isAppPage = window.location.pathname.endsWith('app.html');
+  if (!isAppPage && !token) {
     window.location.href = 'app.html';
     return;
   }

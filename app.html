@@ -14,12 +14,6 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
   <link rel="stylesheet" href="styles.css"/>
   <link rel="stylesheet" href="tabs.css"/>
-  <style>
-    /* Chat screen fills full height, chat bar stays at bottom */
-    #chat-screen { display: flex; flex-direction: column; }
-    #messages { flex: 1; overflow-y: auto; }
-    .chat-bar { flex-shrink: 0; }
-  </style>
 </head>
 <body>
 
@@ -83,7 +77,10 @@
 
   <!-- ── NAVBAR ─────────────────────────────────────── -->
   <nav class="navbar" id="main-navbar" style="display:none;">
-    <div class="nav-brand" onclick="goHome()" style="cursor:pointer;">
+    <button class="hamburger" id="hamburger" onclick="toggleDrawer()">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="nav-brand" onclick="goHome()">
       <div class="nav-logo" style="position:relative;">
         <img src="icon-192.png" alt="Luna"/>
         <div class="owner-dot" id="owner-dot" style="display:none;"></div>
@@ -102,7 +99,7 @@
   <!-- ── DRAWER / SIDEBAR ───────────────────────────── -->
   <!-- Desktop: sidebar + content sit side by side -->
   <div class="app-body" id="app-body" style="display:none;">
-  <div class="drawer" id="drawer" style="display:none!important">
+  <div class="drawer" id="drawer">
     <div class="drawer-overlay" onclick="closeDrawer()"></div>
     <div class="drawer-panel">
       <!-- Desktop brand header (hidden on mobile) -->
@@ -179,10 +176,53 @@
   <main class="main" id="main-content" style="display:none;">
 
     <!-- HOME SCREEN -->
-    <div class="screen" id="home-screen" style="display:none!important"></div>
+    <div class="screen active" id="home-screen">
+      <div class="home-inner">
+        <div class="luna-orb-wrap">
+          <div class="luna-orb-glow"></div>
+          <div class="luna-orb">
+            <svg class="orb-scene" viewBox="-36 -36 72 72" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <filter id="orbglow">
+                  <feGaussianBlur stdDeviation="1.2" result="blur"/>
+                  <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <!-- flat horizontal ellipse -->
+              <ellipse cx="0" cy="0" rx="32" ry="12" fill="none" stroke="#fff" stroke-width="1.8" filter="url(#orbglow)" opacity="0.9"/>
+              <!-- tilted left 55deg -->
+              <g transform="rotate(-55)">
+                <ellipse cx="0" cy="0" rx="32" ry="12" fill="none" stroke="#fff" stroke-width="1.8" filter="url(#orbglow)" opacity="0.9"/>
+              </g>
+              <!-- tilted right 55deg -->
+              <g transform="rotate(55)">
+                <ellipse cx="0" cy="0" rx="32" ry="12" fill="none" stroke="#fff" stroke-width="1.8" filter="url(#orbglow)" opacity="0.9"/>
+              </g>
+            </svg>
+          </div>
+        </div>
+        <div class="home-title">Hello<span id="home-username-display"></span>, I'm <span class="accent">LUNA.</span></div>
+        <div class="home-sub">Your personal AI — ready to chat, create, and help you with anything.</div>
+        <div class="starter-grid">
+          <div class="starter-card" onclick="startChat('Help me write something')">Help me write something</div>
+          <div class="starter-card" onclick="startChat('Brainstorm ideas with me')">Brainstorm ideas with me</div>
+          <div class="starter-card" onclick="startChat('Generate an image for me')">Generate an image</div>
+          <div class="starter-card" onclick="startChat('Surprise me with something interesting')">Surprise me ✨</div>
+        </div>
+      </div>
+      <div class="home-spacer"></div>
+      <div class="home-input-outer">
+        <div class="home-input-pill">
+          <textarea id="home-input" placeholder="Ask Luna anything..." rows="1" enterkeyhint="enter"></textarea>
+          <button class="home-send" id="home-send" disabled>
+            <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- CHAT SCREEN -->
-    <div class="screen active" id="chat-screen" style="padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))">
+    <div class="screen" id="chat-screen">
       <div class="manus-bar" id="manus-bar">
         <div class="manus-status-dot" id="manus-dot"></div>
         <div class="manus-status-text">
