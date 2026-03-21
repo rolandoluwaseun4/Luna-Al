@@ -14,6 +14,16 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
   <link rel="stylesheet" href="styles.css"/>
   <link rel="stylesheet" href="tabs.css"/>
+  <style>
+    /* Hide splash when coming from tab navigation */
+    .no-splash #splash { display: none !important; }
+  </style>
+  <script>
+    if (document.referrer || sessionStorage.getItem('luna-session')) {
+      document.documentElement.classList.add('no-splash');
+    }
+    sessionStorage.setItem('luna-session', '1');
+  </script>
 </head>
 <body>
 
@@ -77,10 +87,7 @@
 
   <!-- ── NAVBAR ─────────────────────────────────────── -->
   <nav class="navbar" id="main-navbar" style="display:none;">
-    <button class="hamburger" id="hamburger" onclick="toggleDrawer()">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="nav-brand" onclick="goHome()">
+    <div class="nav-brand" onclick="goHome()" style="cursor:pointer;">
       <div class="nav-logo" style="position:relative;">
         <img src="icon-192.png" alt="Luna"/>
         <div class="owner-dot" id="owner-dot" style="display:none;"></div>
@@ -90,16 +97,13 @@
       <button class="nav-new-btn" id="share-chat-btn" onclick="shareCurrentChat()" title="Share chat" style="display:none;">
         <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
       </button>
-      <button class="nav-new-btn" onclick="newChat()" title="New chat">
-        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
     </div>
   </nav>
 
   <!-- ── DRAWER / SIDEBAR ───────────────────────────── -->
   <!-- Desktop: sidebar + content sit side by side -->
   <div class="app-body" id="app-body" style="display:none;">
-  <div class="drawer" id="drawer">
+  <div class="drawer" id="drawer" style="display:none!important;visibility:hidden!important;">
     <div class="drawer-overlay" onclick="closeDrawer()"></div>
     <div class="drawer-panel">
       <!-- Desktop brand header (hidden on mobile) -->
@@ -176,7 +180,7 @@
   <main class="main" id="main-content" style="display:none;">
 
     <!-- HOME SCREEN -->
-    <div class="screen active" id="home-screen">
+    <div class="screen" id="home-screen">
       <div class="home-inner">
         <div class="luna-orb-wrap">
           <div class="luna-orb-glow"></div>
@@ -222,7 +226,7 @@
     </div>
 
     <!-- CHAT SCREEN -->
-    <div class="screen" id="chat-screen">
+    <div class="screen active" id="chat-screen">
       <div class="manus-bar" id="manus-bar">
         <div class="manus-status-dot" id="manus-dot"></div>
         <div class="manus-status-text">

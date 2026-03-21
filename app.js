@@ -623,16 +623,8 @@
     goHome();
   }
   function isDesktop(){ return window.innerWidth >= 768; }
-  function toggleDrawer(){
-    if(isDesktop()) return; // sidebar always visible on desktop
-    document.getElementById('drawer').classList.toggle('open');
-    document.getElementById('hamburger').classList.toggle('open');
-  }
-  function closeDrawer(){
-    if(isDesktop()) return; // never close on desktop
-    document.getElementById('drawer').classList.remove('open');
-    document.getElementById('hamburger').classList.remove('open');
-  }
+  function toggleDrawer(){ /* hamburger removed */ }
+  function closeDrawer(){ /* hamburger removed */ }
   function applyTheme(light) {
     document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
     localStorage.setItem('luna-theme', light ? 'light' : 'dark');
