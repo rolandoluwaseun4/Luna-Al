@@ -91,20 +91,35 @@ function startOneTurn() {
   recognition.maxAlternatives = 1;
 
   let finalText = '';
+  let interimText = '';
+  let sentAlready = false;
 
   recognition.onstart = () => {
     isListening = true;
+    finalText = '';
+    interimText = '';
+    sentAlready = false;
     setVoiceState('listening');
     setVoiceTranscript('');
   };
 
   recognition.onresult = (e) => {
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
+    finalText = '';
+    interimText = '';
+    for (let i = 0; i < e.results.length; i++) {
       if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
-      else interim += e.results[i][0].transcript;
+      else interimText += e.results[i][0].transcript;
     }
-    setVoiceTranscript(finalText || interim);
+    setVoiceTranscript(finalText || interimText);
+
+    // If we got a final result, send immediately
+    if (finalText.trim() && !sentAlready) {
+      sentAlready = true;
+      isListening = false;
+      try { recognition.stop(); } catch(e) {}
+      setVoiceState('thinking');
+      sendToLuna(finalText.trim());
+    }
   };
 
   recognition.onerror = (e) => {
@@ -125,8 +140,13 @@ function startOneTurn() {
   recognition.onend = () => {
     isListening = false;
     recognition = null;
-    const text = finalText.trim();
+    if (sentAlready) return; // already handled in onresult
+
+    // Use whatever we captured — final or interim
+    const text = (finalText || interimText).trim();
     if (text && voiceModeActive) {
+      sentAlready = true;
+      setVoiceState('thinking');
       sendToLuna(text);
     } else {
       setVoiceState('idle');
@@ -300,7 +320,7 @@ function updateVoiceBtn(active) {
 function showVoiceOverlay(show) {
   const overlay = document.getElementById('voice-overlay');
   if (!overlay) return;
-  overlay.classList.toggle('open', show);
+  overlay.style.display = show ? 'flex' : 'none';
   if (!show) setVoiceTranscript('');
 }
 

@@ -2099,3 +2099,15 @@
     [data-theme="dark"] .voice-overlay { background: #000; }
     [data-theme="dark"] .voice-state-label { color: #fff; }
 
+
+    /* ── Light mode critical fixes ── */
+    [data-theme="light"] .bubble { color: #1a1a1a !important; }
+    [data-theme="light"] .mrow.luna .bubble { color: #1a1a1a !important; }
+    [data-theme="light"] .mtime { color: rgba(0,0,0,0.35) !important; }
+    [data-theme="light"] .luna-msg-label { color: rgba(0,0,0,0.4) !important; }
+
+    /* ── Mic leak fix — hide voice overlay contents when closed ── */
+    .voice-overlay { pointer-events: none; }
+    .voice-overlay.open { pointer-events: all; }
+    .voice-overlay:not(.open) .voice-overlay-inner { display: none !important; }
+
