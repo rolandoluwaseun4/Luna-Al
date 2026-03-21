@@ -1988,3 +1988,114 @@
       object-fit: contain; touch-action: pinch-zoom;
     }
 
+
+    /* ═══════════════════════════════════════════════════
+       LIGHT MODE
+    ═══════════════════════════════════════════════════ */
+    [data-theme="light"] {
+      --bg:           #f2f2f7;
+      --bg-card:      #ffffff;
+      --bg-card-2:    #e8e8ed;
+      --bg-input:     #ffffff;
+      --nav-bg:       #f2f2f7;
+      --sidebar-bg:   #f2f2f7;
+      --surface:      rgba(0,0,0,0.04);
+      --border:       rgba(0,0,0,0.10);
+      --border-light: rgba(0,0,0,0.06);
+      --accent:       #7c3aed;
+      --accent-soft:  rgba(124,58,237,0.10);
+      --accent-glow:  rgba(124,58,237,0.2);
+      --text:         #000000;
+      --text-mid:     rgba(0,0,0,0.55);
+      --text-dim:     rgba(0,0,0,0.35);
+      --user-bubble:  rgba(124,58,237,0.15);
+      --luna-bubble:  transparent;
+      --error:        #d93025;
+      --shadow:       0 4px 24px rgba(0,0,0,0.12);
+      --overlay:      rgba(0,0,0,0.4);
+    }
+    [data-theme="light"] body,
+    [data-theme="light"] #app { background: var(--bg); color: var(--text); }
+    [data-theme="light"] .navbar { background: #f2f2f7; border-bottom-color: rgba(0,0,0,0.08); }
+    [data-theme="light"] .hamburger { background: #e8e8ed; border-color: rgba(0,0,0,0.10) !important; }
+    [data-theme="light"] .hamburger span { background: #000; }
+    [data-theme="light"] #home-screen { background: #f2f2f7; }
+    [data-theme="light"] .home-title { color: #000; }
+    [data-theme="light"] .home-sub { color: rgba(0,0,0,0.5); }
+    [data-theme="light"] .starter-card { background: #fff !important; border-color: rgba(0,0,0,0.08) !important; color: rgba(0,0,0,0.6) !important; }
+    [data-theme="light"] .home-input-pill { background: #fff !important; border-color: rgba(0,0,0,0.12) !important; }
+    [data-theme="light"] .home-input-outer { background: linear-gradient(to top, #f2f2f7 70%, transparent); }
+    [data-theme="light"] #home-input { color: #000; }
+    [data-theme="light"] #home-input::placeholder { color: rgba(0,0,0,0.35); }
+    [data-theme="light"] .chat-bar { background: #f2f2f7 !important; }
+    [data-theme="light"] .chat-row { background: #fff !important; border-color: rgba(0,0,0,0.10) !important; }
+    [data-theme="light"] #chat-input { color: #000; }
+    [data-theme="light"] #chat-input::placeholder { color: rgba(0,0,0,0.35); }
+    [data-theme="light"] .messages { background: #f2f2f7; }
+    [data-theme="light"] .mrow.user .bubble { background: rgba(124,58,237,0.14) !important; color: #2d0a6e !important; }
+    [data-theme="light"] .bubble { color: #1a1a1a; }
+    [data-theme="light"] .mac { color: rgba(0,0,0,0.3); }
+    [data-theme="light"] .drawer-panel { background: #f2f2f7 !important; border-right-color: rgba(0,0,0,0.08) !important; }
+    [data-theme="light"] .sb-thread { color: rgba(0,0,0,0.6); }
+    [data-theme="light"] .sb-thread:hover { background: rgba(0,0,0,0.05); color: #000; }
+    [data-theme="light"] .sb-thread.active-thread { background: rgba(124,58,237,0.10); }
+    [data-theme="light"] .sb-profile { border-top-color: rgba(0,0,0,0.08); }
+    [data-theme="light"] .settings-scroll { background: #f2f2f7; }
+    [data-theme="light"] .settings-section-title { color: rgba(0,0,0,0.4); }
+    [data-theme="light"] .settings-row { background: #fff; border-bottom-color: rgba(0,0,0,0.06); }
+    [data-theme="light"] .settings-row-info h4 { color: #000; }
+    [data-theme="light"] .settings-row-info p { color: rgba(0,0,0,0.45); }
+    [data-theme="light"] .settings-input { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.10); color: #000; }
+    [data-theme="light"] .screen-hdr { background: #f2f2f7; border-bottom-color: rgba(0,0,0,0.08); }
+    [data-theme="light"] .screen-hdr-title { color: #000; }
+    [data-theme="light"] .back-btn { background: #e8e8ed; border-color: rgba(0,0,0,0.08); color: #000; }
+    [data-theme="light"] .personality-btn { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.10); color: rgba(0,0,0,0.6); }
+    [data-theme="light"] .personality-btn.active { background: rgba(124,58,237,0.10); border-color: #7c3aed; color: #7c3aed; }
+    [data-theme="light"] #auth-screen { background: #f2f2f7; }
+    [data-theme="light"] .auth-box { background: #fff; border-color: rgba(0,0,0,0.10); }
+    [data-theme="light"] .auth-title { color: #000; }
+    [data-theme="light"] .auth-input { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.10); color: #000; }
+    [data-theme="light"] .toast { background: #fff; border-color: rgba(0,0,0,0.10); color: #000; }
+    [data-theme="light"] .plus-menu { background: #fff; border-color: rgba(0,0,0,0.10); }
+    [data-theme="light"] .plus-menu-item { color: #000; }
+    [data-theme="light"] .plus-menu-item:hover { background: rgba(0,0,0,0.05); }
+    [data-theme="light"] .model-selector { background: #fff; border-color: rgba(0,0,0,0.10); }
+    [data-theme="light"] .model-option { color: #000; }
+    [data-theme="light"] .model-option:hover { background: rgba(0,0,0,0.05); }
+    [data-theme="light"] .bar-chip { background: #e8e8ed; border-color: rgba(0,0,0,0.10); color: rgba(0,0,0,0.6); }
+    [data-theme="light"] .bar-chip.active { background: rgba(124,58,237,0.12); color: #7c3aed; border-color: rgba(124,58,237,0.3); }
+    [data-theme="light"] .mrow.luna .bubble code { background: rgba(0,0,0,0.06); color: #6d28d9; }
+    [data-theme="light"] .mrow.luna .bubble pre { background: #f0eef8; color: #6d28d9; }
+    [data-theme="light"] .orb-scene ellipse { stroke: #7c3aed; opacity: 0.7; }
+    [data-theme="light"] .voice-overlay { background: #f2f2f7; }
+    [data-theme="light"] .voice-state-label { color: #000; }
+    [data-theme="light"] .voice-transcript { color: rgba(0,0,0,0.45); }
+    [data-theme="light"] .voice-hint { color: rgba(0,0,0,0.2); }
+
+
+    /* ── Dark mode explicit reset (ensures switching back works) ── */
+    [data-theme="dark"] {
+      --bg:           #000000;
+      --bg-card:      #141414;
+      --bg-card-2:    #1c1c1e;
+      --bg-input:     #1a1a1a;
+      --nav-bg:       #000000;
+      --sidebar-bg:   #000000;
+      --surface:      rgba(255,255,255,0.04);
+      --border:       rgba(255,255,255,0.09);
+      --border-light: rgba(255,255,255,0.06);
+      --text:         #ffffff;
+      --text-mid:     rgba(255,255,255,0.60);
+      --text-dim:     rgba(255,255,255,0.35);
+      --user-bubble:  rgba(110,48,210,0.40);
+      --luna-bubble:  transparent;
+      --error:        #ff453a;
+    }
+    [data-theme="dark"] body,
+    [data-theme="dark"] #app { background: #000; color: #fff; }
+    [data-theme="dark"] .home-input-outer { background: linear-gradient(to top, #000 70%, transparent); }
+    [data-theme="dark"] .chat-bar { background: #000 !important; }
+    [data-theme="dark"] .orb-scene ellipse { stroke: #fff; opacity: 0.9; }
+    [data-theme="dark"] .voice-overlay { background: #000; }
+    [data-theme="dark"] .voice-state-label { color: #fff; }
+
