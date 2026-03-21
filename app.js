@@ -461,18 +461,15 @@
     loadAvatarFromStorage();
     if(authToken && currentUser && currentUser.role!=='guest') loadSidebarThreads();
     initModelSelector();
-    // Go straight to chat — home is now index.html
-    showScreen('chat');
-    // Check if opened via shared chat link or thread
-    setTimeout(() => checkSharedThread(), 300);
-    // Handle prefill from Create/Explore
-    const prefill = localStorage.getItem('luna-prefill');
-    if (prefill) {
-      localStorage.removeItem('luna-prefill');
-      chatInput.value = prefill;
-      chatInput.dispatchEvent(new Event('input'));
-      chatInput.focus();
+    showScreen('home');
+    // Show onboarding for first-time users
+    const onboardKey = 'luna-onboarded-' + (currentUser?.id || 'guest');
+    if (!localStorage.getItem(onboardKey)) {
+      localStorage.setItem(onboardKey, '1');
+      setTimeout(() => showOnboarding(), 600);
     }
+    // Check if opened via shared chat link
+    setTimeout(() => checkSharedThread(), 300);
   }
   function logout(){localStorage.removeItem('luna-token');localStorage.removeItem('luna-user');authToken=null;currentUser=null;isOwner=false;location.reload();}
   function toggleEye(id){const inp=document.getElementById(id);if(inp)inp.type=inp.type==='password'?'text':'password';}
@@ -500,7 +497,7 @@
   function closeHistoryDetail(){
     showScreen('history');
   }
-  function goHome(){ window.location.href = 'index.html'; }
+  function goHome(){showScreen('home');}
   function goSettings(){const tog=document.getElementById('dark-toggle');if(tog)tog.checked=localStorage.getItem('luna-theme')==='light';showScreen('settings');loadProfile();loadMemories();loadNotifState();}
   function goSaved(){showScreen('saved');}
   async function clearChat(){
@@ -623,8 +620,16 @@
     goHome();
   }
   function isDesktop(){ return window.innerWidth >= 768; }
-  function toggleDrawer(){ /* hamburger removed */ }
-  function closeDrawer(){ /* hamburger removed */ }
+  function toggleDrawer(){
+    if(isDesktop()) return; // sidebar always visible on desktop
+    document.getElementById('drawer').classList.toggle('open');
+    document.getElementById('hamburger').classList.toggle('open');
+  }
+  function closeDrawer(){
+    if(isDesktop()) return; // never close on desktop
+    document.getElementById('drawer').classList.remove('open');
+    document.getElementById('hamburger').classList.remove('open');
+  }
   function applyTheme(light) {
     document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
     localStorage.setItem('luna-theme', light ? 'light' : 'dark');
@@ -2228,18 +2233,6 @@
   }
 
   if('serviceWorker' in navigator){navigator.serviceWorker.register('/Luna-Al/sw.js').catch(function(){});}
-
-  // ── Tab bar for app.html (chat is full screen, tabs hidden) ──
-  const tabsLink = document.createElement('link');
-  tabsLink.rel = 'stylesheet'; tabsLink.href = 'tabs.css';
-  document.head.appendChild(tabsLink);
-  const tabsScript = document.createElement('script');
-  tabsScript.src = 'tabs.js';
-  document.body.appendChild(tabsScript);
-  tabsScript.onload = () => {
-    const bar = document.getElementById('tab-bar');
-    if (bar) bar.classList.add('hidden');
-  };
 
   // ── Init voice mode ───────────────────────────────────────
   window._lunaToken = authToken;
