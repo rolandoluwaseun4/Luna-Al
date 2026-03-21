@@ -2234,6 +2234,29 @@
 
   if('serviceWorker' in navigator){navigator.serviceWorker.register('/Luna-Al/sw.js').catch(function(){});}
 
+  // ── Handle prefill from Create/Explore pages ──────────────
+  const prefill = localStorage.getItem('luna-prefill');
+  if (prefill) {
+    localStorage.removeItem('luna-prefill');
+    chatInput.value = prefill;
+    chatInput.dispatchEvent(new Event('input'));
+    showScreen('chat');
+    chatInput.focus();
+  }
+
+  // ── Tab bar for app.html (chat) — tabs hidden on chat ─────
+  const tabsLink = document.createElement('link');
+  tabsLink.rel = 'stylesheet'; tabsLink.href = 'tabs.css';
+  document.head.appendChild(tabsLink);
+  const tabsScript = document.createElement('script');
+  tabsScript.src = 'tabs.js';
+  document.body.appendChild(tabsScript);
+  // Hide tabs immediately since chat is full screen
+  tabsScript.onload = () => {
+    const bar = document.getElementById('tab-bar');
+    if (bar) bar.classList.add('hidden');
+  };
+
   // ── Init voice mode ───────────────────────────────────────
   window._lunaToken = authToken;
   // Expose voice config for voice.js to pick up after it loads

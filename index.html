@@ -1,640 +1,217 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Luna AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>Luna</title>
   <link rel="manifest" href="manifest.json"/>
-  <meta name="theme-color" content="#050308"/>
+  <meta name="theme-color" content="#000000"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
-  <link rel="stylesheet" href="styles.css"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+  <link rel="apple-touch-icon" href="icon-192.png"/>
+  <link rel="stylesheet" href="tabs.css"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      min-height: 100%; background: #000;
+      font-family: -apple-system, 'SF Pro Text', BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #fff; -webkit-font-smoothing: antialiased;
+    }
+
+    .page { max-width: 430px; margin: 0 auto; }
+
+    /* Top bar */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 56px 20px 20px;
+    }
+    .topbar-greeting { font-size: 13px; color: rgba(255,255,255,0.35); margin-bottom: 3px; }
+    .topbar-name { font-size: 25px; font-weight: 700; letter-spacing: -0.4px; }
+    .topbar-name em { font-style: normal; color: #a78bfa; }
+    .notif-btn {
+      width: 38px; height: 38px; border-radius: 12px;
+      background: #141414; border: 1px solid rgba(255,255,255,0.07);
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      text-decoration: none;
+    }
+    .notif-btn svg { width: 18px; height: 18px; stroke: rgba(255,255,255,0.45); fill: none; stroke-width: 2; stroke-linecap: round; }
+
+    /* Ask pill */
+    .ask-pill {
+      margin: 0 20px 28px;
+      display: flex; align-items: center; gap: 12px;
+      background: #141414; border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 16px; padding: 12px 12px 12px 14px;
+      cursor: pointer; transition: border-color 0.15s; text-decoration: none;
+    }
+    .ask-pill:active { border-color: rgba(124,58,237,0.45); }
+    .ask-icon { width: 36px; height: 36px; border-radius: 10px; overflow: hidden; flex-shrink: 0; }
+    .ask-icon img { width: 100%; height: 100%; object-fit: cover; }
+    .ask-text { flex: 1; font-size: 14px; color: rgba(255,255,255,0.32); font-weight: 300; }
+    .ask-send {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: #7c3aed; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .ask-send svg { width: 13px; height: 13px; stroke: #fff; fill: none; stroke-width: 2.5; stroke-linecap: round; }
+
+    /* Section */
+    .section { padding: 0 20px; margin-bottom: 28px; }
+    .section-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .section-label { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.25); letter-spacing: 1.1px; text-transform: uppercase; }
+    .see-all { font-size: 12px; color: #a78bfa; text-decoration: none; }
+
+    /* Quick grid */
+    .qgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .qcard {
+      background: #141414; border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 16px; padding: 15px; cursor: pointer;
+      text-decoration: none; display: flex; flex-direction: column;
+      justify-content: space-between; min-height: 88px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .qcard:active { background: #1c1c1e; border-color: rgba(124,58,237,0.3); }
+    .qcard-icon { width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; }
+    .qcard-icon svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .qcard p { font-size: 13px; font-weight: 500; color: #fff; }
+    .qcard span { font-size: 11px; color: rgba(255,255,255,0.32); }
+
+    /* Recent list */
+    .rlist { display: flex; flex-direction: column; }
+    .ritem {
+      display: flex; align-items: center; gap: 13px;
+      padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+      cursor: pointer; text-decoration: none; transition: opacity 0.12s;
+    }
+    .ritem:last-child { border-bottom: none; }
+    .ritem:active { opacity: 0.55; }
+    .ritem-icon {
+      width: 40px; height: 40px; border-radius: 12px;
+      background: #141414; border: 1px solid rgba(255,255,255,0.06);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .ritem-icon svg { width: 16px; height: 16px; stroke: rgba(255,255,255,0.4); fill: none; stroke-width: 2; stroke-linecap: round; }
+    .ritem-body { flex: 1; min-width: 0; }
+    .ritem-title { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+    .ritem-preview { font-size: 12px; color: rgba(255,255,255,0.32); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ritem-time { font-size: 11px; color: rgba(255,255,255,0.25); flex-shrink: 0; }
+
+    /* Fade in */
+    @keyframes fadeUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    .s1 { animation: fadeUp 0.25s ease both; }
+    .s2 { animation: fadeUp 0.25s 0.06s ease both; }
+    .s3 { animation: fadeUp 0.25s 0.12s ease both; }
+    .s4 { animation: fadeUp 0.25s 0.18s ease both; }
+  </style>
 </head>
 <body>
+<div class="page">
 
-<!-- ── SPLASH SCREEN ─────────────────────────────────────── -->
-<div id="splash">
-  <div class="splash-scene">
-    <div class="splash-orbit splash-orbit1"><div class="splash-ring"></div></div>
-    <div class="splash-orbit splash-orbit2"><div class="splash-ring"></div></div>
-    <div class="splash-orbit splash-orbit3"><div class="splash-ring"></div></div>
+  <div class="topbar s1">
+    <div>
+      <p class="topbar-greeting" id="greeting">Good morning</p>
+      <h1 class="topbar-name">Hello, <em id="uname">there</em></h1>
+    </div>
+    <a class="notif-btn" href="profile.html">
+      <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    </a>
   </div>
-  <div class="splash-label">Luna</div>
-</div>
-<!-- ── END SPLASH ────────────────────────────────────────── -->
 
-<canvas id="starfield"></canvas>
-<div id="app">
+  <a class="ask-pill s2" href="app.html">
+    <div class="ask-icon"><img src="icon-192.png" alt="Luna"/></div>
+    <span class="ask-text">Ask Luna anything...</span>
+    <div class="ask-send">
+      <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
+    </div>
+  </a>
 
-  <!-- ── AUTH ───────────────────────────────────────── -->
-  <div id="auth-screen">
-    <div class="auth-box">
-      <img src="icon-192.png" alt="Luna" class="auth-logo"/>
-      <div class="auth-title">Welcome to Luna</div>
-      <div class="auth-sub">Your personal AI assistant</div>
-      <button class="google-btn" onclick="signInWithGoogle()">
-        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="18" height="18">
-          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-        </svg>
-        Continue with Google
-      </button>
-      <div class="auth-divider">or</div>
-      <div class="auth-tabs">
-        <button class="auth-tab active" onclick="switchTab('login')">Sign In</button>
-        <button class="auth-tab" onclick="switchTab('register')">Register</button>
-      </div>
-      <div class="auth-form active" id="login-form">
-        <input class="auth-input" type="email" id="login-email" placeholder="Email address" autocomplete="email"/>
-        <div class="input-eye">
-          <input class="auth-input" type="password" id="login-password" placeholder="Password" autocomplete="current-password"/>
-          <button class="eye-btn" onclick="toggleEye('login-password')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+  <div class="section s3">
+    <div class="section-hdr"><span class="section-label">Quick Actions</span></div>
+    <div class="qgrid">
+      <a class="qcard" href="app.html">
+        <div class="qcard-icon" style="background:rgba(124,58,237,0.15)">
+          <svg style="stroke:#a78bfa" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </div>
-        <div class="auth-error" id="login-error"></div>
-        <button class="auth-btn" onclick="submitLogin()">Sign In</button>
-      </div>
-      <div class="auth-form" id="register-form">
-        <input class="auth-input" type="text" id="reg-username" placeholder="Username" autocomplete="username"/>
-        <input class="auth-input" type="email" id="reg-email" placeholder="Email address" autocomplete="email"/>
-        <div class="input-eye">
-          <input class="auth-input" type="password" id="reg-password" placeholder="Password (min 6 chars)" autocomplete="new-password"/>
-          <button class="eye-btn" onclick="toggleEye('reg-password')"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <div><p>Chat</p><span>Ask anything</span></div>
+      </a>
+      <a class="qcard" href="create.html">
+        <div class="qcard-icon" style="background:rgba(249,115,22,0.12)">
+          <svg style="stroke:#fb923c" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         </div>
-        <div class="auth-error" id="reg-error"></div>
-        <button class="auth-btn" id="reg-submit-btn" onclick="submitRegister()">Create Account</button>
-      </div>
-      <div class="auth-divider" style="margin-top:8px;">or</div>
-      <button class="guest-btn" onclick="continueAsGuest()">Continue as Guest</button>
+        <div><p>Write</p><span>Essays, emails, more</span></div>
+      </a>
+      <a class="qcard" href="explore.html">
+        <div class="qcard-icon" style="background:rgba(59,130,246,0.12)">
+          <svg style="stroke:#60a5fa" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+        </div>
+        <div><p>Explore</p><span>Prompts and tools</span></div>
+      </a>
+      <a class="qcard" href="create.html#image">
+        <div class="qcard-icon" style="background:rgba(34,197,94,0.12)">
+          <svg style="stroke:#4ade80" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </div>
+        <div><p>Image</p><span>5 free per day</span></div>
+      </a>
     </div>
   </div>
 
-  <!-- ── NAVBAR ─────────────────────────────────────── -->
-  <nav class="navbar" id="main-navbar" style="display:none;">
-    <button class="hamburger" id="hamburger" onclick="toggleDrawer()">
-      <span></span><span></span><span></span>
-    </button>
-    <div class="nav-brand" onclick="goHome()">
-      <div class="nav-logo" style="position:relative;">
-        <img src="icon-192.png" alt="Luna"/>
-        <div class="owner-dot" id="owner-dot" style="display:none;"></div>
-      </div>
+  <div class="section s4">
+    <div class="section-hdr">
+      <span class="section-label">Recent</span>
+      <a class="see-all" href="app.html">See all</a>
     </div>
-    <div style="display:flex;align-items:center;gap:6px;">
-      <button class="nav-new-btn" id="share-chat-btn" onclick="shareCurrentChat()" title="Share chat" style="display:none;">
-        <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-      </button>
-      <button class="nav-new-btn" onclick="newChat()" title="New chat">
-        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
-    </div>
-  </nav>
-
-  <!-- ── DRAWER / SIDEBAR ───────────────────────────── -->
-  <!-- Desktop: sidebar + content sit side by side -->
-  <div class="app-body" id="app-body" style="display:none;">
-  <div class="drawer" id="drawer">
-    <div class="drawer-overlay" onclick="closeDrawer()"></div>
-    <div class="drawer-panel">
-      <!-- Desktop brand header (hidden on mobile) -->
-      <div class="sb-desktop-brand">
-        <div class="sb-brand-logo" onclick="goHome()">
-          <img src="icon-192.png" alt="Luna"/>
-          Luna
-        </div>
-        <button class="sb-new-btn" onclick="newChat()" title="New chat">
-          <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-        </button>
-      </div>
-      <!-- Search + edit -->
-      <div class="sb-top">
-        <div class="sb-search">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" placeholder="Search" id="sb-search-input" oninput="filterThreads(this.value)"/>
-        </div>
-        <button class="sb-edit" onclick="newChat();closeDrawer()" title="New chat">
-          <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-        </button>
-      </div>
-      <!-- Nav items -->
-      <div class="sb-nav">
-        <div class="sb-item" onclick="newChat();closeDrawer()">
-          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          New chat
-        </div>
-        <div class="sb-item" onclick="showImages();closeDrawer()">
-          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          Images
-        </div>
-        <div class="sb-item" onclick="showApps();closeDrawer()">
-          <svg viewBox="0 0 24 24"><rect x="2" y="2" width="9" height="9" rx="2"/><rect x="13" y="2" width="9" height="9" rx="2"/><rect x="2" y="13" width="9" height="9" rx="2"/><rect x="13" y="13" width="9" height="9" rx="2"/></svg>
-          Apps
-        </div>
-        <div class="sb-item" onclick="showNewProject();closeDrawer()">
-          <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-          New project
-        </div>
-      </div>
-
-      <!-- Chat history (plain, no backgrounds) -->
-      <div class="sb-history" id="sb-history-list">
-        <div class="sb-empty-hist" id="sb-empty">No conversations yet</div>
-      </div>
-
-      <!-- Profile -->
-      <div class="sb-profile" onclick="toggleProfileDropdown()">
-        <div class="sb-avatar" id="sb-avatar">R</div>
-        <div class="sb-profile-name" id="sb-profile-name">Roland</div>
-        <div class="sb-chevron"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
-        <!-- Dropdown -->
-        <div class="profile-dropdown" id="profile-dropdown">
-          <input type="file" id="avatar-upload" accept="image/*" onchange="uploadAvatar(event)"/>
-          <div class="pd-item" onclick="document.getElementById('avatar-upload').click();event.stopPropagation()">
-            <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            Upload photo
-          </div>
-          <div class="pd-item" onclick="goSettings();closeDrawer()">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            Settings
-          </div>
-          <div class="pd-item danger" onclick="logout()">
-            <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            Sign out
-          </div>
-        </div>
+    <div class="rlist" id="recent-list">
+      <div class="ritem" style="opacity:0.3;pointer-events:none">
+        <div class="ritem-icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="ritem-body"><p class="ritem-title">Loading...</p></div>
       </div>
     </div>
   </div>
 
-  <!-- ── MAIN ────────────────────────────────────────── -->
-  <main class="main" id="main-content" style="display:none;">
-
-    <!-- HOME SCREEN -->
-    <div class="screen active" id="home-screen">
-      <div class="home-inner">
-        <div class="luna-orb-wrap">
-          <div class="luna-orb-glow"></div>
-          <div class="luna-orb">
-            <svg class="orb-scene" viewBox="-36 -36 72 72" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <filter id="orbglow">
-                  <feGaussianBlur stdDeviation="1.2" result="blur"/>
-                  <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                </filter>
-              </defs>
-              <!-- flat horizontal ellipse -->
-              <ellipse cx="0" cy="0" rx="32" ry="12" fill="none" stroke="#fff" stroke-width="1.8" filter="url(#orbglow)" opacity="0.9"/>
-              <!-- tilted left 55deg -->
-              <g transform="rotate(-55)">
-                <ellipse cx="0" cy="0" rx="32" ry="12" fill="none" stroke="#fff" stroke-width="1.8" filter="url(#orbglow)" opacity="0.9"/>
-              </g>
-              <!-- tilted right 55deg -->
-              <g transform="rotate(55)">
-                <ellipse cx="0" cy="0" rx="32" ry="12" fill="none" stroke="#fff" stroke-width="1.8" filter="url(#orbglow)" opacity="0.9"/>
-              </g>
-            </svg>
-          </div>
-        </div>
-        <div class="home-title">Hello<span id="home-username-display"></span>, I'm <span class="accent">LUNA.</span></div>
-        <div class="home-sub">Your personal AI — ready to chat, create, and help you with anything.</div>
-        <div class="starter-grid">
-          <div class="starter-card" onclick="startChat('Help me write something')">Help me write something</div>
-          <div class="starter-card" onclick="startChat('Brainstorm ideas with me')">Brainstorm ideas with me</div>
-          <div class="starter-card" onclick="startChat('Generate an image for me')">Generate an image</div>
-          <div class="starter-card" onclick="startChat('Surprise me with something interesting')">Surprise me ✨</div>
-        </div>
-      </div>
-      <div class="home-spacer"></div>
-      <div class="home-input-outer">
-        <div class="home-input-pill">
-          <textarea id="home-input" placeholder="Ask Luna anything..." rows="1"></textarea>
-          <button class="home-send" id="home-send" disabled>
-            <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- CHAT SCREEN -->
-    <div class="screen" id="chat-screen">
-      <div class="manus-bar" id="manus-bar">
-        <div class="manus-status-dot" id="manus-dot"></div>
-        <div class="manus-status-text">
-          Luna — <span class="manus-status-label" id="manus-status-label">Agent Mode</span>
-        </div>
-      </div>
-      <div class="secret-bar" id="secret-bar">
-        <svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-        Secret Mode — this chat won't be saved
-      </div>
-      <div class="messages" id="messages">
-        <div id="typing-row" class="typing-row" style="display:none;">
-          <div class="typing-bubble">
-            <div class="typing-ring-orbit"><div class="typing-ring-el"></div></div>
-            <div class="typing-ring-orbit"><div class="typing-ring-el"></div></div>
-            <div class="typing-ring-orbit"><div class="typing-ring-el"></div></div>
-          </div>
-          <div id="thinking-label">Thinking deeply...</div>
-        </div>
-      </div>
-      <button class="scroll-btn" id="scroll-btn" onclick="scrollToBottom()">
-        <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-
-      <!-- Install banner — shows on mobile/tablet when not installed -->
-      <div id="install-banner" style="display:none;align-items:center;justify-content:space-between;padding:12px 16px;margin:0 10px 8px;background:linear-gradient(135deg,rgba(108,99,255,0.15),rgba(168,85,247,0.15));border:1px solid rgba(108,99,255,0.3);border-radius:14px;gap:12px;">
-        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
-          <img src="icon-192.png" style="width:36px;height:36px;border-radius:10px;flex-shrink:0;" alt="Luna"/>
-          <div style="min-width:0;">
-            <p style="margin:0;color:#fff;font-size:13px;font-weight:600;">Install Luna</p>
-            <p style="margin:0;color:rgba(255,255,255,0.5);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Add to home screen for the best experience</p>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-          <button onclick="handleInstallBanner()" style="padding:7px 14px;background:linear-gradient(135deg,#6c63ff,#a855f7);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Install</button>
-          <button onclick="dismissInstallBanner()" style="padding:7px 10px;background:rgba(255,255,255,0.08);border:none;border-radius:10px;color:rgba(255,255,255,0.5);font-size:13px;cursor:pointer;">✕</button>
-        </div>
-      </div>
-
-      <div class="chat-bar">
-        <div class="reply-bar" id="reply-bar">
-          <svg viewBox="0 0 24 24"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-          <span class="reply-bar-text" id="reply-bar-text"></span>
-          <button class="reply-cancel" onclick="cancelReply()">×</button>
-        </div>
-        <input type="file" id="pdf-upload" accept="application/pdf,.doc,.docx,.txt,.csv" style="display:none" onchange="handleFile(event)"/>
-        <input type="file" id="video-upload" accept="video/*" style="display:none" onchange="handleVideo(event)"/>
-        <div class="yt-bar" id="yt-bar">
-          <input class="yt-input" id="yt-input" placeholder="Paste YouTube link..." type="url"/>
-          <button class="yt-go-btn" onclick="summarizeYT()">Go</button>
-        </div>
-        <div class="pdf-strip" id="pdf-strip">
-          <div class="pdf-strip-info">
-            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            <span class="pdf-name" id="pdf-name">document.pdf</span>
-          </div>
-          <button class="pdf-clear" onclick="clearPDF()">Remove</button>
-        </div>
-        <div class="img-preview-bar" id="img-preview-bar">
-          <img id="preview-thumb" src="" alt="preview"/>
-          <button class="img-remove-btn" onclick="clearImage()">✕ Remove</button>
-        </div>
-        <div class="pdf-strip" id="video-strip" style="display:none;">
-          <div class="pdf-strip-info">
-            <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-            <span class="pdf-name" id="video-name">video.mp4</span>
-          </div>
-          <button class="pdf-clear" onclick="clearVideo()">Remove</button>
-        </div>
-
-        <div class="bar-chips" id="bar-chips">
-          <div class="bar-chip active" id="chip-model" onclick="toggleModelSelector(event)">
-            <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-            <span id="chip-model-label">Luna Flash</span>
-          </div>
-          <div class="bar-chip" id="chip-agent" onclick="toggleManusMode()">
-            <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            Agent
-          </div>
-        </div>
-        <div class="chat-row">
-          <input type="file" id="img-upload" accept="image/*" style="display:none" onchange="previewImage(event)"/>
-          <button class="plus-btn" id="plus-btn" onclick="togglePlusMenu(event)" title="More options">
-            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-          <textarea id="chat-input" placeholder="Message Luna..." rows="1"></textarea>
-          <button class="clear-chat-btn" onclick="clearChat()" title="Clear chat">
-            <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-          </button>
-          <button class="voice-mode-btn" id="mic-btn" title="Voice conversation" onclick="toggleVoiceMode()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-          </button>
-          <button class="csend" id="chat-send" disabled style="display:none;">
-            <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- IMAGES SCREEN -->
-    <div class="screen" id="images-screen">
-      <div class="screen-hdr">
-        <button class="back-btn" onclick="goHome()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
-        <div class="screen-hdr-title">Images</div>
-      </div>
-      <div class="images-grid" id="images-grid">
-        <div class="images-empty">
-          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          <p>No images generated yet</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- APPS SCREEN -->
-    <div class="screen" id="apps-screen">
-      <div class="screen-hdr">
-        <button class="back-btn" onclick="goHome()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
-        <div class="screen-hdr-title">Apps</div>
-      </div>
-      <div class="apps-grid">
-        <div class="app-card" onclick="launchApp('story')">
-          <div class="app-icon"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
-          <div class="app-name">Story</div>
-          <div class="app-desc">Write creative stories on any topic</div>
-        </div>
-        <div class="app-card" onclick="launchApp('poem')">
-          <div class="app-icon"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
-          <div class="app-name">Poem</div>
-          <div class="app-desc">Beautiful poems for any occasion</div>
-        </div>
-        <div class="app-card" onclick="launchApp('quiz')">
-          <div class="app-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-          <div class="app-name">Quiz</div>
-          <div class="app-desc">Fun interactive quizzes on anything</div>
-        </div>
-        <div class="app-card" onclick="launchApp('roast')">
-          <div class="app-icon"><svg viewBox="0 0 24 24"><path d="M12 2c0 0-4 4-4 9a4 4 0 0 0 8 0c0-5-4-9-4-9z"/><path d="M12 15v4"/><path d="M9 19h6"/></svg></div>
-          <div class="app-name">Roast</div>
-          <div class="app-desc">Hilarious friendly roasts</div>
-        </div>
-        <div class="app-card" onclick="launchApp('motivate')">
-          <div class="app-icon"><svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-          <div class="app-name">Motivate</div>
-          <div class="app-desc">Epic motivational speeches</div>
-        </div>
-        <div class="app-card" onclick="startChat('Generate an image of ')">
-          <div class="app-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
-          <div class="app-name">Image Gen</div>
-          <div class="app-desc">Generate stunning AI images</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- HISTORY SCREEN -->
-    <div class="screen" id="history-screen">
-      <div class="screen-hdr">
-        <button class="back-btn" onclick="goHome()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
-        <div class="screen-hdr-title">History</div>
-      </div>
-      <div class="history-list-wrap" id="history-content">
-        <div class="history-empty"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><p>No conversations yet</p></div>
-      </div>
-    </div>
-
-    <!-- HISTORY DETAIL -->
-    <div class="screen" id="history-detail-screen">
-      <div class="screen-hdr">
-        <button class="back-btn" onclick="closeHistoryDetail()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
-        <div class="screen-hdr-title" id="history-detail-title">Conversation</div>
-      </div>
-      <div class="history-detail-msgs" id="history-detail-msgs"></div>
-      <div class="history-detail-footer">
-        <button class="continue-btn" id="continue-btn" onclick="continueThread()">Continue this conversation</button>
-      </div>
-    </div>
-
-    <!-- SETTINGS SCREEN -->
-    <div class="screen" id="settings-screen">
-      <div class="screen-hdr">
-        <button class="back-btn" onclick="goHome()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
-        <div class="screen-hdr-title">Settings</div>
-      </div>
-      <div class="settings-scroll">
-        <div class="settings-section">
-          <div class="settings-section-title">Appearance</div>
-          <div class="settings-row">
-            <div class="settings-row-info"><h4>Light Mode</h4><p>Switch between dark and light theme</p></div>
-            <label class="toggle">
-              <input type="checkbox" id="dark-toggle" onchange="toggleTheme(this.checked)"/>
-              <span class="toggle-track"></span>
-              <span class="toggle-thumb"></span>
-            </label>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Personalize Luna</div>
-          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:12px;"><div class="settings-row-info"><h4>Your Name</h4><p>Luna will address you by name</p></div><input class="settings-input" id="profile-name" placeholder="e.g. Alex" maxlength="30"/></div>
-          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:12px;"><div class="settings-row-info"><h4>Birthday</h4><p>Luna will wish you on your special day</p></div><input class="settings-input" id="profile-birthday" type="date"/></div>
-          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:12px;"><div class="settings-row-info"><h4>Favorite Topics</h4><p>Comma separated — e.g. music, coding, football</p></div><input class="settings-input" id="profile-topics" placeholder="music, tech, sports..." maxlength="200"/></div>
-          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:12px;"><div class="settings-row-info"><h4>Luna's Nickname</h4><p>What should Luna call herself?</p></div><input class="settings-input" id="profile-nickname" placeholder="Luna" maxlength="20"/></div>
-          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:12px;"><div class="settings-row-info"><h4>Luna's Personality</h4><p>How should Luna talk to you?</p></div>
-            <div class="personality-grid">
-              <button class="personality-btn active" data-p="friendly" onclick="selectPersonality(this)">😊 Friendly</button>
-              <button class="personality-btn" data-p="professional" onclick="selectPersonality(this)">💼 Professional</button>
-              <button class="personality-btn" data-p="funny" onclick="selectPersonality(this)">😂 Funny</button>
-              <button class="personality-btn" data-p="serious" onclick="selectPersonality(this)">🎯 Serious</button>
-            </div>
-          </div>
-          <div class="settings-row"><div class="settings-row-info"><h4>Luna's Mood Read</h4><p>Luna's current read on your vibe</p></div><span class="mood-badge" id="mood-badge">😐 Neutral</span></div>
-          <button class="save-profile-btn" onclick="saveProfile()">Save Preferences</button>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Account</div>
-          <div class="settings-row"><div class="settings-row-info"><h4 id="account-name">Guest</h4><p id="account-desc">Browsing as a guest</p></div></div>
-          <button class="logout-btn" onclick="logout()">Sign Out</button>
-        </div>
-        <div class="settings-section" id="install-section">
-          <div class="settings-section-title">App</div>
-          <div class="settings-row"><div class="settings-row-info"><h4>Install Luna</h4><p>Add Luna to your home screen</p></div></div>
-          <button class="install-btn" onclick="installApp()" id="install-btn-native" style="display:none">Install App</button>
-          <button class="install-btn" onclick="showiOSInstallModal()" id="install-btn-ios" style="display:none">How to Install on iPhone</button>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Notifications</div>
-          <div class="settings-row">
-            <div class="settings-row-info"><h4>Daily message from Luna</h4><p>Get a morning motivation or tip from Luna every day</p></div>
-            <label class="toggle-switch">
-              <input type="checkbox" id="notif-toggle" onchange="toggleNotifications(this.checked)"/>
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <div id="notif-status" style="font-size:12px;color:var(--text-dim);margin-top:6px;display:none;"></div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Share</div>
-          <div class="settings-row"><div class="settings-row-info"><h4>Invite Friends</h4><p>Share Luna with someone you know</p></div></div>
-          <button class="install-btn" onclick="openShareSheet()">Share Luna</button>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Luna's Memory</div>
-          <div class="settings-row"><div class="settings-row-info"><h4>What Luna knows about you</h4><p>Luna learns facts about you as you chat. You can delete any memory below.</p></div></div>
-          <div id="memories-list" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;"></div>
-          <button class="install-btn" onclick="loadMemories()" style="margin-top:10px;">Refresh Memories</button>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title">About</div>
-          <div class="settings-row"><div class="settings-row-info"><h4>Luna AI</h4><p>Personal AI assistant built by Roland</p></div></div>
-          <div class="settings-row"><div class="settings-row-info"><h4>Version</h4><p>2.0.0</p></div></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- SAVED SCREEN -->
-    <div class="screen" id="saved-screen">
-      <div class="screen-hdr">
-        <button class="back-btn" onclick="goHome()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
-        <div class="screen-hdr-title">Saved</div>
-      </div>
-      <div class="history-empty" style="flex:1;">
-        <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-        <p>No saved chats yet</p>
-      </div>
-    </div>
-
-  </main>
-  </div><!-- end app-body -->
 </div>
 
-<!-- MODEL SELECTOR -->
-<div class="model-selector-overlay" id="model-selector-overlay" onclick="closeModelSelector()"></div>
-<div class="model-selector" id="model-selector">
-  <button class="model-option active-model" id="model-luna-flash" onclick="selectModel('luna-flash')">Luna Flash</button>
-  <button class="model-option" id="model-luna-pro" onclick="selectModel('luna-pro')">Luna Pro</button>
-  <button class="model-option" id="model-ro1" onclick="selectModel('ro1')">RO-1</button>
-  <div class="model-option-locked">Luna Ultra</div>
-  <div class="model-option-locked">Luna Omni</div>
-</div>
+<script src="tabs.js"></script>
+<script>
+  const hr = new Date().getHours();
+  document.getElementById('greeting').textContent = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
 
-<!-- PLUS MENU -->
-<div class="plus-menu-overlay" id="plus-menu-overlay" onclick="closePlusMenu()"></div>
-<div class="plus-menu" id="plus-menu">
-  <div class="plus-menu-item" onclick="plusAction('image')">
-    <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>Photos
-  </div>
-  <div class="plus-menu-item" onclick="plusAction('video')">
-    <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>Video
-  </div>
-  <div class="plus-menu-item" onclick="plusAction('pdf')">
-    <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>Files
-  </div>
-  <div class="plus-menu-item" onclick="plusAction('yt')">
-    <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.95C5.12 20 12 20 12 20s6.88 0 8.59-.47a2.78 2.78 0 0 0 1.95-1.95A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/></svg></div>YouTube
-  </div>
-  <div class="plus-menu-item" onclick="closePlusMenu();activateDeepThink()">
-    <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div>Deep Think
-  </div>
-  <div class="plus-menu-item" onclick="closePlusMenu();activateResearch()">
-    <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>Luna Research
-  </div>
-  <div class="plus-menu-item" onclick="closePlusMenu();toggleSecretMode()">
-    <div class="plus-menu-icon"><svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></div>Secret Mode
-  </div>
-</div>
+  const u = window.lunaUser;
+  if (u) document.getElementById('uname').textContent = (u.displayName || u.username || 'there').split(' ')[0];
 
-<!-- VOICE CONVERSATION OVERLAY -->
-<div class="voice-overlay" id="voice-overlay" style="display:none;">
-  <div class="voice-overlay-inner">
-    <button class="voice-close-btn" onclick="stopVoiceMode()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
-    <div class="voice-orb" id="voice-orb" onclick="orbTapped()">
-      <div class="voice-orb-ring r1"></div>
-      <div class="voice-orb-ring r2"></div>
-      <div class="voice-orb-ring r3"></div>
-      <div class="voice-orb-core">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-      </div>
-    </div>
-    <div class="voice-state-label" id="voice-state-label">Tap to speak</div>
-    <div class="voice-transcript" id="voice-transcript"></div>
-    <div class="voice-hint" id="voice-hint">Tap the orb to start talking</div>
-  </div>
-</div>
+  function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function ago(d) {
+    const s = (Date.now() - new Date(d)) / 1000;
+    if (s < 60) return 'now';
+    if (s < 3600) return Math.floor(s/60) + 'm';
+    if (s < 86400) return Math.floor(s/3600) + 'h';
+    return Math.floor(s/86400) + 'd';
+  }
 
-<!-- IMAGE LIGHTBOX -->
-<div class="image-lightbox" id="image-lightbox">
-  <div class="image-lightbox-topbar">
-    <button class="image-lightbox-close" onclick="closeImageLightbox()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
-    <div class="image-lightbox-actions">
-      <button class="btn-share" onclick="shareImage(document.getElementById('image-lightbox-img').dataset.url);event.stopPropagation()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="15" height="15"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-        Share
-      </button>
-      <button class="btn-save" onclick="downloadImage(document.getElementById('image-lightbox-img').dataset.url);event.stopPropagation()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Save
-      </button>
-    </div>
-  </div>
-  <img id="image-lightbox-img" src="" alt="" onclick="event.stopPropagation()"/>
-</div>
-
-<!-- LIGHTBOX -->
-<div class="lightbox" id="lightbox" onclick="closeLightbox()">
-  <button class="lightbox-close" onclick="closeLightbox()">×</button>
-  <img id="lightbox-img" src="" alt=""/>
-  <div class="lightbox-actions">
-    <button class="lightbox-btn" onclick="downloadLightboxImage();event.stopPropagation()">Download</button>
-    <button class="lightbox-btn" onclick="closeLightbox()">Close</button>
-  </div>
-</div>
-
-<!-- TOAST -->
-<div class="toast" id="toast"></div>
-
-<!-- SHARE SHEET -->
-<div class="share-sheet" id="share-sheet" onclick="closeShareSheet(event)">
-  <div class="share-panel">
-    <div class="share-title">Share Luna</div>
-    <div class="share-sub">Invite friends to try Luna AI</div>
-    <div class="share-grid">
-      <div class="share-icon" onclick="shareVia('copy')"><div class="share-icon-btn"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></div><span>Copy link</span></div>
-      <div class="share-icon" onclick="shareVia('whatsapp')"><div class="share-icon-btn"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div><span>WhatsApp</span></div>
-      <div class="share-icon" onclick="shareVia('twitter')"><div class="share-icon-btn"><svg viewBox="0 0 24 24"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"/></svg></div><span>Twitter</span></div>
-      <div class="share-icon" onclick="shareVia('native')"><div class="share-icon-btn"><svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></div><span>More</span></div>
-    </div>
-  </div>
-</div>
-
-<!-- ARTIFACT VIEWER -->
-<div class="artifact-overlay" id="artifact-overlay">
-  <div class="artifact-sheet">
-    <div class="artifact-header">
-      <div class="artifact-title" id="artifact-title">Artifact</div>
-      <button class="artifact-close" onclick="closeArtifact()">×</button>
-    </div>
-    <div class="artifact-body" id="artifact-body"></div>
-    <div class="artifact-footer">
-      <button class="artifact-btn" onclick="copyArtifact()">Copy</button>
-      <button class="artifact-btn primary" onclick="downloadArtifact()">Download</button>
-    </div>
-  </div>
-</div>
-
-<!-- FEEDBACK MODAL -->
-<div class="feedback-modal" id="feedback-modal">
-  <div class="feedback-box">
-    <div class="feedback-title">What went wrong?</div>
-    <div class="feedback-sub">Help us improve Luna's responses</div>
-    <textarea class="feedback-textarea" id="feedback-text" placeholder="Tell us what could be better..."></textarea>
-    <div class="feedback-btns">
-      <button class="feedback-cancel" onclick="closeFeedback()">Cancel</button>
-      <button class="feedback-send" onclick="sendFeedback(document.getElementById('feedback-text').value)">Send</button>
-    </div>
-  </div>
-</div>
-
-<!-- FB MODAL (like/dislike feedback) -->
-<div id="fb-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:20px;">
-  <div style="width:100%;max-width:320px;background:rgba(18,10,30,0.98);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px;">
-    <div style="font-size:28px;text-align:center;margin-bottom:10px;" id="fb-icon">👍</div>
-    <div style="font-size:16px;font-weight:700;text-align:center;margin-bottom:8px;color:var(--text);" id="fb-title">Thanks!</div>
-    <div style="font-size:13px;color:var(--text-mid);text-align:center;line-height:1.5;margin-bottom:14px;" id="fb-body"></div>
-    <div id="fb-extra" style="margin-bottom:12px;"></div>
-    <button id="fb-action-btn" style="width:100%;padding:13px;border:none;border-radius:12px;background:#9b7fd4;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">OK</button>
-  </div>
-</div>
-
-
-
-<script src="app.js"></script>
-<script src="voice.js"></script>
+  async function loadRecent() {
+    if (!window.lunaUser) return;
+    try {
+      const res = await fetch(`${window.lunaBackend}/threads/${window.lunaUser.id}`, { headers: window.lunaHeaders() });
+      if (!res.ok) return;
+      const threads = await res.json();
+      const list = document.getElementById('recent-list');
+      if (!threads.length) {
+        list.innerHTML = `<div class="ritem" style="opacity:0.3;pointer-events:none">
+          <div class="ritem-icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <div class="ritem-body"><p class="ritem-title">No chats yet</p><p class="ritem-preview">Start a conversation with Luna</p></div>
+        </div>`;
+        return;
+      }
+      list.innerHTML = threads.slice(0, 5).map(t => `
+        <a class="ritem" href="app.html?thread=${t._id}">
+          <div class="ritem-icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <div class="ritem-body">
+            <p class="ritem-title">${esc(t.title || 'Chat')}</p>
+            <p class="ritem-preview">${esc((t.messages?.[t.messages.length-1]?.text || '').slice(0,60))}</p>
+          </div>
+          <span class="ritem-time">${ago(t.updatedAt)}</span>
+        </a>`).join('');
+    } catch(e) {}
+  }
+  loadRecent();
+</script>
 </body>
 </html>

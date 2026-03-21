@@ -1,0 +1,66 @@
+/* ── Shared Tab Bar ─────────────────────────────────────── */
+.tab-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 64px;
+  max-width: 430px;
+  margin: 0 auto;
+  background: rgba(0,0,0,0.92);
+  border-top: 1px solid rgba(255,255,255,0.07);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 100;
+  transition: transform 0.28s ease, opacity 0.22s ease;
+}
+
+.tab-bar.hidden {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 0;
+  cursor: pointer;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.1s;
+}
+
+.tab-item:active { opacity: 0.6; }
+
+.tab-item svg {
+  width: 22px;
+  height: 22px;
+  stroke: rgba(255,255,255,0.3);
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.18s;
+}
+
+.tab-item span {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.3);
+  letter-spacing: 0.2px;
+  transition: color 0.18s;
+  font-family: -apple-system, 'SF Pro Text', BlinkMacSystemFont, sans-serif;
+}
+
+.tab-item.active svg { stroke: #7c3aed; }
+.tab-item.active span { color: #a78bfa; }
+
+/* Page body needs bottom padding so content isn't behind tab bar */
+body { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
