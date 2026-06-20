@@ -282,7 +282,8 @@
       </div>`).join('');
   }
 
-  const BACKEND_URL='https://luna-al-production.up.railway.app';
+  const BACKEND_URL='https://luna-al.onrender.com
+;
   let isOwner=false,busy=false,selectedImageBase64=null,selectedVideoBase64=null,selectedFileData=null,lastGeneratedImageUrl=null;
   let authToken=localStorage.getItem('luna-token');
   let currentUser=JSON.parse(localStorage.getItem('luna-user')||'null');
