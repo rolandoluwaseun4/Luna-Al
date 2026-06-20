@@ -18,6 +18,11 @@
       touch-action: pan-x pan-y;
       -ms-touch-action: pan-x pan-y;
     }
+    /* iOS auto-zooms into any input/textarea with font-size below 16px.
+       Forcing 16px here stops the page from shifting/zooming when typing. */
+    #home-input, #chat-input, #expand-textarea {
+      font-size: 16px !important;
+    }
   </style>
 </head>
 <body>
