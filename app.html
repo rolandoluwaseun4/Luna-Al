@@ -13,17 +13,6 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
   <link rel="stylesheet" href="styles.css"/>
-  <style>
-    html, body {
-      touch-action: pan-x pan-y;
-      -ms-touch-action: pan-x pan-y;
-    }
-    /* iOS auto-zooms into any input/textarea with font-size below 16px.
-       Forcing 16px here stops the page from shifting/zooming when typing. */
-    #home-input, #chat-input, #expand-textarea {
-      font-size: 16px !important;
-    }
-  </style>
 </head>
 <body>
 
@@ -223,7 +212,7 @@
       <div class="home-spacer"></div>
       <div class="home-input-outer">
         <div class="home-input-pill">
-          <textarea id="home-input" placeholder="Ask Luna anything..." rows="1" enterkeyhint="enter"></textarea>
+          <textarea id="home-input" placeholder="Ask Luna anything..." rows="1" enterkeyhint="enter" autocomplete="off"></textarea>
           <button class="home-send" id="home-send" disabled>
             <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
           </button>
@@ -318,7 +307,7 @@
           <button class="plus-btn" id="plus-btn" onclick="togglePlusMenu(event)" title="More options">
             <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
-          <textarea id="chat-input" placeholder="Message Luna..." rows="1" enterkeyhint="enter"></textarea>
+          <textarea id="chat-input" placeholder="Message Luna..." rows="1" enterkeyhint="enter" autocomplete="off"></textarea>
           <button class="expand-btn" id="expand-btn" onclick="openExpandOverlay()" title="Expand" style="display:none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           </button>
@@ -612,38 +601,6 @@
 
 
 
-<script>
-  // Block iOS pinch-zoom — iOS ignores user-scalable=no in the meta tag,
-  // so we have to catch the actual gesture events directly.
-  document.addEventListener('gesturestart', function (e) {
-    e.preventDefault();
-  }, { passive: false });
-
-  document.addEventListener('gesturechange', function (e) {
-    e.preventDefault();
-  }, { passive: false });
-
-  document.addEventListener('gestureend', function (e) {
-    e.preventDefault();
-  }, { passive: false });
-
-  // Block double-tap-to-zoom
-  let lastTouchEnd = 0;
-  document.addEventListener('touchend', function (e) {
-    const now = Date.now();
-    if (now - lastTouchEnd <= 300) {
-      e.preventDefault();
-    }
-    lastTouchEnd = now;
-  }, { passive: false });
-
-  // Block two-finger pinch via touchmove (covers Android + extra iOS coverage)
-  document.addEventListener('touchmove', function (e) {
-    if (e.touches.length > 1) {
-      e.preventDefault();
-    }
-  }, { passive: false });
-</script>
-<script src="app.js"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

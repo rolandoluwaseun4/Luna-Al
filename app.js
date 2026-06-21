@@ -265,6 +265,63 @@
     localStorage.setItem('luna-generated-images', JSON.stringify(imgs));
   }
 
+  // ── Composite real, legible text onto a generated image ──────────────
+  // AI image models can't render text reliably, so Luna draws it separately
+  // using actual canvas fonts on top of the AI-generated background.
+  const TEXT_OVERLAY_STYLES = {
+    'chalk-white':  { color: '#f5f5f0', font: '600 ', family: 'sans-serif', shadow: 'rgba(0,0,0,0.5)', shadowBlur: 4 },
+    'marker-black': { color: '#1a1a1a', font: '700 ', family: 'sans-serif', shadow: 'rgba(255,255,255,0.3)', shadowBlur: 1 },
+    'marker-blue':  { color: '#1e5fbf', font: '700 ', family: 'sans-serif', shadow: 'rgba(255,255,255,0.3)', shadowBlur: 1 },
+    'neon-glow':    { color: '#39ff8f', font: '700 ', family: 'sans-serif', shadow: '#39ff8f', shadowBlur: 18 },
+    'plain-dark':   { color: '#1a1a1a', font: '600 ', family: 'sans-serif', shadow: 'rgba(255,255,255,0.4)', shadowBlur: 1 },
+    'plain-light':  { color: '#f5f5f5', font: '600 ', family: 'sans-serif', shadow: 'rgba(0,0,0,0.5)', shadowBlur: 3 },
+    'handwritten':  { color: '#222222', font: 'italic 600 ', family: 'cursive, sans-serif', shadow: 'rgba(255,255,255,0.3)', shadowBlur: 1 },
+  };
+
+  function compositeTextOnImage(imageDataUrl, lines, styleKey){
+    return new Promise((resolve) => {
+      if(!lines || lines.length === 0){ resolve(imageDataUrl); return; }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+
+          const style = TEXT_OVERLAY_STYLES[styleKey] || TEXT_OVERLAY_STYLES['plain-dark'];
+
+          // Scale font size relative to image size so it reads naturally
+          const baseFontSize = Math.max(18, Math.round(img.width * 0.045));
+          const lineHeight = baseFontSize * 1.5;
+          const totalHeight = lineHeight * lines.length;
+          const startY = (img.height - totalHeight) / 2 + baseFontSize;
+
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = `${style.font}${baseFontSize}px ${style.family}`;
+          ctx.fillStyle = style.color;
+          ctx.shadowColor = style.shadow;
+          ctx.shadowBlur = style.shadowBlur;
+
+          lines.forEach((line, i) => {
+            const y = startY + (i * lineHeight);
+            ctx.fillText(line, img.width / 2, y, img.width * 0.85);
+          });
+
+          resolve(canvas.toDataURL('image/png'));
+        } catch(e){
+          console.warn('[Luna] Text overlay compositing failed:', e);
+          resolve(imageDataUrl); // fall back to original image, never block the message
+        }
+      };
+      img.onerror = () => resolve(imageDataUrl);
+      img.src = imageDataUrl;
+    });
+  }
+
   // Sidebar thread list
   function populateSidebarThreads(threads){
     const list = document.getElementById('sb-history-list');
@@ -400,6 +457,27 @@
   const chatSend=document.getElementById('chat-send');
   const messagesEl=document.getElementById('messages');
   const typingRow=document.getElementById('typing-row');
+
+  // ── Suppress iOS's prev/next/done keyboard toolbar ────────────────────
+  // iOS Safari shows that bar whenever it sees more than one focusable
+  // input in the DOM, even ones that are visually hidden behind other
+  // screens. Disabling every other input while one is focused makes
+  // Safari treat it as the only field on the page.
+  function isolateActiveInput(activeEl){
+    const allFields = document.querySelectorAll('input, textarea');
+    allFields.forEach(el => {
+      if(el !== activeEl) el.setAttribute('inert', '');
+    });
+  }
+  function releaseInputIsolation(){
+    document.querySelectorAll('input, textarea').forEach(el => el.removeAttribute('inert'));
+  }
+  [homeInput, chatInput, document.getElementById('expand-textarea')].forEach(el => {
+    if(!el) return;
+    el.addEventListener('focus', () => isolateActiveInput(el));
+    el.addEventListener('blur', releaseInputIsolation);
+  });
+
   function tryLogin(){
     const pwEl=document.getElementById('pw-input');
     const pw=pwEl?pwEl.value:'';
@@ -1109,8 +1187,12 @@
                   const imgData = await imgRes.json();
                   genRow.remove();
                   if(imgData.image){
-                    lastGeneratedImageUrl = imgData.image;
-                    addMsg('luna', json.editLastImage ? 'Here is the edited image:' : '', imgData.image);
+                    let finalImage = imgData.image;
+                    if(imgData.overlayLines && imgData.overlayLines.length > 0){
+                      finalImage = await compositeTextOnImage(imgData.image, imgData.overlayLines, imgData.textStyle);
+                    }
+                    lastGeneratedImageUrl = finalImage;
+                    addMsg('luna', json.editLastImage ? 'Here is the edited image:' : '', finalImage);
                   } else {
                     addMsg('luna', imgData.error || 'Could not generate that image. Try describing it differently.');
                   }
