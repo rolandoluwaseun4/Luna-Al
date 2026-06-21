@@ -13,6 +13,17 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
   <link rel="stylesheet" href="styles.css"/>
+  <style>
+    html, body {
+      touch-action: pan-x pan-y;
+      -ms-touch-action: pan-x pan-y;
+    }
+    /* iOS auto-zooms into any input/textarea with font-size below 16px.
+       Forcing 16px here stops the page from shifting/zooming when typing. */
+    #home-input, #chat-input, #expand-textarea {
+      font-size: 16px !important;
+    }
+  </style>
 </head>
 <body>
 
@@ -601,6 +612,51 @@
 
 
 
-<script src="app.js?v=3"></script>
+<script>
+  // Block iOS pinch-zoom — iOS ignores user-scalable=no in the meta tag,
+  // so we have to catch the actual gesture events directly.
+  document.addEventListener('gesturestart', function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('gesturechange', function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('gestureend', function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  // Block double-tap-to-zoom
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', function (e) {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) {
+      e.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, { passive: false });
+
+  // Block two-finger pinch via touchmove
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches.length > 1) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  // ── Failsafe: force-reset zoom after every touch interaction ──────────
+  // If anything above gets bypassed, this forcibly snaps the page back
+  // to 1.0 scale by re-applying the viewport meta tag.
+  function forceResetZoom() {
+    const vp = document.querySelector('meta[name="viewport"]');
+    if (vp) {
+      vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover');
+    }
+  }
+  document.addEventListener('touchend', forceResetZoom, { passive: true });
+  document.addEventListener('gestureend', forceResetZoom, { passive: true });
+  window.addEventListener('orientationchange', forceResetZoom);
+</script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
