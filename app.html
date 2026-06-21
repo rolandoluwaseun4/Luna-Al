@@ -656,7 +656,37 @@
   document.addEventListener('touchend', forceResetZoom, { passive: true });
   document.addEventListener('gestureend', forceResetZoom, { passive: true });
   window.addEventListener('orientationchange', forceResetZoom);
+
+  // ── Focus-triggered zoom/scroll fix ────────────────────────────────────
+  // Covers two possible causes of the "shifted on keyboard open" bug:
+  //  1. Genuine iOS zoom-on-focus (font-size workaround should stop this,
+  //     this is a backup in case something slips through)
+  //  2. Browser auto-scrolling horizontally to bring the focused input
+  //     into view, which looks identical but is a different mechanism
+  function fixFocusShift(){
+    // Force font-size 16px directly via inline style — highest possible
+    // CSS specificity, removes any doubt about cascade/cache issues
+    document.querySelectorAll('input, textarea').forEach(el => {
+      el.style.fontSize = '16px';
+    });
+    // Reset any horizontal scroll position back to 0
+    window.scrollTo(0, window.scrollY);
+    document.documentElement.scrollLeft = 0;
+    document.body.scrollLeft = 0;
+    forceResetZoom();
+  }
+  document.addEventListener('focusin', fixFocusShift);
+  document.addEventListener('focus', fixFocusShift, true);
+
+  // Also catch it via the visualViewport API, which iOS specifically
+  // updates when the keyboard opens/closes and when zoom changes
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      document.documentElement.scrollLeft = 0;
+      document.body.scrollLeft = 0;
+    });
+  }
 </script>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
