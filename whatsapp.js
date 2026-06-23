@@ -105,11 +105,11 @@ async function connectBaileys() {
       clearSchedule();
 
       if (code === 405 || code === 401 || code === 403) {
-        // Auth rejected — clear session and wait for manual reset
-        console.log('[WhatsApp] Auth rejected — clearing session. Visit /whatsapp/reset to reconnect.');
+        // Auth rejected — clear session and reconnect to get fresh QR
+        console.log('[WhatsApp] Auth rejected — clearing session and reconnecting for fresh QR...');
         try { fs.rmSync('/tmp/wa-session', { recursive: true, force: true }); } catch(e) {}
         sock = null;
-        // Do NOT auto-reconnect — wait for user to visit /whatsapp/reset
+        setTimeout(connectBaileys, 3000);
       } else if (code !== 428) {
         // Other errors — reconnect after delay
         console.log('[WhatsApp] Reconnecting in 10s...');
