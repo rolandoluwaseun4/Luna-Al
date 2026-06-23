@@ -72,9 +72,12 @@ async function connectBaileys() {
 
   sock = makeWASocket({
     auth:    state,
-    browser: Browsers.macOS('Chrome'),
+    browser: ['Luna AI', 'Firefox', '120.0'],
     printQRInTerminal: false,
     logger: (await import('pino')).default({ level: 'silent' }),
+    connectTimeoutMs: 60000,
+    qrTimeout: 60000,
+    retryRequestDelayMs: 2000,
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -105,11 +108,10 @@ async function connectBaileys() {
       clearSchedule();
 
       if (code === 405 || code === 401 || code === 403) {
-        // Auth rejected — clear session and reconnect to get fresh QR
-        console.log('[WhatsApp] Auth rejected — clearing session and reconnecting for fresh QR...');
+        // Auth rejected — clear session and stop. Visit /whatsapp/reset to try again.
+        console.log('[WhatsApp] Auth rejected (code ' + code + ') — session cleared. Visit /whatsapp/reset to reconnect.');
         try { fs.rmSync('/tmp/wa-session', { recursive: true, force: true }); } catch(e) {}
         sock = null;
-        setTimeout(connectBaileys, 3000);
       } else if (code !== 428) {
         // Other errors — reconnect after delay
         console.log('[WhatsApp] Reconnecting in 10s...');
