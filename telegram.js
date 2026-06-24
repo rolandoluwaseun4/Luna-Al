@@ -2146,7 +2146,6 @@ app.all('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req,
 
     const userId = 'wa_' + from.replace('whatsapp:', '').replace(/\D/g, '');
     console.log(`[Twilio WA] Message from ${from}${isOwnerWA ? ' (owner)' : ''}: ${body}`);
-    console.log(`[Twilio WA] mediaUrl: ${mediaUrl || 'none'}, mediaType: ${mediaType || 'none'}, isNewUser: ${!thread}`);
 
     // Load last 6 messages for context
     let thread = await Thread.findOne({ userId, threadId: userId + '_wa' });
