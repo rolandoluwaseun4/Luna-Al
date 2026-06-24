@@ -2133,6 +2133,50 @@ app.post('/voice/read', requireAuth, async (req, res) => {
 // ── WhatsApp Content Manager ──────────────────────────────────
 initWhatsApp(app, requireAuth);
 
+// ── Twilio WhatsApp Webhook ───────────────────────────────────
+// Receives messages from WhatsApp via Twilio sandbox
+// Set this URL in Twilio console: https://luna-al.onrender.com/whatsapp/twilio
+app.post('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req, res) => {
+  try {
+    const from = req.body.From || '';   // e.g. whatsapp:+2347061298954
+    const body = req.body.Body || '';
+    if (!from || !body) return res.status(200).send('<Response></Response>');
+
+    const userId = 'wa_' + from.replace('whatsapp:', '').replace(/\D/g, '');
+    console.log(`[Twilio WA] Message from ${from}: ${body}`);
+
+    // Load last 6 messages for context
+    let thread = await Thread.findOne({ userId, threadId: userId + '_wa' });
+    if (!thread) {
+      thread = await Thread.create({ userId, threadId: userId + '_wa', title: 'WhatsApp', messages: [] });
+    }
+    const history = thread.messages.slice(-6);
+
+    // Get Luna's reply
+    const { respond } = require('./luna');
+    const reply = await respond(body, history, 'luna-flash', null, null, null);
+    const replyText = typeof reply === 'string' ? reply : (reply.reply || reply.text || 'Hey!');
+
+    // Save messages to thread
+    thread.messages.push({ role: 'user', content: body });
+    thread.messages.push({ role: 'assistant', content: replyText });
+    thread.lastUpdated = new Date();
+    await thread.save();
+
+    // Reply via Twilio TwiML
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message to="${from}" from="${process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'}">${replyText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</Message>
+</Response>`;
+    res.setHeader('Content-Type', 'text/xml');
+    res.status(200).send(twiml);
+
+  } catch (err) {
+    console.error('[Twilio WA] Error:', err.message);
+    res.status(200).send('<Response></Response>');
+  }
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
 
