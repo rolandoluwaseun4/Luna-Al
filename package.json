@@ -17,6 +17,7 @@
     "@google/generative-ai": "^0.21.0",
     "openai": "^4.98.0",
     "qrcode": "^1.5.4",
+    "pdf-parse": "^1.1.1",
     "@whiskeysockets/baileys": "^6.7.9",
     "pino": "^9.0.0"
   },
