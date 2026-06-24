@@ -2140,10 +2140,16 @@ app.all('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req,
   try {
     const from = req.body.From || '';   // e.g. whatsapp:+2347061298954
     const body = req.body.Body || '';
-    if (!from || !body) return res.status(200).send('<Response></Response>');
+    const mediaUrl = req.body.MediaUrl0 || '';
+    const mediaType = req.body.MediaContentType0 || '';
+    if (!from) return res.status(200).send('<Response></Response>');
+
+    // Owner numbers
+    const OWNER_NUMBERS = ['whatsapp:+2347061298954', 'whatsapp:+2348153879694'];
+    const isOwnerWA = OWNER_NUMBERS.includes(from);
 
     const userId = 'wa_' + from.replace('whatsapp:', '').replace(/\D/g, '');
-    console.log(`[Twilio WA] Message from ${from}: ${body}`);
+    console.log(`[Twilio WA] Message from ${from}${isOwnerWA ? ' (owner)' : ''}: ${body}`);
 
     // Load last 6 messages for context
     let thread = await Thread.findOne({ userId, threadId: userId + '_wa' });
@@ -2154,7 +2160,7 @@ app.all('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req,
     const history = thread.messages.slice(-6);
 
     // Welcome message for new users
-    if (isNewUser) {
+    if (isNewUser && !isOwnerWA) {
       const welcome = `Hey 👋 I'm Luna ✨
 
 Save this number as Luna in your contacts — my messages come through Twilio API.
@@ -2171,13 +2177,37 @@ What's on your mind?`;
       return res.status(200).send(twiml);
     }
 
+    // Handle PDF upload
+    let pdfContext = '';
+    if (mediaUrl && mediaType === 'application/pdf') {
+      try {
+        console.log('[Twilio WA] PDF received, fetching...');
+        const pdfRes = await fetch(mediaUrl, {
+          headers: { 'Authorization': 'Basic ' + Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64') }
+        });
+        const pdfBuffer = await pdfRes.arrayBuffer();
+        const pdfParse = require('pdf-parse');
+        const pdfData = await pdfParse(Buffer.from(pdfBuffer));
+        const pdfText = pdfData.text.slice(0, 3000);
+        pdfContext = `\n\n[PDF content]:\n${pdfText}`;
+        console.log('[Twilio WA] PDF parsed, length:', pdfText.length);
+      } catch(e) {
+        console.error('[Twilio WA] PDF parse error:', e.message);
+        pdfContext = '\n\n[PDF was attached but could not be read]';
+      }
+    }
+
+    // If no text body and no PDF, ignore
+    if (!body && !pdfContext) return res.status(200).send('<Response></Response>');
+
     // Get Luna's reply — fast direct call with timeout for Twilio's 15s limit
     const waHistory = history.slice(-6).map(m => ({ role: m.role, content: String(m.content) }));
-    const waSystemPrompt = getSystemPrompt({ isOwner: false, profile: null, memories: [] }) + '\n\nIMPORTANT: This conversation is on WhatsApp. Keep replies short and conversational — max 3 sentences unless the user specifically asks for more detail.';
+    const waSystemPrompt = getSystemPrompt({ isOwner: isOwnerWA, profile: null, memories: [] }) + '\n\nIMPORTANT: This conversation is on WhatsApp. Keep replies short and conversational — max 3 sentences unless the user specifically asks for more detail.';
+    const userMessage = (body || 'I sent you a PDF, please read and summarize it.') + pdfContext;
     const waMessages = [
       { role: 'system', content: waSystemPrompt },
       ...waHistory,
-      { role: 'user', content: body }
+      { role: 'user', content: userMessage }
     ];
     let replyText = 'Hey! Something went wrong on my end. Try again?';
     try {
@@ -2208,7 +2238,7 @@ What's on your mind?`;
     } catch(e) { console.error('[Twilio WA] All models failed:', e.message); }
 
     // Save messages to thread
-    thread.messages.push({ role: 'user', content: body });
+    thread.messages.push({ role: 'user', content: userMessage });
     thread.messages.push({ role: 'assistant', content: replyText });
     thread.lastUpdated = new Date();
     await thread.save();
