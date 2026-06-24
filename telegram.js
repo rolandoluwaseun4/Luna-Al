@@ -2153,9 +2153,16 @@ app.post('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req
     const history = thread.messages.slice(-6);
 
     // Get Luna's reply
-    const { respond } = require('./luna');
-    const reply = await respond(body, history, 'luna-flash', null, null, null);
-    const replyText = typeof reply === 'string' ? reply : (reply.reply || reply.text || 'Hey!');
+    const lunaResult = await luna.respond({
+      message: body,
+      history,
+      clientModel: 'luna-flash',
+      isOwner: false,
+      baseSystemPrompt: null,
+      image: null, video: null, file: null,
+      webSearchFn: null, onChunk: null,
+    });
+    const replyText = typeof lunaResult === 'string' ? lunaResult : (lunaResult.reply || lunaResult.text || 'Hey!');
 
     // Save messages to thread
     thread.messages.push({ role: 'user', content: body });
