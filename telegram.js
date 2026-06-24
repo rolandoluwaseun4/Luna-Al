@@ -2136,7 +2136,7 @@ initWhatsApp(app, requireAuth);
 // ── Twilio WhatsApp Webhook ───────────────────────────────────
 // Receives messages from WhatsApp via Twilio sandbox
 // Set this URL in Twilio console: https://luna-al.onrender.com/whatsapp/twilio
-app.post('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req, res) => {
+app.all('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req, res) => {
   try {
     const from = req.body.From || '';   // e.g. whatsapp:+2347061298954
     const body = req.body.Body || '';
