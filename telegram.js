@@ -11,7 +11,6 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const helmet = require('helmet');
 const crypto = require('crypto');
 const { initNotifications, sendReplyNotification } = require('./notifications');
-const { initWhatsApp } = require('./whatsapp');
 
 // ── Resend email client ───────────────────────────────────────
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
@@ -768,8 +767,8 @@ app.use(cors({
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 
 // ── Request size limits — prevent payload attacks ─────────────
-app.use(express.json({ limit: '100kb' }));        // was 2mb — no route needs more than 100kb of JSON
-app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+app.use(express.json({ limit: '50mb' }));        // was 2mb — no route needs more than 100kb of JSON
+app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
 // ── Request logger — see every hit, method, IP, status ────────
 app.use((req, res, next) => {
@@ -2129,9 +2128,6 @@ app.post('/voice/read', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Voice service unavailable' });
   }
 });
-
-// ── WhatsApp Content Manager ──────────────────────────────────
-initWhatsApp(app, requireAuth);
 
 // ── Twilio WhatsApp Webhook ───────────────────────────────────
 // Receives messages from WhatsApp via Twilio sandbox
