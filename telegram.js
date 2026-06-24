@@ -2173,8 +2173,9 @@ What's on your mind?`;
 
     // Get Luna's reply — fast direct call with timeout for Twilio's 15s limit
     const waHistory = history.slice(-6).map(m => ({ role: m.role, content: String(m.content) }));
+    const waSystemPrompt = getSystemPrompt({ isOwner: false, profile: null, memories: [] }) + '\n\nIMPORTANT: This conversation is on WhatsApp. Keep replies short and conversational — max 3 sentences unless the user specifically asks for more detail.';
     const waMessages = [
-      { role: 'system', content: 'You are Luna, a smart and friendly AI assistant. Keep replies short and conversational — this is WhatsApp. Max 3 sentences unless the user asks for more.' },
+      { role: 'system', content: waSystemPrompt },
       ...waHistory,
       { role: 'user', content: body }
     ];
