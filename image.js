@@ -30,6 +30,23 @@
  */
 
 const OpenAI = require('openai');
+const { v2: cloudinary } = require('cloudinary');
+
+// ── Cloudinary config ─────────────────────────────────────────────────────
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// ── Upload base64 image to Cloudinary, return public URL ─────────────────
+async function uploadToCloudinary(base64DataUrl) {
+  const result = await cloudinary.uploader.upload(base64DataUrl, {
+    folder: 'luna-wa',
+    resource_type: 'image',
+  });
+  return result.secure_url;
+}
 
 // ── OpenRouter client (vision fallback only — generation unchanged) ───────
 const openrouter = process.env.OPENROUTER_API_KEY
@@ -448,12 +465,59 @@ async function analyzeImageWithOpenRouter(systemPrompt, history, imageBase64) {
 //    isImageEditRequest(prompt)    — detect if user wants to edit prev image
 //    lastGeneratedImage            — Map<uid, {base64, prompt}>
 // ═════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
+//  WHATSAPP IMAGE HANDLER
+//
+//  1. Fetch image from Twilio media URL (needs Basic auth)
+//  2. Convert to base64
+//  3. Analyze with vision models
+//  Returns: description string
+// ═════════════════════════════════════════════════════════════════════════
+async function analyzeWhatsAppImage(mediaUrl, systemPrompt, userCaption) {
+  const sid   = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+
+  console.log('[Vision WA] Fetching image from Twilio...');
+  const imgRes = await fetch(mediaUrl, {
+    headers: { 'Authorization': 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64') }
+  });
+  if (!imgRes.ok) throw new Error(`Twilio image fetch failed: ${imgRes.status}`);
+
+  const buffer   = await imgRes.arrayBuffer();
+  const mimeType = imgRes.headers.get('content-type') || 'image/jpeg';
+  const base64   = `data:${mimeType};base64,${Buffer.from(buffer).toString('base64')}`;
+
+  const caption = userCaption || 'What is in this image? Describe it and respond helpfully.';
+  const history = [{ role: 'user', content: caption }];
+
+  console.log('[Vision WA] Analyzing image...');
+  const reply = await analyzeImageWithOpenRouter(systemPrompt, history, base64);
+  return reply;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+//  WHATSAPP IMAGE GENERATION
+//
+//  Generate image then upload to Cloudinary for a public URL
+//  Twilio needs a public URL to send images — can't send base64
+// ═════════════════════════════════════════════════════════════════════════
+async function generateImageForWhatsApp(prompt, uid) {
+  const { image, provider } = await generateImage(prompt, uid);
+  console.log(`[Image WA] Generated via ${provider}, uploading to Cloudinary...`);
+  const publicUrl = await uploadToCloudinary(image);
+  console.log('[Image WA] Cloudinary URL:', publicUrl);
+  return publicUrl;
+}
+
 module.exports = {
   generateImage,
   generateWithCloudflare,
   generateWithPixazo,
   generateWithAIHorde,
   analyzeImageWithOpenRouter,
+  analyzeWhatsAppImage,
+  generateImageForWhatsApp,
+  uploadToCloudinary,
   isImageEditRequest,
   lastGeneratedImage,
 };

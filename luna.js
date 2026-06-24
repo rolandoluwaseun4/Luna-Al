@@ -71,11 +71,18 @@ groqFallback: 'llama3-70b-8192',                 // Groq - last Groq option
 orFallbacks: [                                   // OpenRouter wider pool
 'meta-llama/llama-3.3-70b-instruct:free',
 'mistralai/mistral-small-3.1-24b-instruct:free',
+'mistralai/mistral-small-3.2-24b-instruct:free',
 'google/gemma-3-27b-it:free',
+'google/gemma-3-12b-it:free',
 'nousresearch/hermes-3-llama-3.1-405b:free',
 'openai/gpt-oss-20b:free',
+'openai/gpt-oss-120b:free',
+'meta-llama/llama-4-scout:free',
+'meta-llama/llama-4-maverick:free',
 'arcee-ai/trinity-mini:free',
 'z-ai/glm-4.5-air:free',
+'nvidia/nemotron-nano-12b-v2-vl:free',
+'openrouter/free',
 ]
 },
 
@@ -86,10 +93,15 @@ groqFallback: 'llama-3.3-70b-versatile',         // Groq - fast fallback if qwen
 orFallbacks: [                                   // OpenRouter fallbacks (thinking models first)
 'deepseek/deepseek-r1:free',                   // Thinking model - keeps the thinking block UX
 'qwen/qwen3-235b-a22b:free',                   // Larger Qwen3 if available
+'qwen/qwen3-coder-480b:free',                  // Strongest free model June 2026
 'openai/gpt-oss-120b:free',
+'openai/gpt-oss-20b:free',
+'meta-llama/llama-4-maverick:free',
+'meta-llama/llama-4-scout:free',
 'arcee-ai/trinity-large-preview:free',
 'nousresearch/hermes-3-llama-3.1-405b:free',
 'meta-llama/llama-3.3-70b-instruct:free',
+'openrouter/free',
 ]
 },
 

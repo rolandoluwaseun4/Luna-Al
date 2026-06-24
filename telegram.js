@@ -2177,6 +2177,30 @@ What's on your mind?`;
       return res.status(200).send(twiml);
     }
 
+    // Handle image upload — Luna reads it
+    let imageContext = '';
+    if (mediaUrl && mediaType.startsWith('image/')) {
+      try {
+        const { analyzeWhatsAppImage } = require('./image');
+        const waSystemPrompt = getSystemPrompt({ isOwner: isOwnerWA, profile: null, memories: [] });
+        imageContext = await analyzeWhatsAppImage(mediaUrl, waSystemPrompt, body);
+        // Reply directly with vision result, skip normal AI call
+        const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message to="${from}" from="${process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'}">${imageContext.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</Message>
+</Response>`;
+        thread.messages.push({ role: 'user', content: body || '[image]' });
+        thread.messages.push({ role: 'assistant', content: imageContext });
+        thread.lastUpdated = new Date();
+        await thread.save();
+        res.setHeader('Content-Type', 'text/xml');
+        return res.status(200).send(twiml);
+      } catch(e) {
+        console.error('[Twilio WA] Image analysis error:', e.message);
+        imageContext = '(image received but could not be analyzed)';
+      }
+    }
+
     // Handle PDF upload
     let pdfContext = '';
     if (mediaUrl && mediaType === 'application/pdf') {
@@ -2243,11 +2267,36 @@ What's on your mind?`;
     thread.lastUpdated = new Date();
     await thread.save();
 
-    // Reply via Twilio TwiML
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+    // Check if Luna wants to generate an image
+    const waFrom = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
+    let twiml;
+    const imgGenMatch = replyText.match(/\[GENERATE_IMAGE:\s*(.+?)\]/i);
+    if (imgGenMatch || (plan && plan.intent === 'image_generate')) {
+      try {
+        const { generateImageForWhatsApp } = require('./image');
+        const imgPrompt = imgGenMatch ? imgGenMatch[1] : replyText;
+        const imgUrl = await generateImageForWhatsApp(imgPrompt, userId);
+        const caption = imgGenMatch ? replyText.replace(imgGenMatch[0], '').trim() || 'Here you go! ✨' : 'Here you go! ✨';
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Message to="${from}" from="${process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'}">${replyText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</Message>
+  <Message to="${from}" from="${waFrom}">
+    <Body>${caption.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</Body>
+    <MediaUrl>${imgUrl}</MediaUrl>
+  </Message>
 </Response>`;
+      } catch(e) {
+        console.error('[Twilio WA] Image gen error:', e.message);
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message to="${from}" from="${waFrom}">Couldn't generate the image right now. Try again?</Message>
+</Response>`;
+      }
+    } else {
+      twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message to="${from}" from="${waFrom}">${replyText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</Message>
+</Response>`;
+    }
     res.setHeader('Content-Type', 'text/xml');
     res.status(200).send(twiml);
 
