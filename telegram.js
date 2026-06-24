@@ -2147,10 +2147,29 @@ app.all('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req,
 
     // Load last 6 messages for context
     let thread = await Thread.findOne({ userId, threadId: userId + '_wa' });
+    const isNewUser = !thread;
     if (!thread) {
       thread = await Thread.create({ userId, threadId: userId + '_wa', title: 'WhatsApp', messages: [] });
     }
     const history = thread.messages.slice(-6);
+
+    // Welcome message for new users
+    if (isNewUser) {
+      const welcome = `Hey 👋 I'm Luna ✨
+
+Save this number as Luna in your contacts — my messages come through Twilio API.
+
+What's on your mind?`;
+      thread.messages.push({ role: 'assistant', content: welcome });
+      thread.lastUpdated = new Date();
+      await thread.save();
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message to="${from}" from="${process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'}">${welcome.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</Message>
+</Response>`;
+      res.setHeader('Content-Type', 'text/xml');
+      return res.status(200).send(twiml);
+    }
 
     // Get Luna's reply — fast direct call with timeout for Twilio's 15s limit
     const waHistory = history.slice(-6).map(m => ({ role: m.role, content: String(m.content) }));
