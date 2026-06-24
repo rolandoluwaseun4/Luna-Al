@@ -2134,10 +2134,11 @@ app.post('/voice/read', requireAuth, async (req, res) => {
 // Set this URL in Twilio console: https://luna-al.onrender.com/whatsapp/twilio
 app.all('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req, res) => {
   try {
-    const from = req.body.From || '';   // e.g. whatsapp:+2347061298954
-    const body = req.body.Body || '';
-    const mediaUrl = req.body.MediaUrl0 || '';
-    const mediaType = req.body.MediaContentType0 || '';
+    if (req.method === 'GET') return res.status(200).send('<Response></Response>');
+    const from = (req.body && req.body.From) || '';   // e.g. whatsapp:+2347061298954
+    const body = (req.body && req.body.Body) || '';
+    const mediaUrl = (req.body && req.body.MediaUrl0) || '';
+    const mediaType = (req.body && req.body.MediaContentType0) || '';
     if (!from) return res.status(200).send('<Response></Response>');
 
     // Owner numbers
