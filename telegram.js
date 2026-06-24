@@ -2226,13 +2226,43 @@ What's on your mind?`;
 
     // Get Luna's reply — fast direct call with timeout for Twilio's 15s limit
     const waHistory = history.slice(-6).map(m => ({ role: m.role, content: String(m.content) }));
-    const waSystemPrompt = getSystemPrompt({ isOwner: isOwnerWA, profile: null, memories: [] }) + '\n\nIMPORTANT: This conversation is on WhatsApp. Keep replies short and conversational — max 3 sentences unless the user specifically asks for more detail.';
+    const waSystemPrompt = getSystemPrompt({ isOwner: isOwnerWA, profile: null, memories: [] }) + '\n\nIMPORTANT: This conversation is on WhatsApp. Keep replies short and conversational — max 3 sentences unless the user specifically asks for more detail.\n\nIMAGE GENERATION: If the user asks you to generate, create, draw, or make an image, respond with ONLY this format and nothing else: [GENERATE_IMAGE: detailed prompt here]. Do not describe the image or say you will generate it. Just output the tag.';
+
+    // Detect image generation request before calling AI
+    const isImgRequest = /^(generate|create|draw|make|give me|show me|design).{0,30}(image|picture|photo|illustration|art|drawing)/i.test(body) || /^(generate|create|draw|make) (it|one|this|that|something)/i.test(body);
+
     const userMessage = (body || 'I sent you a PDF, please read and summarize it.') + pdfContext;
     const waMessages = [
       { role: 'system', content: waSystemPrompt },
       ...waHistory,
       { role: 'user', content: userMessage }
     ];
+    // If direct image request, skip AI and generate immediately
+    if (isImgRequest && body) {
+      try {
+        const { generateImageForWhatsApp } = require('./image');
+        const waFrom = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
+        console.log('[Twilio WA] Direct image request detected:', body);
+        const imgUrl = await generateImageForWhatsApp(body, userId);
+        const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message to="${from}" from="${waFrom}">
+    <Body>Here you go ✨</Body>
+    <MediaUrl>${imgUrl}</MediaUrl>
+  </Message>
+</Response>`;
+        thread.messages.push({ role: 'user', content: body });
+        thread.messages.push({ role: 'assistant', content: '[Generated image]' });
+        thread.lastUpdated = new Date();
+        await thread.save();
+        res.setHeader('Content-Type', 'text/xml');
+        return res.status(200).send(twiml);
+      } catch(e) {
+        console.error('[Twilio WA] Direct image gen failed:', e.message);
+        // Fall through to normal AI response
+      }
+    }
+
     let replyText = 'Hey! Something went wrong on my end. Try again?';
     try {
       const waModels = [
