@@ -2271,7 +2271,7 @@ What's on your mind?`;
     const waFrom = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
     let twiml;
     const imgGenMatch = replyText.match(/\[GENERATE_IMAGE:\s*(.+?)\]/i);
-    if (imgGenMatch || (plan && plan.intent === 'image_generate')) {
+    if (imgGenMatch) {
       try {
         const { generateImageForWhatsApp } = require('./image');
         const imgPrompt = imgGenMatch ? imgGenMatch[1] : replyText;
