@@ -2152,17 +2152,40 @@ app.all('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req,
     }
     const history = thread.messages.slice(-6);
 
-    // Get Luna's reply
-    const lunaResult = await luna.respond({
-      message: body,
-      history,
-      clientModel: 'luna-flash',
-      isOwner: false,
-      baseSystemPrompt: null,
-      image: null, video: null, file: null,
-      webSearchFn: null, onChunk: null,
-    });
-    const replyText = typeof lunaResult === 'string' ? lunaResult : (lunaResult.reply || lunaResult.text || 'Hey!');
+    // Get Luna's reply — fast direct call with timeout for Twilio's 15s limit
+    const waHistory = history.slice(-6).map(m => ({ role: m.role, content: String(m.content) }));
+    const waMessages = [
+      { role: 'system', content: 'You are Luna, a smart and friendly AI assistant. Keep replies short and conversational — this is WhatsApp. Max 3 sentences unless the user asks for more.' },
+      ...waHistory,
+      { role: 'user', content: body }
+    ];
+    let replyText = 'Hey! Something went wrong on my end. Try again?';
+    try {
+      const waModels = [
+        { client: 'groq', model: 'llama-3.1-8b-instant' },
+        { client: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+      ];
+      for (const { client, model } of waModels) {
+        try {
+          let aiRes;
+          if (client === 'groq') {
+            aiRes = await Promise.race([
+              groq.chat.completions.create({ model, messages: waMessages, max_tokens: 300 }),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+            ]);
+          } else {
+            const OpenAI = require('openai');
+            const or = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY });
+            aiRes = await Promise.race([
+              or.chat.completions.create({ model, messages: waMessages, max_tokens: 300 }),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+            ]);
+          }
+          replyText = aiRes.choices[0]?.message?.content?.trim() || replyText;
+          break;
+        } catch(e) { console.log('[Twilio WA] model failed: ' + e.message); }
+      }
+    } catch(e) { console.error('[Twilio WA] All models failed:', e.message); }
 
     // Save messages to thread
     thread.messages.push({ role: 'user', content: body });
