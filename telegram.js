@@ -2230,6 +2230,17 @@ What's on your mind?`;
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
 
+// ── Keep Render awake — ping every 10 mins ────────────────────
+const BACKEND_URL = process.env.BACKEND_URL || 'https://luna-al.onrender.com';
+setInterval(async () => {
+  try {
+    const r = await fetch(BACKEND_URL + '/');
+    console.log('[Ping] Render kept awake:', r.status);
+  } catch(e) {
+    console.warn('[Ping] Failed:', e.message);
+  }
+}, 10 * 60 * 1000);
+
 // ── Global error handler — never leak stack traces to client ──
 app.use((err, req, res, next) => {
   const ip = (req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
