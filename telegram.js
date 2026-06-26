@@ -2175,14 +2175,15 @@ app.post('/whatsapp/wasender', express.json(), async (req, res) => {
     const fromMe = key?.fromMe || false;
     if (fromMe) return res.status(200).json({ status: 'ignored' }); // skip outgoing
 
-    const remoteJid = key?.remoteJid || msgObj?.remoteJid || '';
-    const from = remoteJid.replace('@s.whatsapp.net', '').replace('@c.us', '');
+    // Use cleanedSenderPn — more reliable than remoteJid (avoids LID format)
+    const from = key?.cleanedSenderPn || key?.cleanedParticipantPn ||
+                 (key?.remoteJid || '').replace('@s.whatsapp.net','').replace('@c.us','').replace('@lid','');
 
-    // Extract body from multiple possible locations
-    const msgContent = msgObj?.message || {};
-    const body = msgContent?.conversation ||
-                 msgContent?.extendedTextMessage?.text ||
-                 msgObj?.body || msgObj?.text || msgObj?.caption || '';
+    // Extract body — WaSender provides unified messageBody field
+    const body = msgObj?.messageBody ||
+                 msgObj?.message?.conversation ||
+                 msgObj?.message?.extendedTextMessage?.text ||
+                 msgObj?.body || msgObj?.text || '';
 
     if (!from || !body) {
       console.log('[WaSender] No from/body — ignoring. Keys:', Object.keys(msgObj || {}));
@@ -2289,15 +2290,14 @@ What's on your mind?`;
 async function sendWaSender(to, text) {
   const sessionId = process.env.WASENDER_SESSION_ID;
   const apiKey = process.env.WASENDER_API_KEY;
-  const res = await fetch(`https://wasenderapi.com/api/sessions/${sessionId}/messages`, {
+  const res = await fetch('https://wasenderapi.com/api/send-message', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      to: to.includes('@') ? to : `${to}@s.whatsapp.net`,
-      type: 'text',
+      to: to.replace(/[^0-9]/g, ''),
       text,
     }),
   });
@@ -2312,15 +2312,14 @@ async function sendWaSender(to, text) {
 async function sendWaSenderImage(to, imageUrl, caption = '') {
   const sessionId = process.env.WASENDER_SESSION_ID;
   const apiKey = process.env.WASENDER_API_KEY;
-  const res = await fetch(`https://wasenderapi.com/api/sessions/${sessionId}/messages`, {
+  const res = await fetch('https://wasenderapi.com/api/send-message', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      to: to.includes('@') ? to : `${to}@s.whatsapp.net`,
-      type: 'image',
+      to: to.replace(/[^0-9]/g, ''),
       imageUrl,
       caption,
     }),
