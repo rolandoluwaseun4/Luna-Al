@@ -2145,6 +2145,177 @@ app.post('/voice/read', requireAuth, async (req, res) => {
   }
 });
 
+// ── WaSender WhatsApp Webhook ────────────────────────────────
+// Receives messages from WhatsApp via WaSender
+// Set this URL in WaSender dashboard: https://luna-al.onrender.com/whatsapp/wasender
+app.post('/whatsapp/wasender', express.json(), async (req, res) => {
+  try {
+    // Verify webhook signature
+    const secret = process.env.WASENDER_WEBHOOK_SECRET;
+    if (secret) {
+      const sig = req.headers['x-webhook-signature'] || req.headers['x-webhook-secret'] || '';
+      if (sig && sig !== secret) {
+        console.warn('[WaSender] Invalid webhook signature');
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
+    }
+
+    const data = req.body;
+    console.log('[WaSender] Webhook received:', JSON.stringify(data).slice(0, 200));
+
+    // Extract message details — WaSender format
+    const msg = data?.data || data?.message || data;
+    const from = msg?.from || msg?.sender || msg?.chatId || '';
+    const body = msg?.body || msg?.text || msg?.message || '';
+    const type = msg?.type || data?.type || '';
+
+    // Only handle incoming text messages
+    if (!from || !body || type === 'outgoing') {
+      return res.status(200).json({ status: 'ignored' });
+    }
+
+    // Clean the from number
+    const fromNumber = from.replace('@s.whatsapp.net', '').replace('@c.us', '');
+    const OWNER_NUMBERS = ['2347061298954', '2348153879694'];
+    const isOwnerWA = OWNER_NUMBERS.includes(fromNumber);
+
+    console.log(`[WaSender] Message from ${fromNumber}${isOwnerWA ? ' (owner)' : ''}: ${body}`);
+
+    // Load thread
+    const userId = 'waSender_' + fromNumber;
+    let thread = await Thread.findOne({ userId, threadId: userId + '_wa' });
+    const isNewUser = !thread;
+    if (!thread) {
+      thread = await Thread.create({ userId, threadId: userId + '_wa', title: 'WhatsApp', messages: [] });
+    }
+    const history = thread.messages.slice(-6);
+
+    // Welcome new users
+    if (isNewUser) {
+      const welcome = `Hey 👋 I'm Luna ✨
+
+What's on your mind?`;
+      thread.messages.push({ role: 'assistant', content: welcome });
+      thread.lastUpdated = new Date();
+      await thread.save();
+      await sendWaSender(fromNumber, welcome);
+      return res.status(200).json({ status: 'welcome sent' });
+    }
+
+    // Get Luna's reply
+    const waHistory = history.slice(-6).map(m => ({ role: m.role, content: String(m.content) }));
+    const waSystemPrompt = getSystemPrompt({ isOwner: isOwnerWA, profile: null, memories: [] }) + 
+      '\n\nIMPORTANT: This is WhatsApp. Keep replies short and conversational — max 3 sentences unless the user asks for more.\n\nIMAGE GENERATION: If asked to generate/create/draw an image, reply with ONLY: [GENERATE_IMAGE: detailed prompt here]';
+    const waMessages = [
+      { role: 'system', content: waSystemPrompt },
+      ...waHistory,
+      { role: 'user', content: body }
+    ];
+
+    let replyText = 'Hey! Something went wrong. Try again?';
+    try {
+      const waModels = [
+        { client: 'groq', model: 'llama-3.1-8b-instant' },
+        { client: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+      ];
+      for (const { client, model } of waModels) {
+        try {
+          let aiRes;
+          if (client === 'groq') {
+            aiRes = await Promise.race([
+              groq.chat.completions.create({ model, messages: waMessages, max_tokens: 400 }),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+            ]);
+          } else {
+            const OpenAI = require('openai');
+            const or = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY });
+            aiRes = await Promise.race([
+              or.chat.completions.create({ model, messages: waMessages, max_tokens: 400 }),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+            ]);
+          }
+          replyText = aiRes.choices[0]?.message?.content?.trim() || replyText;
+          break;
+        } catch(e) { console.log(`[WaSender] ${model} failed: ${e.message}`); }
+      }
+    } catch(e) { console.error('[WaSender] All models failed:', e.message); }
+
+    // Check for image generation
+    const imgMatch = replyText.match(/\[GENERATE_IMAGE:\s*(.+?)\]/i);
+    if (imgMatch) {
+      try {
+        const { generateImageForWhatsApp } = require('./image');
+        const imgUrl = await generateImageForWhatsApp(imgMatch[1], userId);
+        await sendWaSenderImage(fromNumber, imgUrl, 'Here you go ✨');
+        replyText = '';
+      } catch(e) {
+        console.error('[WaSender] Image gen failed:', e.message);
+        replyText = 'Image generation failed. Try again?';
+      }
+    }
+
+    // Save to thread
+    thread.messages.push({ role: 'user', content: body });
+    if (replyText) thread.messages.push({ role: 'assistant', content: replyText });
+    thread.lastUpdated = new Date();
+    await thread.save();
+
+    // Send reply
+    if (replyText) await sendWaSender(fromNumber, replyText);
+    return res.status(200).json({ status: 'ok' });
+
+  } catch (err) {
+    console.error('[WaSender] Error:', err.message);
+    res.status(200).json({ status: 'error', message: err.message });
+  }
+});
+
+// ── WaSender send helpers ─────────────────────────────────
+async function sendWaSender(to, text) {
+  const sessionId = process.env.WASENDER_SESSION_ID;
+  const apiKey = process.env.WASENDER_API_KEY;
+  const res = await fetch(`https://wasenderapi.com/api/sessions/${sessionId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      to: to.includes('@') ? to : `${to}@s.whatsapp.net`,
+      type: 'text',
+      text,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    console.error('[WaSender] Send failed:', res.status, err.slice(0, 200));
+  } else {
+    console.log('[WaSender] Message sent to', to);
+  }
+}
+
+async function sendWaSenderImage(to, imageUrl, caption = '') {
+  const sessionId = process.env.WASENDER_SESSION_ID;
+  const apiKey = process.env.WASENDER_API_KEY;
+  const res = await fetch(`https://wasenderapi.com/api/sessions/${sessionId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      to: to.includes('@') ? to : `${to}@s.whatsapp.net`,
+      type: 'image',
+      imageUrl,
+      caption,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    console.error('[WaSender] Image send failed:', res.status, err.slice(0, 200));
+  }
+}
+
 // ── Twilio WhatsApp Webhook ───────────────────────────────────
 // Receives messages from WhatsApp via Twilio sandbox
 // Set this URL in Twilio console: https://luna-al.onrender.com/whatsapp/twilio
