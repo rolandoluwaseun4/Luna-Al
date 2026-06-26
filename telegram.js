@@ -1519,6 +1519,22 @@ app.post("/generate-image", requireAuth, async (req, res) => {
 
 
 
+// ── Image Editing Route ──────────────────────────────────────
+app.post('/edit-image', requireAuth, async (req, res) => {
+  const { image, mask, prompt } = req.body;
+  if (!image || !mask || !prompt) {
+    return res.status(400).json({ error: 'image, mask, and prompt are required' });
+  }
+  try {
+    const { editImageWithMask } = require('./image');
+    const edited = await editImageWithMask(image, mask, prompt);
+    return res.json({ image: edited, edited: true, provider: 'pixazo-inpaint' });
+  } catch (err) {
+    console.error('[Image Edit] Failed:', err.message);
+    res.status(500).json({ error: 'Image editing failed: ' + err.message });
+  }
+});
+
 // ── Google OAuth routes ───────────────────────────────────────
 app.get('/auth/google',
   passport.authenticate('google', { scope: ['profile', 'email'], session: false })

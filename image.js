@@ -512,6 +512,58 @@ async function generateImageForWhatsApp(prompt, uid) {
   return publicUrl;
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+//  IMAGE EDITING — Mask-based inpainting via Pixazo
+//
+//  imageBase64: full base64 data URL of the original image
+//  maskBase64:  base64 data URL of the mask (white = edit area, black = keep)
+//  prompt:      what to put in the masked area
+//  Returns:     base64 data URL of the edited image
+// ═════════════════════════════════════════════════════════════════════════
+async function editImageWithMask(imageBase64, maskBase64, prompt) {
+  const apiKey = process.env.PIXAZO_API_KEY;
+  if (!apiKey) throw new Error('Pixazo: PIXAZO_API_KEY not set');
+
+  console.log('[Image Edit] Sending to Pixazo inpainting...');
+
+  // Strip data URL prefix for API
+  const imageData = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+  const maskData  = maskBase64.includes(',') ? maskBase64.split(',')[1] : maskBase64;
+
+  const res = await fetch('https://api.pixazo.io/v1/inpaint', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      image: imageData,
+      mask: maskData,
+      prompt,
+      width: 1024,
+      height: 1024,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Pixazo inpaint: HTTP ${res.status} — ${errText.slice(0, 200)}`);
+  }
+
+  const json = await res.json();
+  const imageUrl = json?.image_url || json?.url || json?.data?.url;
+  if (!imageUrl) throw new Error(`Pixazo inpaint: no image URL in response — ${JSON.stringify(json).slice(0, 200)}`);
+
+  // Download and convert to base64
+  const imgRes = await fetch(imageUrl);
+  if (!imgRes.ok) throw new Error(`Pixazo inpaint: failed to fetch result (${imgRes.status})`);
+  const buffer = await imgRes.arrayBuffer();
+  const mimeType = imgRes.headers.get('content-type') || 'image/jpeg';
+
+  console.log('[Image Edit] Pixazo inpainting ✅');
+  return `data:${mimeType};base64,${Buffer.from(buffer).toString('base64')}`;
+}
+
 module.exports = {
   generateImage,
   generateWithCloudflare,
@@ -521,6 +573,7 @@ module.exports = {
   analyzeWhatsAppImage,
   generateImageForWhatsApp,
   uploadToCloudinary,
+  editImageWithMask,
   isImageEditRequest,
   lastGeneratedImage,
 };

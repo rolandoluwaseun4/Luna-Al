@@ -911,7 +911,7 @@
     const row=document.createElement('div');row.className='mrow '+role;
     const esc=text?renderMarkdown(text):'';
     const av=role==='luna'?'<div class="msg-avatar luna-av"><img src="icon-192.png" alt="L"/></div>':'<div class="msg-avatar user-av">'+(isOwner?'R':'G')+'</div>';
-    const img=imgUrl?`<div class="gen-image-wrap"><img class="gen-image" src="${imgUrl}" alt="image" onclick="openImageLightbox('${imgUrl}')"/><button class="gen-download-btn" onclick="downloadImage('${imgUrl}')" title="Save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button></div>`:'';
+    const img=imgUrl?`<div class="gen-image-wrap"><img class="gen-image" src="${imgUrl}" alt="image" onclick="openImageLightbox('${imgUrl}')"/><button class="gen-download-btn" onclick="downloadImage('${imgUrl}')" title="Save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button><button class="gen-download-btn" onclick="openEditModal('${imgUrl}')" title="Edit image" style="background:rgba(168,85,247,0.15);border-color:rgba(168,85,247,0.3);">✏️</button></div>`:'';
     const copyBtn=role==='luna'&&text?'<button class="copy-btn" onclick="copyMsg(this,\''+encodeURIComponent(text)+'\')"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</button>':'';
     const lunaLabel=role==='luna'?'<span class="luna-msg-label">Luna</span>':'';
     row.innerHTML=av+'<div class="mbody">'+lunaLabel+(esc?'<div class="bubble">'+esc+'</div>':'')+img+copyBtn+'<div class="mtime">'+ts()+'</div></div>';
@@ -2352,3 +2352,154 @@
   if (typeof initVoiceMode === 'function') {
     initVoiceMode(window._voiceConfig);
   }
+
+// ═══════════════════════════════════════════════════════════
+// IMAGE EDITING — Mask drawing and inpainting
+// ═══════════════════════════════════════════════════════════
+window._editImageBase64 = null;
+window._maskHistory = [];
+
+function openEditModal(imageBase64) {
+  window._editImageBase64 = imageBase64;
+  const modal = document.getElementById('edit-modal');
+  modal.style.display = 'flex';
+
+  const canvas = document.getElementById('mask-canvas');
+  const img = new Image();
+  img.onload = () => {
+    // Scale to fit screen
+    const maxW = window.innerWidth * 0.88;
+    const maxH = window.innerHeight * 0.52;
+    const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+    canvas.width = img.width * scale;
+    canvas.height = img.height * scale;
+    canvas._origW = img.width;
+    canvas._origH = img.height;
+    canvas._scale = scale;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    window._maskHistory = [ctx.getImageData(0, 0, canvas.width, canvas.height)];
+    setupMaskDrawing(canvas);
+  };
+  img.src = imageBase64;
+}
+
+function setupMaskDrawing(canvas) {
+  const ctx = canvas.getContext('2d');
+  let drawing = false;
+
+  const getPos = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  };
+
+  const draw = (e) => {
+    if (!drawing) return;
+    e.preventDefault();
+    const { x, y } = getPos(e);
+    const size = parseInt(document.getElementById('brush-size').value);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(168,85,247,0.55)';
+    ctx.beginPath();
+    ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  canvas.onmousedown = canvas.ontouchstart = (e) => { drawing = true; draw(e); };
+  canvas.onmousemove = canvas.ontouchmove = draw;
+  canvas.onmouseup = canvas.ontouchend = () => {
+    drawing = false;
+    window._maskHistory.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+  };
+}
+
+function clearMask() {
+  const canvas = document.getElementById('mask-canvas');
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  img.src = window._editImageBase64;
+  window._maskHistory = [];
+}
+
+function undoMask() {
+  if (window._maskHistory.length <= 1) return;
+  window._maskHistory.pop();
+  const canvas = document.getElementById('mask-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.putImageData(window._maskHistory[window._maskHistory.length - 1], 0, 0);
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').style.display = 'none';
+  document.getElementById('edit-prompt-input').value = '';
+}
+
+async function submitEdit() {
+  const prompt = document.getElementById('edit-prompt-input').value.trim();
+  if (!prompt) { alert('Tell Luna what to put there first!'); return; }
+
+  const canvas = document.getElementById('mask-canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Build black/white mask — white where user painted (purple), black elsewhere
+  const orig = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = canvas._origW || canvas.width;
+  maskCanvas.height = canvas._origH || canvas.height;
+  const mCtx = maskCanvas.getContext('2d');
+
+  // Scale mask up to original image size
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = canvas.width;
+  tempCanvas.height = canvas.height;
+  const tCtx = tempCanvas.getContext('2d');
+  tCtx.putImageData(orig, 0, 0);
+
+  mCtx.drawImage(tempCanvas, 0, 0, maskCanvas.width, maskCanvas.height);
+  const maskData = mCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+
+  // Convert painted (purple/alpha) pixels to white, rest to black
+  const d = maskData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const isPainted = d[i+2] > 100 && d[i+3] > 80; // blue channel high = purple paint
+    d[i] = isPainted ? 255 : 0;
+    d[i+1] = isPainted ? 255 : 0;
+    d[i+2] = isPainted ? 255 : 0;
+    d[i+3] = 255;
+  }
+  mCtx.putImageData(maskData, 0, 0);
+  const maskBase64 = maskCanvas.toDataURL('image/png');
+
+  closeEditModal();
+
+  // Show Luna is working
+  appendMessage('user', `✏️ Edit: ${prompt}`);
+  appendMessage('luna', '🎨 Editing your image...');
+
+  try {
+    const token = localStorage.getItem('luna-token');
+    const res = await fetch(`${BACKEND_URL}/edit-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ image: window._editImageBase64, mask: maskBase64, prompt })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    // Replace last luna message with the edited image
+    const msgs = document.querySelectorAll('.msg.luna');
+    const last = msgs[msgs.length - 1];
+    if (last) last.remove();
+
+    appendMessage('luna', '', data.image);
+    saveGeneratedImage(data.image);
+  } catch (err) {
+    const msgs = document.querySelectorAll('.msg.luna');
+    const last = msgs[msgs.length - 1];
+    if (last) last.innerHTML = `❌ Edit failed: ${err.message}`;
+  }
+}
