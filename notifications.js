@@ -27,12 +27,21 @@ const webpush = (() => {
   catch(e) { console.warn('[Notif] web-push not installed — push disabled'); return null; }
 })();
 
+// Replace lines 30-35 with this:
+
 if (webpush && process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails(
-    'mailto:' + (process.env.OWNER_EMAIL || 'admin@luna.ai'),
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-  );
+  try {
+    webpush.setVapidDetails(
+      `mailto:${process.env.OWNER_EMAIL || 'admin@luna.ai'}`,
+      process.env.VAPID_PUBLIC_KEY.trim(),
+      process.env.VAPID_PRIVATE_KEY.trim()
+    );
+    console.log('[Notif] VAPID keys configured successfully');
+  } catch (err) {
+    console.error('[Notif] Failed to set VAPID details:', err.message);
+  }
+} else {
+  console.warn('[Notif] VAPID keys missing - push notifications disabled');
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
