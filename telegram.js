@@ -2164,13 +2164,28 @@ app.post('/whatsapp/wasender', express.json(), async (req, res) => {
     console.log('[WaSender] Webhook received:', JSON.stringify(data).slice(0, 200));
 
     // Extract message details — WaSender format
-    const msg = data?.data || data?.message || data;
-    const from = msg?.from || msg?.sender || msg?.chatId || '';
-    const body = msg?.body || msg?.text || msg?.message || '';
-    const type = msg?.type || data?.type || '';
+    // Payload: {"event":"messages.received","data":{"messages":{"key":{"fromMe":false,"remoteJid":"..."},"message":{"conversation":"..."}}}}
+    const event = data?.event || '';
+    if (event && event !== 'messages.received') {
+      return res.status(200).json({ status: 'ignored' });
+    }
 
-    // Only handle incoming text messages
-    if (!from || !body || type === 'outgoing') {
+    const msgObj = data?.data?.messages || data?.data?.message || data?.data || data;
+    const key = msgObj?.key || {};
+    const fromMe = key?.fromMe || false;
+    if (fromMe) return res.status(200).json({ status: 'ignored' }); // skip outgoing
+
+    const remoteJid = key?.remoteJid || msgObj?.remoteJid || '';
+    const from = remoteJid.replace('@s.whatsapp.net', '').replace('@c.us', '');
+
+    // Extract body from multiple possible locations
+    const msgContent = msgObj?.message || {};
+    const body = msgContent?.conversation ||
+                 msgContent?.extendedTextMessage?.text ||
+                 msgObj?.body || msgObj?.text || msgObj?.caption || '';
+
+    if (!from || !body) {
+      console.log('[WaSender] No from/body — ignoring. Keys:', Object.keys(msgObj || {}));
       return res.status(200).json({ status: 'ignored' });
     }
 
