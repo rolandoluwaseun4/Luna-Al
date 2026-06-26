@@ -2359,14 +2359,21 @@
 window._editImageBase64 = null;
 window._maskHistory = [];
 
-function openEditModal(imageBase64) {
-  window._editImageBase64 = imageBase64;
+window.openEditModal = function openEditModal(imageUrl) {
   const modal = document.getElementById('edit-modal');
   modal.style.display = 'flex';
 
   const canvas = document.getElementById('mask-canvas');
   const img = new Image();
+  img.crossOrigin = 'anonymous';
+
   img.onload = () => {
+    // Convert to base64 for editing
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = img.naturalWidth;
+    tmpCanvas.height = img.naturalHeight;
+    tmpCanvas.getContext('2d').drawImage(img, 0, 0);
+    window._editImageBase64 = tmpCanvas.toDataURL('image/jpeg', 0.92);
     // Scale to fit screen
     const maxW = window.innerWidth * 0.88;
     const maxH = window.innerHeight * 0.52;
@@ -2503,3 +2510,9 @@ async function submitEdit() {
     if (last) last.innerHTML = `❌ Edit failed: ${err.message}`;
   }
 }
+
+// Expose edit modal functions globally for onclick handlers
+window.closeEditModal = closeEditModal;
+window.clearMask = clearMask;
+window.undoMask = undoMask;
+window.submitEdit = submitEdit;
