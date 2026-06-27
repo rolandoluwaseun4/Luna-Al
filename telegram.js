@@ -2544,6 +2544,21 @@ app.post('/whatsapp/whapi', express.json(), (req, res) => handleWhapiWebhook(req
   Thread, getSystemPrompt, groq, process
 }));
 
+// ── Baileys WhatsApp (free, self-hosted) ──────────────────────
+const { startBaileys, isBaileysConnected } = require('./baileys');
+if (process.env.BAILEYS_ENABLED === 'true') {
+  startBaileys({ Thread, getSystemPrompt, groq }).then(() => {
+    console.log('[Baileys] Started successfully');
+  }).catch(e => {
+    console.error('[Baileys] Failed to start:', e.message);
+  });
+}
+
+// ── Baileys status endpoint ───────────────────────────────────
+app.get('/baileys/status', (req, res) => {
+  res.json({ connected: isBaileysConnected() });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
 
