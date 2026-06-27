@@ -2534,6 +2534,12 @@ What's on your mind?`;
   }
 });
 
+// ── Whapi WhatsApp routes ─────────────────────────────────────
+const { handleWhapiWebhook, sendWhapi, sendWhapiImage } = require('./whapi');
+app.post('/whatsapp/whapi', express.json(), (req, res) => handleWhapiWebhook(req, res, {
+  Thread, getSystemPrompt, groq, process
+}));
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Luna running on port ${PORT}`));
 
