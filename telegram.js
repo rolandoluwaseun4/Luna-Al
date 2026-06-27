@@ -2558,6 +2558,21 @@ setInterval(async () => {
   }
 }, 10 * 60 * 1000);
 
+// ── Keep Whapi session alive — ping every 10 mins ─────────────
+setInterval(async () => {
+  try {
+    const token = process.env.WHAPI_TOKEN;
+    if (!token) return;
+    const res = await fetch('https://gate.whapi.cloud/health', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    console.log('[Whapi] Session health:', data?.status || JSON.stringify(data).slice(0, 80));
+  } catch (e) {
+    console.warn('[Whapi] Health check failed:', e.message);
+  }
+}, 10 * 60 * 1000);
+
 // ── Global error handler — never leak stack traces to client ──
 app.use((err, req, res, next) => {
   const ip = (req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();

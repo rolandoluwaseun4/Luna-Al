@@ -87,7 +87,11 @@ async function handleWhapiWebhook(req, res, { Thread, getSystemPrompt, groq }) {
       const isOwnerWA = OWNER_NUMBERS.includes(from);
       let body = msg.text?.body || msg.caption || '';
 
-      console.log(`[Whapi] ${type} from ${from}${isOwnerWA ? ' (owner)' : ''}: ${body.slice(0, 100)}`);
+      // Extract sender's display name
+      const fromName = msg.from_name || msg.notify || msg.verifiedName || null;
+      const displayName = isOwnerWA ? 'Roland' : (fromName ? fromName.split(' ')[0] : null);
+
+      console.log(`[Whapi] ${type} from ${from} (${displayName || 'unknown'})${isOwnerWA ? ' (owner)' : ''}: ${body.slice(0, 100)}`);
 
       // Load or create thread
       const userId = 'whapi_' + from;
@@ -99,14 +103,20 @@ async function handleWhapiWebhook(req, res, { Thread, getSystemPrompt, groq }) {
         thread = await Thread.create({
           userId,
           threadId,
-          title: 'WhatsApp',
+          title: displayName || from,
           messages: []
         });
       }
 
+      // Save name to thread if we have it and it's new
+      if (displayName && thread.title !== displayName) {
+        thread.title = displayName;
+      }
+
       // Welcome new users
       if (isNewUser) {
-        const welcome = `Hey ${isOwnerWA ? 'Roland' : ''} 👋 I'm Luna ✨\n\nWhat's on your mind?`;
+        const greeting = displayName ? `Hey ${displayName}! 👋` : `Hey! 👋`;
+        const welcome = `${greeting} I'm Luna ✨\n\nWhat's on your mind?`;
         thread.messages.push({ role: 'assistant', content: welcome });
         thread.lastUpdated = new Date();
         await thread.save();
@@ -193,7 +203,9 @@ async function handleWhapiWebhook(req, res, { Thread, getSystemPrompt, groq }) {
         }
       }
       if (!waSystemPrompt) waSystemPrompt = '';
+      const nameContext = displayName ? `\n\nThe user's name is ${displayName}. Use their name naturally and sparingly in conversation — don't overdo it.` : '';
       waSystemPrompt += '\n\nIMPORTANT: This is WhatsApp. Keep replies short and conversational — max 3 sentences unless the user asks for more.' +
+        nameContext +
         '\n\nIMAGE GENERATION: If asked to generate/create/draw an image, reply with ONLY: [GENERATE_IMAGE: detailed prompt here]';
 
       const waMessages = [
