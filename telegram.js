@@ -2148,6 +2148,7 @@ app.post('/voice/read', requireAuth, async (req, res) => {
 // ── WaSender WhatsApp Webhook ────────────────────────────────
 // Receives messages from WhatsApp via WaSender
 // Set this URL in WaSender dashboard: https://luna-al.onrender.com/whatsapp/wasender
+/* WASENDER DISABLED — uncomment to re-enable
 app.post('/whatsapp/wasender', express.json(), async (req, res) => {
   try {
     // Verify webhook signature
@@ -2285,6 +2286,7 @@ What's on your mind?`;
     res.status(200).json({ status: 'error', message: err.message });
   }
 });
+WASENDER DISABLED */
 
 // ── WaSender send helpers ─────────────────────────────────
 async function sendWaSender(to, text) {
@@ -2333,6 +2335,7 @@ async function sendWaSenderImage(to, imageUrl, caption = '') {
 // ── Twilio WhatsApp Webhook ───────────────────────────────────
 // Receives messages from WhatsApp via Twilio sandbox
 // Set this URL in Twilio console: https://luna-al.onrender.com/whatsapp/twilio
+/* TWILIO DISABLED — uncomment to re-enable
 app.all('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req, res) => {
   try {
     if (req.method === 'GET') return res.status(200).send('<Response></Response>');
@@ -2533,6 +2536,7 @@ What's on your mind?`;
     res.status(200).send('<Response></Response>');
   }
 });
+TWILIO DISABLED */
 
 // ── Whapi WhatsApp routes ─────────────────────────────────────
 const { handleWhapiWebhook, sendWhapi, sendWhapiImage } = require('./whapi');
