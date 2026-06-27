@@ -118,7 +118,10 @@ async function handleWhapiWebhook(req, res, { Thread, getSystemPrompt, groq }) {
       if (type === 'image') {
         try {
           const { analyzeWhatsAppImage } = require('./image');
-          const waSystemPrompt = getSystemPrompt({ isOwner: isOwnerWA, profile: null, memories: [] });
+          let waSystemPrompt;
+          try { waSystemPrompt = getSystemPrompt(userId, isOwnerWA, null, []); }
+          catch(e) { try { waSystemPrompt = getSystemPrompt({ isOwner: isOwnerWA, profile: null, memories: [] }); } catch(e2) { waSystemPrompt = ''; } }
+          if (!waSystemPrompt) waSystemPrompt = '';
           const mediaUrl = msg.image?.link || msg.image?.url || '';
           if (mediaUrl) {
             const imageReply = await analyzeWhatsAppImage(mediaUrl, waSystemPrompt, body || 'What is in this image?');
@@ -178,8 +181,19 @@ async function handleWhapiWebhook(req, res, { Thread, getSystemPrompt, groq }) {
       // ── Build AI messages ─────────────────────────────────────
       const history = thread.messages.slice(-6);
       const waHistory = history.map(m => ({ role: m.role, content: String(m.content) }));
-      const waSystemPrompt = getSystemPrompt({ isOwner: isOwnerWA, profile: null, memories: [] }) +
-        '\n\nIMPORTANT: This is WhatsApp. Keep replies short and conversational — max 3 sentences unless the user asks for more.' +
+      // getSystemPrompt may use positional args (uid, isOwner, profile, memories) or object style
+      let waSystemPrompt;
+      try {
+        waSystemPrompt = getSystemPrompt(userId, isOwnerWA, null, []);
+      } catch(e) {
+        try {
+          waSystemPrompt = getSystemPrompt({ isOwner: isOwnerWA, profile: null, memories: [] });
+        } catch(e2) {
+          waSystemPrompt = '';
+        }
+      }
+      if (!waSystemPrompt) waSystemPrompt = '';
+      waSystemPrompt += '\n\nIMPORTANT: This is WhatsApp. Keep replies short and conversational — max 3 sentences unless the user asks for more.' +
         '\n\nIMAGE GENERATION: If asked to generate/create/draw an image, reply with ONLY: [GENERATE_IMAGE: detailed prompt here]';
 
       const waMessages = [
