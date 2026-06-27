@@ -191,8 +191,16 @@ async function handleWhapiWebhook(req, res, { Thread, getSystemPrompt, groq }) {
       // ── Call AI with fallback ─────────────────────────────────
       let replyText = 'Something went wrong on my end. Try again?';
       const waModels = [
-        { client: 'groq', model: 'llama-3.1-8b-instant' },
+        { client: 'groq', model: 'llama-3.3-70b-versatile' },          // smart + fast, primary
+        { client: 'groq', model: 'gpt-oss-120b' },                      // smartest on Groq
+        { client: 'groq', model: 'gpt-oss-20b' },                       // fastest on Groq
+        { client: 'groq', model: 'qwen-qwq-32b' },                      // strong reasoning
+        { client: 'groq', model: 'llama-3.1-8b-instant' },              // lightweight backup
         { client: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+        { client: 'openrouter', model: 'meta-llama/llama-4-scout:free' },
+        { client: 'openrouter', model: 'qwen/qwen3-235b-a22b:free' },
+        { client: 'openrouter', model: 'mistralai/mistral-small-3.2:free' },
+        { client: 'openrouter', model: 'openrouter/auto' },             // last resort
       ];
 
       for (const { client, model } of waModels) {
@@ -200,8 +208,8 @@ async function handleWhapiWebhook(req, res, { Thread, getSystemPrompt, groq }) {
           let aiRes;
           if (client === 'groq') {
             aiRes = await Promise.race([
-              groq.chat.completions.create({ model, messages: waMessages, max_tokens: 400 }),
-              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+              groq.chat.completions.create({ model, messages: waMessages, max_tokens: 500 }),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000))
             ]);
           } else {
             const OpenAI = require('openai');
@@ -210,12 +218,15 @@ async function handleWhapiWebhook(req, res, { Thread, getSystemPrompt, groq }) {
               apiKey: process.env.OPENROUTER_API_KEY
             });
             aiRes = await Promise.race([
-              or.chat.completions.create({ model, messages: waMessages, max_tokens: 400 }),
-              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+              or.chat.completions.create({ model, messages: waMessages, max_tokens: 500 }),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))
             ]);
           }
           replyText = aiRes.choices[0]?.message?.content?.trim() || replyText;
-          break;
+          if (replyText) {
+            console.log(`[Whapi] Responded with ${model}`);
+            break;
+          }
         } catch (e) {
           console.log(`[Whapi] ${model} failed: ${e.message}`);
         }
