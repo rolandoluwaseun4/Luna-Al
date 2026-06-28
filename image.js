@@ -395,11 +395,12 @@ async function generateImage(prompt, uid = 'anonymous') {
 //    2. llama-3.2-11b-vision-instruct:free — lighter, faster fallback
 // ═════════════════════════════════════════════════════════════════════════
 const VISION_FALLBACK_MODELS = [
-  'qwen/qwen3-vl-30b-a3b:free',
-  'meta-llama/llama-3.2-11b-vision-instruct',
-  'nvidia/nemotron-nano-12b-v2-vl:free',
-  'mistralai/pixtral-12b:free',
-  'google/gemini-flash-1.5:free',
+  'qwen/qwen3-vl-30b-a3b:free',          // best free vision — OCR, screenshots
+  'qwen/qwen2.5-vl-72b-instruct:free',   // strong vision, 72B
+  'nvidia/nemotron-nano-2-vl-12b:free',  // NVIDIA vision, great on OCR
+  'mistralai/mistral-small-3.2:free',    // supports image + text
+  'google/gemma-3-27b-it:free',          // Google multimodal
+  'openrouter/free',                      // auto-picks any free vision model
 ];
 
 async function analyzeImageWithOpenRouter(systemPrompt, history, imageBase64) {
