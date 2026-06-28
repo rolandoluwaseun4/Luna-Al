@@ -331,8 +331,9 @@ async function startBaileys(deps) {
       keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
     },
     logger: pino({ level: 'silent' }),
-    printQRInTerminal: false, // we use pairing code
-    browser: ['Luna AI', 'Chrome', '120.0.0'],
+    printQRInTerminal: false,
+    browser: ['Mac OS', 'Chrome', '14.4.1'], // exact string required for pairing to work
+    defaultQueryTimeoutMs: undefined,         // prevents premature timeout during pairing
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
     getMessage: async () => ({ conversation: '' }),
