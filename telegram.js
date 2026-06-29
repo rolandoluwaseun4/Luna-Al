@@ -2335,7 +2335,6 @@ async function sendWaSenderImage(to, imageUrl, caption = '') {
 // ── Twilio WhatsApp Webhook ───────────────────────────────────
 // Receives messages from WhatsApp via Twilio sandbox
 // Set this URL in Twilio console: https://luna-al.onrender.com/whatsapp/twilio
-/* TWILIO DISABLED — uncomment to re-enable
 app.all('/whatsapp/twilio', express.urlencoded({ extended: false }), async (req, res) => {
   try {
     if (req.method === 'GET') return res.status(200).send('<Response></Response>');
@@ -2536,7 +2535,6 @@ What's on your mind?`;
     res.status(200).send('<Response></Response>');
   }
 });
-TWILIO DISABLED */
 
 // ── Whapi WhatsApp routes ─────────────────────────────────────
 const { handleWhapiWebhook, sendWhapi, sendWhapiImage } = require('./whapi');
@@ -2545,7 +2543,7 @@ app.post('/whatsapp/whapi', express.json(), (req, res) => handleWhapiWebhook(req
 }));
 
 // ── Baileys WhatsApp (free, self-hosted) ──────────────────────
-const { startBaileys, isBaileysConnected } = require('./baileys');
+const { startBaileys, isBaileysConnected, getBaileysQR } = require('./baileys');
 if (process.env.BAILEYS_ENABLED === 'true') {
   startBaileys({ Thread, getSystemPrompt, groq }).then(() => {
     console.log('[Baileys] Started successfully');
@@ -2557,6 +2555,27 @@ if (process.env.BAILEYS_ENABLED === 'true') {
 // ── Baileys status endpoint ───────────────────────────────────
 app.get('/baileys/status', (req, res) => {
   res.json({ connected: isBaileysConnected() });
+});
+
+// ── Baileys QR code page ──────────────────────────────────────
+app.get('/baileys/qr', (req, res) => {
+  const qr = getBaileysQR();
+  if (!qr) {
+    return res.send('<h2>No QR code available — already connected or not started yet. Check Render logs for pairing code.</h2>');
+  }
+  res.send(`<!DOCTYPE html>
+<html>
+<head><title>Luna WhatsApp QR</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{background:#111;color:#fff;font-family:sans-serif;text-align:center;padding:40px}img{max-width:300px;border-radius:12px}</style>
+</head>
+<body>
+<h2>Scan with WhatsApp</h2>
+<p>WhatsApp → Linked Devices → Link a Device → Scan QR</p>
+<img src="${qr}" alt="QR Code"/>
+<p style="color:#888;font-size:12px">Refresh page if QR expires. QR expires every 60 seconds.</p>
+</body>
+</html>`);
 });
 
 const PORT = process.env.PORT || 8080;
