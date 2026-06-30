@@ -2015,7 +2015,7 @@
     }
     [data-theme="light"] body,
     [data-theme="light"] #app { background: var(--bg); color: var(--text); }
-    [data-theme="light"] .navbar { background: #f2f2f7; border-bottom-color: rgba(0,0,0,0.08); }
+    [data-theme="light"] .navbar { background: #f2f2f7 !important; border-bottom: none !important; }
     [data-theme="light"] .hamburger { background: #e8e8ed; border-color: rgba(0,0,0,0.10) !important; }
     [data-theme="light"] .hamburger span { background: #000; }
     [data-theme="light"] #home-screen { background: #f2f2f7; }
