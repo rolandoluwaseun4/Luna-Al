@@ -475,7 +475,7 @@
     .mrow { display: flex; flex-direction: column; animation: msgIn .28s var(--ease); }
     @keyframes msgIn { from{opacity:0;transform:translateY(6px);} to{opacity:1;transform:translateY(0);} }
     .mrow.user { align-items: flex-end; padding: 8px 16px; }
-    .mrow.luna { width: 100%; padding: 18px 20px 6px 20px; border-top: 1px solid rgba(255,255,255,0.04); }
+    .mrow.luna { width: 100%; padding: 20px 20px 6px 20px; border-top: 1px solid rgba(255,255,255,0.04); }
     .mrow.luna:first-child { border-top: none; }
 
     /* Luna avatar — small icon above message */
@@ -484,8 +484,7 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 12px; font-weight: 700; overflow: hidden;
     }
-    .msg-avatar.luna-av { margin-bottom: 10px; }
-    .msg-avatar.luna-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .msg-avatar.luna-av { display: none; }
     .msg-avatar.user-av { display: none; }
 
     /* Message body */
