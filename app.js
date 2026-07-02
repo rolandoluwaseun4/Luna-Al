@@ -459,23 +459,28 @@
   const typingRow=document.getElementById('typing-row');
 
   // ── Suppress iOS's prev/next/done keyboard toolbar ────────────────────
-  // iOS Safari shows that bar whenever it sees more than one focusable
-  // input in the DOM, even ones that are visually hidden behind other
-  // screens. Disabling every other input while one is focused makes
-  // Safari treat it as the only field on the page.
+  // iOS shows the toolbar when multiple focusable inputs exist in DOM.
+  // Fix: set tabindex=-1 and disabled on all other inputs when one is focused.
   function isolateActiveInput(activeEl){
-    const allFields = document.querySelectorAll('input, textarea');
-    allFields.forEach(el => {
-      if(el !== activeEl) el.setAttribute('inert', '');
+    document.querySelectorAll('input, textarea, select').forEach(el => {
+      if(el !== activeEl){
+        el.setAttribute('tabindex', '-1');
+        el.setAttribute('data-was-disabled', el.disabled ? '1' : '0');
+        el.disabled = true;
+      }
     });
   }
   function releaseInputIsolation(){
-    document.querySelectorAll('input, textarea').forEach(el => el.removeAttribute('inert'));
+    document.querySelectorAll('input, textarea, select').forEach(el => {
+      el.removeAttribute('tabindex');
+      if(el.getAttribute('data-was-disabled') !== '1') el.disabled = false;
+      el.removeAttribute('data-was-disabled');
+    });
   }
   [homeInput, chatInput, document.getElementById('expand-textarea')].forEach(el => {
     if(!el) return;
     el.addEventListener('focus', () => isolateActiveInput(el));
-    el.addEventListener('blur', releaseInputIsolation);
+    el.addEventListener('blur', () => setTimeout(releaseInputIsolation, 100));
   });
 
   function tryLogin(){
@@ -728,7 +733,29 @@
   function previewImage(event){
     const file=event.target.files[0];if(!file)return;
     const reader=new FileReader();
-    reader.onload=(e)=>{selectedImageBase64=e.target.result;document.getElementById('preview-thumb').src=selectedImageBase64;document.getElementById('img-preview-bar').style.display='flex';chatSend.disabled=false;};
+    reader.onload=(e)=>{
+      const raw=e.target.result;
+      // Compress large images before sending to vision API
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=1200;
+        let w=img.width,h=img.height;
+        if(w>MAX||h>MAX){
+          if(w>h){h=Math.round(h*MAX/w);w=MAX;}
+          else{w=Math.round(w*MAX/h);h=MAX;}
+        }
+        const canvas=document.createElement('canvas');
+        canvas.width=w;canvas.height=h;
+        const ctx=canvas.getContext('2d');
+        ctx.drawImage(img,0,0,w,h);
+        const compressed=canvas.toDataURL('image/jpeg',0.85);
+        selectedImageBase64=compressed;
+        document.getElementById('preview-thumb').src=compressed;
+        document.getElementById('img-preview-bar').style.display='flex';
+        chatSend.disabled=false;
+      };
+      img.src=raw;
+    };
     reader.readAsDataURL(file);
   }
   function clearImage(){selectedImageBase64=null;document.getElementById('img-upload').value='';document.getElementById('img-preview-bar').style.display='none';}

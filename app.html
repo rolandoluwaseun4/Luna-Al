@@ -223,7 +223,7 @@
       <div class="home-spacer"></div>
       <div class="home-input-outer">
         <div class="home-input-pill">
-          <textarea id="home-input" placeholder="Ask Luna anything..." rows="1" enterkeyhint="enter" autocomplete="off"></textarea>
+          <textarea id="home-input" placeholder="Ask Luna anything..." rows="1" enterkeyhint="send" autocomplete="off" autocorrect="off" autocapitalize="sentences" inputmode="text"></textarea>
           <button class="home-send" id="home-send" disabled>
             <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
           </button>
@@ -318,7 +318,7 @@
           <button class="plus-btn" id="plus-btn" onclick="togglePlusMenu(event)" title="More options">
             <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
-          <textarea id="chat-input" placeholder="Message Luna..." rows="1" enterkeyhint="enter" autocomplete="off"></textarea>
+          <textarea id="chat-input" placeholder="Message Luna..." rows="1" enterkeyhint="send" autocomplete="off" autocorrect="off" autocapitalize="sentences" inputmode="text"></textarea>
           <button class="expand-btn" id="expand-btn" onclick="openExpandOverlay()" title="Expand" style="display:none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           </button>
@@ -343,7 +343,7 @@
           <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <textarea class="expand-textarea" id="expand-textarea" placeholder="Message Luna..." enterkeyhint="enter"></textarea>
+      <textarea class="expand-textarea" id="expand-textarea" placeholder="Message Luna..." enterkeyhint="send" autocomplete="off" autocorrect="off" inputmode="text"></textarea>
       <div class="expand-footer">
         <button class="expand-send" onclick="sendFromExpand()">Send</button>
       </div>
